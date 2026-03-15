@@ -108,10 +108,10 @@ export function TheDrop({ venues, onFlyTo }: TheDropProps) {
       {/* Pill */}
       <div style={{
         position: 'absolute',
-        top: '0px',
+        top: '20px',
         left: 0,
         right: 0,
-        zIndex: 20,
+        zIndex: 400,
         display: 'flex',
         justifyContent: 'center',
         padding: '6px 0',
@@ -150,7 +150,7 @@ export function TheDrop({ venues, onFlyTo }: TheDropProps) {
           style={{
             position: 'absolute',
             inset: 0,
-            zIndex: 30,
+            zIndex: 350,
             background: 'rgba(5, 5, 7, 0.7)',
             backdropFilter: 'blur(4px)',
           }}
@@ -159,7 +159,7 @@ export function TheDrop({ venues, onFlyTo }: TheDropProps) {
             className={closing ? 'drop-feed-out' : 'drop-feed-in'}
             style={{
               position: 'absolute',
-              top: '40px',
+              top: '60px',
               left: '12px',
               right: '12px',
               maxHeight: '60vh',

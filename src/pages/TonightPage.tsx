@@ -72,7 +72,7 @@ export function TonightPage({
   }, []);
 
   return (
-    <div className="absolute inset-0" style={{ top: '80px', bottom: '60px' }}>
+    <div className="absolute inset-0" style={{ top: 'calc(80px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
       <TheDrop venues={venues} onFlyTo={handleFlyTo} />
       <MapView
         city={city}
