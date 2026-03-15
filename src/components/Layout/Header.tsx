@@ -7,14 +7,16 @@ interface HeaderProps {
   onCityChange: (city: CityKey) => void;
   totalCount: number;
   username: string;
+  onAvatarPress?: () => void;
 }
 
-export function Header({ city, onCityChange, totalCount, username }: HeaderProps) {
+export function Header({ city, onCityChange, totalCount, username, onAvatarPress }: HeaderProps) {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-[#050507]"
+    <header className="fixed top-0 left-0 right-0 bg-[#050507]"
       style={{
         paddingTop: 'env(safe-area-inset-top, 0px)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+        zIndex: 1000,
       }}>
       <div className="px-4 pt-2 pb-2 flex items-center justify-between">
         <div>
@@ -57,12 +59,23 @@ export function Header({ city, onCityChange, totalCount, username }: HeaderProps
         </div>
         <div className="flex items-center gap-2">
           <CityToggle city={city} onChange={onCityChange} />
-          <div
-            className="w-9 h-9 rounded-full bg-[#111114] border border-[#2A2A30] flex items-center justify-center text-xs font-bold"
-            style={{ fontFamily: 'Satoshi, sans-serif', color: '#FF8200' }}
+          <button
+            type="button"
+            onClick={onAvatarPress}
+            className="w-9 h-9 rounded-full bg-[#111114] border border-[#2A2A30] flex items-center justify-center text-xs font-bold active:scale-95 transition-transform"
+            style={{
+              fontFamily: 'Satoshi, sans-serif',
+              color: '#FF8200',
+              cursor: 'pointer',
+              padding: 0,
+              WebkitTapHighlightColor: 'transparent',
+              touchAction: 'manipulation',
+              position: 'relative',
+              zIndex: 10,
+            }}
           >
             {getInitials(username)}
-          </div>
+          </button>
         </div>
       </div>
     </header>

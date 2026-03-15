@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { SignInWithApple } from '@capacitor-community/apple-sign-in';
 import { supabase, envReady } from '../lib/supabase';
 import type { Profile } from '../lib/types';
 import type { CityKey } from '../lib/constants';
@@ -55,6 +56,32 @@ export function useAuth() {
     setLoading(false);
   };
 
+  const signInWithApple = useCallback(async () => {
+    if (!envReady) return { error: new Error('Supabase not configured') };
+
+    try {
+      const result = await SignInWithApple.authorize({
+        clientId: 'com.venuu.app',
+        redirectURI: '',
+        scopes: 'email name',
+      });
+
+      const identityToken = result.response.identityToken;
+      if (!identityToken) {
+        return { error: new Error('No identity token received from Apple') };
+      }
+
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: identityToken,
+      });
+
+      return { error };
+    } catch (err) {
+      return { error: err as Error };
+    }
+  }, []);
+
   const sendMagicLink = useCallback(async (email: string) => {
     if (!envReady) return { error: new Error('Supabase not configured') };
     const { error } = await supabase.auth.signInWithOtp({
@@ -108,6 +135,7 @@ export function useAuth() {
     profile,
     loading,
     needsOnboard,
+    signInWithApple,
     sendMagicLink,
     createProfile,
     signOut,

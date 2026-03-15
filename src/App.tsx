@@ -3,12 +3,15 @@ import { envReady } from './lib/supabase';
 import { useCity } from './hooks/useCity';
 import { useVenues } from './hooks/useVenues';
 import { useHeadcounts } from './hooks/useHeadcounts';
+import { useAuth } from './hooks/useAuth';
 import { Header } from './components/Layout/Header';
 import { BottomNav, type Tab } from './components/Layout/BottomNav';
 import { TonightPage } from './pages/TonightPage';
 import { PrecapPage } from './pages/PrecapPage';
 import { PortalPage } from './pages/PortalPage';
 import { UsernameScreen } from './components/UsernameScreen';
+import { SignInSheet } from './components/Auth/SignInSheet';
+import { ProfileOverlay } from './components/Profile/ProfileOverlay';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('tonight');
@@ -16,7 +19,10 @@ export default function App() {
     () => localStorage.getItem('venue_username')
   );
   const [showSplash, setShowSplash] = useState(true);
+  const [showSignIn, setShowSignIn] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const { city, switchCity } = useCity();
+  const { user, profile, needsOnboard, signInWithApple, sendMagicLink, createProfile, signOut } = useAuth();
   const { venues, error: venuesError, refetch: refetchVenues } = useVenues(city);
   const { headcounts, pulsedVenueId } = useHeadcounts(city);
 
@@ -109,6 +115,13 @@ export default function App() {
         onCityChange={switchCity}
         totalCount={totalCount}
         username={username}
+        onAvatarPress={() => {
+          if (user) {
+            setShowProfile(true);
+          } else {
+            setShowSignIn(true);
+          }
+        }}
       />
 
       {/* Tonight tab — map + venue cards */}
@@ -139,6 +152,28 @@ export default function App() {
       </div>
 
       <BottomNav active={tab} onChange={setTab} />
+
+      {/* Sign In Sheet — shown when not authenticated */}
+      {showSignIn && (
+        <SignInSheet
+          onClose={() => setShowSignIn(false)}
+          onSignedIn={() => setShowSignIn(false)}
+          signInWithApple={signInWithApple}
+        />
+      )}
+
+      {/* Profile Overlay — shown when authenticated */}
+      <ProfileOverlay
+        open={showProfile}
+        onClose={() => setShowProfile(false)}
+        isLoggedIn={!!user}
+        needsOnboard={needsOnboard}
+        profile={profile}
+        onSendMagicLink={sendMagicLink}
+        onCompleteOnboard={createProfile}
+        onSignOut={signOut}
+        onBrowseAsGuest={() => setShowProfile(false)}
+      />
 
       {/* Splash overlay — fades out after 2.5s */}
       <div
