@@ -35,19 +35,26 @@ export function CityToggle({ city, onChange }: CityToggleProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 bg-[#1A1A1F] border border-[#2A2A30] rounded-lg overflow-hidden shadow-lg min-w-[140px] z-50">
+        <div
+          className="absolute right-0 top-full mt-1 bg-[#1A1A1F] border border-[#2A2A30] rounded-lg shadow-lg min-w-[160px] z-50"
+          style={{
+            maxHeight: 'calc(100vh - 120px)',
+            overflowY: 'scroll',
+            WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
+          }}
+        >
           {(Object.keys(CITIES) as CityKey[]).map((key) => (
             <button
               key={key}
               onClick={() => { onChange(key); setOpen(false); }}
-              className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${
+              className={`w-full text-left px-4 text-sm font-medium transition-colors ${
                 key === city
                   ? 'text-[#FF5E1A] bg-[#FF5E1A0D]'
                   : 'text-white hover:bg-[#111114]'
               }`}
-              style={{ fontFamily: 'Satoshi, sans-serif' }}
+              style={{ fontFamily: 'Satoshi, sans-serif', minHeight: '44px', display: 'flex', alignItems: 'center' }}
             >
-              {CITIES[key].name}, {CITIES[key].state}
+              {CITIES[key].name}
             </button>
           ))}
         </div>

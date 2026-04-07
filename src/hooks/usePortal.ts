@@ -79,7 +79,7 @@ export function usePortal() {
       .select('*')
       .eq('venue_id', data.id)
       .eq('night_of', nightOf)
-      .single();
+      .maybeSingle();
 
     if (hc) {
       setHeadcount(hc as Headcount);
@@ -98,9 +98,9 @@ export function usePortal() {
     // Server-side PIN check — only returns data if PIN matches
     const { data, error: err } = await supabase
       .from('venues')
-      .select('id, name, slug, city, category, address, lat, lng, image_url, cover_price, deals, hours, instagram, vibe, has_live_cam, live_cam_url, cam_coming_soon, is_active, sort_order, capacity, is_clicker_live, staff_code, phone, website, description, rating, review_count, tonight_special, special_updated_at, special, cover_charge, created_at')
+      .select('id, name, slug, city, category, address, lat, lng, image_url, cover_price, deals, hours, instagram, vibe, has_live_cam, live_cam_url, cam_coming_soon, is_active, sort_order, capacity, is_clicker_live, staff_code, phone, website, description, rating, review_count, tonight_special, special_updated_at, special, cover_charge, featured, featured_label, loyalty_active, nfc_tag_id, nfc_required, created_at')
       .eq('id', venueId)
-      .eq('bouncer_pin', pin)
+      .eq('staff_code', pin)
       .eq('is_active', true)
       .single();
 
@@ -122,7 +122,7 @@ export function usePortal() {
       .select('*')
       .eq('venue_id', venueData.id)
       .eq('night_of', nightOf)
-      .single();
+      .maybeSingle();
 
     if (hc) {
       setHeadcount(hc as Headcount);
@@ -279,7 +279,10 @@ export function usePortal() {
       peakTime: headcount?.updated_at ?? new Date().toISOString(),
     };
 
-    // 1. Reset headcount to 0 and mark not live
+    // 1. Reset headcount to 0 and mark not live — End Night is a deliberate
+    // action that fully closes the venue for the night. The bar goes dark.
+    // (If the bouncer merely disconnects/crashes WITHOUT tapping End Night,
+    // the count persists because disconnect() doesn't touch the DB.)
     await supabase
       .from('headcounts')
       .update({ current_count: 0, is_live: false })

@@ -88,35 +88,79 @@ body {
   pointer-events: none;         /* children opt-in individually */
 }
 
-.venue-marker:active .venue-dot {
+.venue-marker:active .venue-bubble {
   scale: 0.92 !important;       /* press feedback, separate from transform */
 }
 
 /* ============================================
-   Venue Marker — The Dot (base)
+   Venue Marker — Heat Map Bubble
    ============================================ */
 
-.venue-dot {
+.venue-bubble {
   position: absolute;
-  top: 50%;                     /* 50% of 0 = 0 */
-  left: 50%;                    /* 50% of 0 = 0 */
-  transform: translate(-50%, -50%);  /* centers dot at the geo-coordinate */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(0);
+  -webkit-transform: translate(-50%, -50%) translateZ(0);
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   overflow: visible;
   font-family: 'Satoshi', sans-serif;
-  font-weight: 900;
+  font-weight: 700;
   color: white;
-  transition: none !important;  /* NEVER transition anything on the dot */
   pointer-events: auto;
   cursor: pointer;
   z-index: 1;
+  will-change: transform, width, height, background, box-shadow;
+  -webkit-transition: width 0.4s ease, height 0.4s ease, background 0.4s ease, box-shadow 0.4s ease, opacity 0.3s ease;
+  transition: width 0.4s ease, height 0.4s ease, background 0.4s ease, box-shadow 0.4s ease, opacity 0.3s ease;
+  /* Subtle ambient pulse so inactive markers don't look dead */
+  animation: venueAmbient 5s ease-in-out infinite;
+  transition: width 0.8s ease, height 0.8s ease, background 0.8s ease, box-shadow 0.8s ease, opacity 0.8s ease;
 }
 
+/* Inner glow — lit from within effect on active bubbles */
+.venue-bubble::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, rgba(255,255,255,0.20) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
 
-.venue-count { line-height: 1; }
+.venue-bubble.active-glow::before {
+  opacity: 1;
+}
+
+.venue-bubble-count {
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  text-shadow: 0 0 10px rgba(255, 130, 0, 0.7), 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+
+/* Outer ring — expanding radar ping for stages 6-7 */
+.venue-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(0);
+  -webkit-transform: translate(-50%, -50%) translateZ(0);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform, opacity;
+  -webkit-animation: ring-expand 2s ease-out infinite;
+  animation: ring-expand 2s ease-out infinite;
+}
 
 /* ============================================
    Venue Marker — Label below dot
@@ -162,9 +206,14 @@ body {
   width: 4px; height: 4px;
   border-radius: 50%;
   background: #22C55E;
+  -webkit-animation: live-blink 1.2s ease-in-out infinite;
   animation: live-blink 1.2s ease-in-out infinite;
 }
 
+@-webkit-keyframes live-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
 @keyframes live-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.15; }
@@ -175,29 +224,117 @@ body {
    ============================================ */
 
 .drop-pill-glow {
+  position: relative;
+  overflow: hidden;
+  -webkit-animation: drop-glow 2s ease-in-out infinite;
   animation: drop-glow 2s ease-in-out infinite;
+  background-size: 200% 100%;
+  background-image: linear-gradient(90deg, rgba(255,130,0,0.15), rgba(255,179,71,0.2), rgba(255,130,0,0.15));
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
+@-webkit-keyframes drop-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 130, 0, 0.2);
+    background-position: 0% 50%;
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 130, 0, 0.45), 0 0 24px rgba(255, 130, 0, 0.15);
+    background-position: 100% 50%;
+  }
+}
 @keyframes drop-glow {
-  0%, 100% { box-shadow: 0 0 4px rgba(255, 130, 0, 0.2); }
-  50% { box-shadow: 0 0 12px rgba(255, 130, 0, 0.45), 0 0 24px rgba(255, 130, 0, 0.15); }
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 130, 0, 0.2);
+    background-position: 0% 50%;
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 130, 0, 0.45), 0 0 24px rgba(255, 130, 0, 0.15);
+    background-position: 100% 50%;
+  }
+}
+
+/* Shimmer highlight sweep across Drop pill */
+.drop-pill-glow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  -webkit-animation: drop-shimmer-sweep 4s ease-in-out infinite;
+  animation: drop-shimmer-sweep 4s ease-in-out infinite;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+@-webkit-keyframes drop-shimmer-sweep {
+  0%, 70%, 100% { left: -100%; }
+  85% { left: 200%; }
+}
+@keyframes drop-shimmer-sweep {
+  0%, 70%, 100% { left: -100%; }
+  85% { left: 200%; }
 }
 
 .drop-pill-flash {
+  -webkit-animation: drop-flash 0.6s ease-out !important;
   animation: drop-flash 0.6s ease-out !important;
 }
 
+@-webkit-keyframes drop-flash {
+  0% { box-shadow: 0 0 20px rgba(255, 130, 0, 0.8), 0 0 40px rgba(255, 130, 0, 0.4); background: rgba(255, 130, 0, 0.35); }
+  100% { box-shadow: 0 0 4px rgba(255, 130, 0, 0.2); background: rgba(255, 130, 0, 0.15); }
+}
 @keyframes drop-flash {
   0% { box-shadow: 0 0 20px rgba(255, 130, 0, 0.8), 0 0 40px rgba(255, 130, 0, 0.4); background: rgba(255, 130, 0, 0.35); }
   100% { box-shadow: 0 0 4px rgba(255, 130, 0, 0.2); background: rgba(255, 130, 0, 0.15); }
 }
 
+.drop-pill-urgency {
+  -webkit-animation: drop-urgency-pulse 1.5s ease-in-out 3 !important;
+  animation: drop-urgency-pulse 1.5s ease-in-out 3 !important;
+}
+
+@-webkit-keyframes drop-urgency-pulse {
+  0%, 100% {
+    -webkit-transform: scale(1) translateZ(0);
+    background: rgba(255, 130, 0, 0.15);
+  }
+  15% {
+    -webkit-transform: scale(1.08) translateZ(0);
+    background: rgba(255, 130, 0, 0.5);
+  }
+  30% {
+    -webkit-transform: scale(1) translateZ(0);
+    background: rgba(255, 130, 0, 0.15);
+  }
+}
+@keyframes drop-urgency-pulse {
+  0%, 100% {
+    transform: scale(1) translateZ(0);
+    background: rgba(255, 130, 0, 0.15);
+  }
+  15% {
+    transform: scale(1.08) translateZ(0);
+    background: rgba(255, 130, 0, 0.5);
+  }
+  30% {
+    transform: scale(1) translateZ(0);
+    background: rgba(255, 130, 0, 0.15);
+  }
+}
+
 /* The Drop — Feed expand / collapse */
 
 .drop-backdrop-in {
+  -webkit-animation: drop-fade-in 0.2s ease-out both;
   animation: drop-fade-in 0.2s ease-out both;
 }
 .drop-backdrop-out {
+  -webkit-animation: drop-fade-out 0.15s ease-in both;
   animation: drop-fade-out 0.15s ease-in both;
 }
 
@@ -211,19 +348,29 @@ body {
 }
 
 .drop-feed-in {
+  -webkit-animation: drop-slide-in 0.2s ease-out both;
   animation: drop-slide-in 0.2s ease-out both;
 }
 .drop-feed-out {
+  -webkit-animation: drop-slide-out 0.15s ease-in both;
   animation: drop-slide-out 0.15s ease-in both;
 }
 
+@-webkit-keyframes drop-slide-in {
+  from { opacity: 0; -webkit-transform: translateY(-12px) translateZ(0); }
+  to { opacity: 1; -webkit-transform: translateY(0) translateZ(0); }
+}
 @keyframes drop-slide-in {
-  from { opacity: 0; transform: translateY(-12px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-12px) translateZ(0); }
+  to { opacity: 1; transform: translateY(0) translateZ(0); }
+}
+@-webkit-keyframes drop-slide-out {
+  from { opacity: 1; -webkit-transform: translateY(0) translateZ(0); }
+  to { opacity: 0; -webkit-transform: translateY(-12px) translateZ(0); }
 }
 @keyframes drop-slide-out {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-12px); }
+  from { opacity: 1; transform: translateY(0) translateZ(0); }
+  to { opacity: 0; transform: translateY(-12px) translateZ(0); }
 }
 
 /* ============================================
@@ -254,70 +401,267 @@ body {
 }
 
 /* ============================================
-   6-Tier Dot System
+   Heat Map Bubble — Pulse Animations
    ============================================ */
 
-/* T0 — No count: gold dot */
-.dot-t0 {
-  width: 24px; height: 24px; font-size: 0;
-  background: #FFD700;
-  border: 2px solid rgba(255, 215, 0, 0.6);
-  cursor: pointer;
+@-webkit-keyframes venue-pulse-slow {
+  0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+}
+@keyframes venue-pulse-slow {
+  0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+}
+@-webkit-keyframes venue-pulse-medium {
+  0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.1) translateZ(0); }
+}
+@keyframes venue-pulse-medium {
+  0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { transform: translate(-50%, -50%) scale(1.1) translateZ(0); }
+}
+@-webkit-keyframes venue-pulse-fast {
+  0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.14) translateZ(0); }
+}
+@keyframes venue-pulse-fast {
+  0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { transform: translate(-50%, -50%) scale(1.14) translateZ(0); }
+}
+@-webkit-keyframes venue-pulse-legendary {
+  0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.18) translateZ(0); }
+}
+@keyframes venue-pulse-legendary {
+  0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { transform: translate(-50%, -50%) scale(1.18) translateZ(0); }
+}
+/* Tiered ring pulses for all active venues */
+@-webkit-keyframes ring-slow {
+  0% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.4; }
+  100% { -webkit-transform: translate(-50%, -50%) scale(1.15) translateZ(0); opacity: 0; }
+}
+@keyframes ring-slow {
+  0% { transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.4; }
+  100% { transform: translate(-50%, -50%) scale(1.15) translateZ(0); opacity: 0; }
+}
+@-webkit-keyframes ring-medium {
+  0% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.5; }
+  100% { -webkit-transform: translate(-50%, -50%) scale(1.25) translateZ(0); opacity: 0; }
+}
+@keyframes ring-medium {
+  0% { transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.5; }
+  100% { transform: translate(-50%, -50%) scale(1.25) translateZ(0); opacity: 0; }
+}
+@-webkit-keyframes ring-fast {
+  0% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.6; }
+  100% { -webkit-transform: translate(-50%, -50%) scale(1.35) translateZ(0); opacity: 0; }
+}
+@keyframes ring-fast {
+  0% { transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(1.35) translateZ(0); opacity: 0; }
+}
+@-webkit-keyframes ring-double-inner {
+  0% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.6; }
+  100% { -webkit-transform: translate(-50%, -50%) scale(1.4) translateZ(0); opacity: 0; }
+}
+@keyframes ring-double-inner {
+  0% { transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(1.4) translateZ(0); opacity: 0; }
+}
+@-webkit-keyframes ring-double-outer {
+  0% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.4; }
+  100% { -webkit-transform: translate(-50%, -50%) scale(1.6) translateZ(0); opacity: 0; }
+}
+@keyframes ring-double-outer {
+  0% { transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: 0.4; }
+  100% { transform: translate(-50%, -50%) scale(1.6) translateZ(0); opacity: 0; }
 }
 
-/* T1 — 1-20: warm gold */
-.dot-t1 {
-  width: 30px; height: 30px; font-size: 11px;
-  background: #B8952E;
-  border: 1.5px solid #D4AA40;
+@-webkit-keyframes count-bump {
+  0% { -webkit-transform: scale(1) translateZ(0); }
+  25% { -webkit-transform: scale(1.35) translateZ(0); }
+  100% { -webkit-transform: scale(1) translateZ(0); }
 }
-
-/* T2 — 21-60: bright gold */
-.dot-t2 {
-  width: 38px; height: 38px; font-size: 13px;
-  background: #D4A830;
-  border: 2px solid #E8C040;
-}
-
-/* T3 — 61-120: hot amber */
-.dot-t3 {
-  width: 48px; height: 48px; font-size: 16px;
-  background: #E8A028;
-  border: 2px solid #FFB840;
-}
-
-/* T4 — 121-200: fire orange */
-.dot-t4 {
-  width: 58px; height: 58px; font-size: 19px;
-  background: #E87020;
-  border: 2px solid #FF8535;
-}
-
-/* T5 — 200+: volcanic red-orange */
-.dot-t5 {
-  width: 70px; height: 70px; font-size: 23px;
-  background: #E83818;
-  border: 2.5px solid #FF5030;
-}
-
-
-/* ============================================
-   Count Bump + Flash
-   ============================================ */
-
 @keyframes count-bump {
-  0% { transform: scale(1); }
-  25% { transform: scale(1.35); }
-  100% { transform: scale(1); }
+  0% { transform: scale(1) translateZ(0); }
+  25% { transform: scale(1.35) translateZ(0); }
+  100% { transform: scale(1) translateZ(0); }
+}
+.venue-bubble-count.bumping { -webkit-animation: count-bump 0.3s ease-out; animation: count-bump 0.3s ease-out; }
+
+/* Heat glow — radiating warmth behind venue bubbles (radial-gradient for iOS compat) */
+.venue-heat-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(0);
+  -webkit-transform: translate(-50%, -50%) translateZ(0);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform, opacity;
 }
 
-.venue-count.bumping { animation: count-bump 0.3s ease-out; }
+@-webkit-keyframes heat-glow-breathe {
+  0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: inherit; }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+}
+@keyframes heat-glow-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: inherit; }
+  50% { transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+}
+
+/* Orbiting particles — energy field around packed venues (100+) */
+.venue-particles {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateZ(0);
+  -webkit-transform: translate(-50%, -50%) translateZ(0);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.vp {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--pc, #EF4444);
+  opacity: 0.6;
+  will-change: transform;
+}
+
+.vp1 { -webkit-animation: vp-orbit1 4s linear infinite; animation: vp-orbit1 4s linear infinite; }
+.vp2 { -webkit-animation: vp-orbit2 5.5s linear infinite; animation: vp-orbit2 5.5s linear infinite; }
+.vp3 { -webkit-animation: vp-orbit3 7s linear infinite; animation: vp-orbit3 7s linear infinite; }
+
+@-webkit-keyframes vp-orbit1 {
+  0%   { -webkit-transform: translate(22px, 0) translateZ(0); }
+  25%  { -webkit-transform: translate(0, 22px) translateZ(0); }
+  50%  { -webkit-transform: translate(-22px, 0) translateZ(0); }
+  75%  { -webkit-transform: translate(0, -22px) translateZ(0); }
+  100% { -webkit-transform: translate(22px, 0) translateZ(0); }
+}
+@keyframes vp-orbit1 {
+  0%   { transform: translate(22px, 0) translateZ(0); }
+  25%  { transform: translate(0, 22px) translateZ(0); }
+  50%  { transform: translate(-22px, 0) translateZ(0); }
+  75%  { transform: translate(0, -22px) translateZ(0); }
+  100% { transform: translate(22px, 0) translateZ(0); }
+}
+@-webkit-keyframes vp-orbit2 {
+  0%   { -webkit-transform: translate(-18px, 14px) translateZ(0); }
+  25%  { -webkit-transform: translate(14px, 18px) translateZ(0); }
+  50%  { -webkit-transform: translate(18px, -14px) translateZ(0); }
+  75%  { -webkit-transform: translate(-14px, -18px) translateZ(0); }
+  100% { -webkit-transform: translate(-18px, 14px) translateZ(0); }
+}
+@keyframes vp-orbit2 {
+  0%   { transform: translate(-18px, 14px) translateZ(0); }
+  25%  { transform: translate(14px, 18px) translateZ(0); }
+  50%  { transform: translate(18px, -14px) translateZ(0); }
+  75%  { transform: translate(-14px, -18px) translateZ(0); }
+  100% { transform: translate(-18px, 14px) translateZ(0); }
+}
+@-webkit-keyframes vp-orbit3 {
+  0%   { -webkit-transform: translate(10px, -26px) translateZ(0); }
+  25%  { -webkit-transform: translate(-26px, -10px) translateZ(0); }
+  50%  { -webkit-transform: translate(-10px, 26px) translateZ(0); }
+  75%  { -webkit-transform: translate(26px, 10px) translateZ(0); }
+  100% { -webkit-transform: translate(10px, -26px) translateZ(0); }
+}
+@keyframes vp-orbit3 {
+  0%   { transform: translate(10px, -26px) translateZ(0); }
+  25%  { transform: translate(-26px, -10px) translateZ(0); }
+  50%  { transform: translate(-10px, 26px) translateZ(0); }
+  75%  { transform: translate(26px, 10px) translateZ(0); }
+  100% { transform: translate(10px, -26px) translateZ(0); }
+}
+
+/* Featured venue badge — crown emoji top-left of bubble */
+.venue-featured-badge {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+}
+
+/* Featured venue label below venue name */
+.venue-featured-label {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  transform: translateX(-50%);
+  font-family: 'Satoshi', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  color: #A855F7;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+}
+
+@-webkit-keyframes featured-breathe {
+  0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.08) translateZ(0); }
+}
+@keyframes featured-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); }
+  50% { transform: translate(-50%, -50%) scale(1.08) translateZ(0); }
+}
+
+/* Live indicator dot */
+.venue-live-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22C55E;
+  border: 1.5px solid #050507;
+  z-index: 4;
+  -webkit-animation: live-blink 1.2s ease-in-out infinite;
+  animation: live-blink 1.2s ease-in-out infinite;
+}
 
 
-/* ============================================
-   LIVE Ring Pulse (green)
-   ============================================ */
+/* Ambient strip glow — warm haze over hot zones */
+.strip-ambient-glow {
+  width: 800px;
+  height: 800px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 130, 0, 0.06) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+  will-change: opacity;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-animation: strip-breathe 6s ease-in-out infinite;
+  animation: strip-breathe 6s ease-in-out infinite;
+}
 
+@-webkit-keyframes strip-breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+@keyframes strip-breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
 
 /* ============================================
    Capacity Bar
@@ -411,6 +755,21 @@ body {
    Venue Sheet — Pull-Up Bottom Sheet
    ============================================ */
 
+/* Backdrop overlay */
+.venue-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 599;
+  pointer-events: none;
+  transition: background 0.3s ease;
+}
+
+.venue-sheet-backdrop.visible {
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+
 .venue-sheet {
   position: fixed;
   bottom: 0;
@@ -420,9 +779,9 @@ body {
   border-radius: 20px 20px 0 0;
   z-index: 600;
   box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.6);
-  transition: max-height 0.35s cubic-bezier(0.32, 0.72, 0, 1),
+  transition: max-height 0.38s cubic-bezier(0.32, 0.72, 0, 1),
               opacity 0.25s ease,
-              transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+              transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   will-change: max-height, transform;
 }
@@ -430,21 +789,21 @@ body {
 .venue-sheet.hidden {
   max-height: 0;
   opacity: 0;
-  transform: translateY(100%);
+  transform: translateY(100%) scale(0.97);
   pointer-events: none;
 }
 
 .venue-sheet.peeked {
   max-height: 38vh;
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
   overflow: hidden;
 }
 
 .venue-sheet.expanded {
   max-height: 92vh;
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -1053,7 +1412,7 @@ body {
   width: 100%;
   height: 50px;
   border-radius: 12px;
-  background: #FF5E1A;
+  background: #FF8200;
   border: none;
   color: white;
   font-family: 'Satoshi', sans-serif;
@@ -1064,7 +1423,7 @@ body {
   transition: transform 0.1s, background 0.15s;
 }
 
-.recap-submit-full:active { transform: scale(0.96); background: #E85015; }
+.recap-submit-full:active { transform: scale(0.96); background: #E07000; }
 .recap-submit-full:disabled { opacity: 0.35; }
 
 /* ============================================
@@ -1422,4 +1781,142 @@ body {
 .portal-clock-in-btn:disabled {
   opacity: 0.3;
   cursor: default;
+}
+
+/* ── Event Card ── */
+.event-card-slide-up {
+  animation: eventSlideUp 300ms ease-out;
+}
+@keyframes eventSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Event card animate-in within The Drop feed */
+.drop-event-card-enter {
+  animation: dropEventFadeIn 300ms ease-out;
+}
+@keyframes dropEventFadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Subtle blue pulse on event banner inside venue card */
+@keyframes eventCardPulse {
+  0%, 100% { border-left-color: #00D4FF; background: rgba(0, 212, 255, 0.06); }
+  50% { border-left-color: #00FF88; background: rgba(0, 212, 255, 0.10); }
+}
+
+/* Event-charged venue marker pulse — blue glow breathing */
+@keyframes event-charged-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(0, 212, 255, 0.5); }
+  50% { box-shadow: 0 0 24px rgba(0, 212, 255, 0.8), 0 0 40px rgba(0, 255, 136, 0.2); }
+}
+
+/* Route navigation overlays */
+.route-pill-enter {
+  animation: routePillSlideDown 300ms ease-out;
+}
+@keyframes routePillSlideDown {
+  from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.route-cancel-enter {
+  animation: routeCancelSlideUp 300ms ease-out;
+}
+@keyframes routeCancelSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* NFC scanning overlay animations */
+@keyframes nfc-wave {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+@keyframes nfc-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+/* ── Cover Price Tags on Map ── */
+.venue-price-tag {
+  position: absolute;
+  top: calc(50% + 28px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: rgba(0, 0, 0, 0.92);
+  border: 1px solid rgba(255, 130, 0, 0.75);
+  border-radius: 8px;
+  padding: 4px 9px;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: priceTagGlow 2s ease-in-out infinite;
+  z-index: 10;
+  transition: background 0.15s, transform 0.15s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 12px rgba(255, 130, 0, 0.25);
+}
+.venue-price-tag .pt-price {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  color: #FF8200;
+  line-height: 1;
+}
+.venue-price-tag .pt-arrow {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+.venue-price-tag .pt-remaining {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1;
+}
+/* Price change flash — scale + color pop */
+.venue-price-tag.pt-flash-up { animation: ptFlashUp 400ms ease-out; }
+.venue-price-tag.pt-flash-down { animation: ptFlashDown 400ms ease-out; }
+@keyframes ptFlashUp {
+  0%   { transform: translateX(-50%) scale(1.15); background: rgba(0, 255, 136, 0.25); border-color: rgba(0, 255, 136, 0.8); }
+  60%  { transform: translateX(-50%) scale(1.05); }
+  100% { transform: translateX(-50%) scale(1);    background: rgba(0, 0, 0, 0.92); border-color: rgba(255, 130, 0, 0.75); }
+}
+@keyframes ptFlashDown {
+  0%   { transform: translateX(-50%) scale(1.15); background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.7); }
+  60%  { transform: translateX(-50%) scale(1.05); }
+  100% { transform: translateX(-50%) scale(1);    background: rgba(0, 0, 0, 0.92); border-color: rgba(255, 130, 0, 0.75); }
+}
+/* Near-max-price urgency: red border creep + intensified glow */
+.venue-price-tag.pt-urgency {
+  border-color: rgba(255, 45, 5, 0.85) !important;
+  animation: priceTagUrgency 1.8s ease-in-out infinite !important;
+}
+@keyframes priceTagUrgency {
+  0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,0.6), 0 0 12px rgba(255,45,5,0.3); }
+  50%       { box-shadow: 0 4px 16px rgba(0,0,0,0.7), 0 0 22px rgba(255,45,5,0.65); }
+}
+/* Subtle ambient pulse on all venue markers — city is always breathing */
+@keyframes venueAmbient {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+@keyframes priceTagGlow {
+  0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,0.6), 0 0 10px rgba(255,130,0,0.2); }
+  50%       { box-shadow: 0 4px 14px rgba(0,0,0,0.65), 0 0 18px rgba(255,130,0,0.45); }
+}
+
+/* Security Portal animations */
+@keyframes secPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+@keyframes secLiveBorder {
+  0%, 100% { border-left-color: inherit; }
+  50% { border-left-color: rgba(255,255,255,0.4); }
 }

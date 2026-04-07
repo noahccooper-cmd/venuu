@@ -1,12 +1,13 @@
 export function getNightOf(): string {
   const now = new Date();
-  const hour = now.getHours();
-  if (hour < 4) {
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return yesterday.toISOString().split('T')[0];
+  if (now.getHours() < 5) {
+    now.setDate(now.getDate() - 1);
   }
-  return now.toISOString().split('T')[0];
+  // Use local date components (NOT toISOString which converts to UTC)
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export function formatNightDate(): string {

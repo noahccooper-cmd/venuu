@@ -1,9 +1,36 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
+import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { MapView } from '../components/Map/MapView';
 import { VenueSheet } from '../components/Map/VenueCard';
+import { EventCard } from '../components/Map/EventCard';
 import { TheDrop } from '../components/Map/TheDrop';
-import type { Venue, Headcount } from '../lib/types';
+import { getWalkingRoute, sliceRouteAhead, haversineMeters, distanceToRoute } from '../lib/directions';
+import { mapboxToken } from '../lib/supabase';
+import { CITIES } from '../lib/constants';
+import { CoverPurchaseSheet } from '../components/Map/CoverPurchaseSheet';
+import type { Venue, Headcount, VenueEvent } from '../lib/types';
 import type { CityKey } from '../lib/constants';
+import type { CoverPriceInfo } from '../hooks/useCoverPricing';
+import type { PurchaseResult } from '../hooks/useCoverPurchase';
+
+interface ActiveRoute {
+  fullGeometry: GeoJSON.LineString;  // Original full route
+  geometry: GeoJSON.LineString;       // Current visible route (sliced as user walks)
+  duration: number;
+  distance: number;
+  destinationName: string;
+  destinationLng: number;
+  destinationLat: number;
+  arrived: boolean;
+}
+
+interface UserLocationPoint {
+  lng: number;
+  lat: number;
+  accuracy: number;
+}
 
 interface TonightPageProps {
   city: CityKey;
@@ -12,7 +39,17 @@ interface TonightPageProps {
   headcounts: Record<string, Headcount>;
   liveVenueIds: Set<string>;
   pulsedVenueId: string | null;
+  events: VenueEvent[];
+  coverPrices?: Map<string, CoverPriceInfo>;
+  userLocation?: UserLocationPoint | null;
   username: string;
+  userId: string | null;
+  onSignIn: () => void;
+  onCityChange?: (city: CityKey) => void;
+  purchasing?: boolean;
+  myPurchases?: Map<string, { qr_code: string }>;
+  onBuyCover?: (configId: string, venueId: string) => Promise<PurchaseResult>;
+  onAskVenny?: (venue: Venue, headcount: Headcount | null) => void;
 }
 
 export function TonightPage({
@@ -22,9 +59,26 @@ export function TonightPage({
   headcounts,
   liveVenueIds,
   pulsedVenueId,
+  events,
+  coverPrices,
+  userLocation,
   username,
+  userId,
+  onSignIn,
+  onCityChange,
+  purchasing,
+  myPurchases,
+  onBuyCover,
+  onAskVenny,
 }: TonightPageProps) {
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+  const [coverVenue, setCoverVenue] = useState<{ id: string; name: string } | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<VenueEvent | null>(null);
+  const [venueFilter, setVenueFilter] = useState<'all' | 'bars' | 'greek'>('all');
+  const [activeRoute, setActiveRoute] = useState<ActiveRoute | null>(null);
+  const [getThereLoading, setGetThereLoading] = useState(false);
+  type FollowMode = 'free' | 'center' | 'bearing';
+  const [followMode, setFollowMode] = useState<FollowMode>('free');
   const mapInstanceRef = useRef<any>(null);
 
   // Keep selectedVenue in sync with venues array (for realtime special updates)
@@ -33,10 +87,11 @@ export function TonightPage({
     : null;
 
   const handleVenueClick = useCallback((venue: Venue) => {
+    venue.category === 'fraternity' ? hapticMedium() : hapticLight();
     setSelectedVenue(venue);
+    setSelectedEvent(null);
     if (mapInstanceRef.current) {
       const map = mapInstanceRef.current;
-      // Offset upward so venue dot isn't hidden by bottom sheet
       const bounds = map.getBounds();
       if (!bounds) return;
       const latSpan = bounds.getNorth() - bounds.getSouth();
@@ -50,15 +105,43 @@ export function TonightPage({
     }
   }, []);
 
+  const handleEventClick = useCallback((event: VenueEvent) => {
+    hapticMedium();
+    setSelectedEvent(event);
+    setSelectedVenue(null);
+    if (mapInstanceRef.current) {
+      const map = mapInstanceRef.current;
+      let lng = event.longitude;
+      let lat = event.latitude;
+      if (event.venue_id) {
+        const v = venues.find(ven => ven.id === event.venue_id);
+        if (v) { lng = v.lng; lat = v.lat; }
+      }
+      const bounds = map.getBounds();
+      if (!bounds) return;
+      const latSpan = bounds.getNorth() - bounds.getSouth();
+      const offsetLat = lat - latSpan * 0.12;
+      map.flyTo({
+        center: [lng, offsetLat],
+        zoom: Math.max(map.getZoom(), 14.5),
+        duration: 400,
+        essential: true,
+      });
+    }
+  }, [venues]);
+
   const handleClose = useCallback(() => {
     setSelectedVenue(null);
   }, []);
 
+  const handleEventClose = useCallback(() => {
+    setSelectedEvent(null);
+  }, []);
+
   const handleMapTap = useCallback(() => {
-    if (selectedVenue) {
-      setSelectedVenue(null);
-    }
-  }, [selectedVenue]);
+    if (selectedVenue) setSelectedVenue(null);
+    if (selectedEvent) setSelectedEvent(null);
+  }, [selectedVenue, selectedEvent]);
 
   const handleFlyTo = useCallback((lng: number, lat: number) => {
     if (mapInstanceRef.current) {
@@ -71,17 +154,236 @@ export function TonightPage({
     }
   }, []);
 
+  // ── "Get There" walking navigation ──
+  const recalcTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleGetThere = useCallback(async (venue: Venue) => {
+    if (getThereLoading) return;
+    setGetThereLoading(true);
+    console.debug('[nav] Get There tapped for', venue.name);
+
+    try {
+      // 1. Get user location — try existing userLocation first, fall back to one-shot
+      let from: [number, number];
+      if (userLocation) {
+        from = [userLocation.lng, userLocation.lat];
+        console.debug('[nav] Using tracked location:', from);
+      } else {
+        console.debug('[nav] No tracked location, requesting one-shot...');
+        // Check permission first on native
+        if (Capacitor.isNativePlatform()) {
+          const perm = await Geolocation.checkPermissions();
+          if (perm.location === 'denied') {
+            const req = await Geolocation.requestPermissions();
+            if (req.location === 'denied') {
+              console.debug('[nav] Location permission denied');
+              setGetThereLoading(false);
+              return;
+            }
+          }
+          const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+          from = [pos.coords.longitude, pos.coords.latitude];
+        } else {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+          });
+          from = [pos.coords.longitude, pos.coords.latitude];
+        }
+        console.debug('[nav] Got one-shot location:', from);
+      }
+
+      // 2. Fetch walking route
+      const to: [number, number] = [venue.lng, venue.lat];
+      console.debug('[nav] Fetching route from', from, 'to', to);
+      const result = await getWalkingRoute(from, to, mapboxToken);
+      if (!result) {
+        console.warn('[nav] Mapbox Directions returned no route');
+        setGetThereLoading(false);
+        return;
+      }
+      console.debug('[nav] Route received:', Math.round(result.duration) + 's,', Math.round(result.distance) + 'm');
+
+      // 3. Set route state FIRST, then close venue card
+      hapticSuccess();
+      setActiveRoute({
+        fullGeometry: result.geometry,
+        geometry: result.geometry,
+        duration: result.duration,
+        distance: result.distance,
+        destinationName: venue.name,
+        destinationLng: venue.lng,
+        destinationLat: venue.lat,
+        arrived: false,
+      });
+      setFollowMode('center');
+
+      // Small delay so route renders before card dismisses
+      setTimeout(() => {
+        setSelectedVenue(null);
+        setGetThereLoading(false);
+      }, 100);
+    } catch (err) {
+      console.warn('[nav] Get There failed:', err);
+      setGetThereLoading(false);
+    }
+  }, [getThereLoading, userLocation]);
+
+  const handleCancelRoute = useCallback(() => {
+    setActiveRoute(null);
+    setFollowMode('free');
+    if (recalcTimerRef.current) { clearInterval(recalcTimerRef.current); recalcTimerRef.current = null; }
+    if (mapInstanceRef.current) {
+      const config = CITIES[city];
+      mapInstanceRef.current.easeTo({
+        center: [config.center.lng, config.center.lat],
+        zoom: config.zoom,
+        bearing: 0,
+        pitch: 0,
+        duration: 800,
+      });
+    }
+  }, [city]);
+
+  // Follow-me mode handler
+  const handleToggleFollow = useCallback(() => {
+    hapticLight();
+    setFollowMode(prev => {
+      if (prev === 'free') return 'center';
+      if (prev === 'center') return 'bearing';
+      return 'free';
+    });
+  }, []);
+
+  // ── Live route updates: recalc every 30s + reroute on deviation + arrival detection ──
+  useEffect(() => {
+    if (!activeRoute || activeRoute.arrived || !userLocation) return;
+
+    const userPos: [number, number] = [userLocation.lng, userLocation.lat];
+    const destPos: [number, number] = [activeRoute.destinationLng, activeRoute.destinationLat];
+
+    // Check arrival (within 50m of destination)
+    const distToDest = haversineMeters(userPos, destPos);
+    if (distToDest < 50) {
+      setActiveRoute(prev => prev ? { ...prev, arrived: true, duration: 0, distance: distToDest } : null);
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        setActiveRoute(null);
+        if (recalcTimerRef.current) { clearInterval(recalcTimerRef.current); recalcTimerRef.current = null; }
+      }, 3000);
+      return;
+    }
+
+    // Slice route ahead of user (shrinking line effect)
+    const sliced = sliceRouteAhead(activeRoute.fullGeometry, userPos);
+    setActiveRoute(prev => {
+      if (!prev || prev.arrived) return prev;
+      return { ...prev, geometry: sliced };
+    });
+
+    // Check if user deviated >50m from route — trigger immediate recalc
+    const deviation = distanceToRoute(
+      activeRoute.fullGeometry.coordinates as [number, number][],
+      userPos,
+    );
+    if (deviation > 50) {
+      getWalkingRoute(userPos, destPos, mapboxToken).then(result => {
+        if (!result) return;
+        setActiveRoute(prev => {
+          if (!prev || prev.arrived) return prev;
+          return { ...prev, fullGeometry: result.geometry, geometry: result.geometry, duration: result.duration, distance: result.distance };
+        });
+      });
+    }
+  }, [userLocation, activeRoute?.arrived, activeRoute?.destinationLng, activeRoute?.destinationLat, activeRoute?.fullGeometry]);
+
+  // 30-second periodic recalculation
+  useEffect(() => {
+    if (!activeRoute || activeRoute.arrived) {
+      if (recalcTimerRef.current) { clearInterval(recalcTimerRef.current); recalcTimerRef.current = null; }
+      return;
+    }
+
+    recalcTimerRef.current = setInterval(() => {
+      if (!userLocation) return;
+      const userPos: [number, number] = [userLocation.lng, userLocation.lat];
+      const destPos: [number, number] = [activeRoute.destinationLng, activeRoute.destinationLat];
+      getWalkingRoute(userPos, destPos, mapboxToken).then(result => {
+        if (!result) return;
+        setActiveRoute(prev => {
+          if (!prev || prev.arrived) return prev;
+          return { ...prev, fullGeometry: result.geometry, geometry: sliceRouteAhead(result.geometry, userPos), duration: result.duration, distance: result.distance };
+        });
+      });
+    }, 30000);
+
+    return () => {
+      if (recalcTimerRef.current) { clearInterval(recalcTimerRef.current); recalcTimerRef.current = null; }
+    };
+  }, [activeRoute?.arrived, activeRoute?.destinationLng, activeRoute?.destinationLat, userLocation]);
+
   return (
     <div className="absolute inset-0" style={{ top: 'calc(80px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
-      <TheDrop venues={venues} onFlyTo={handleFlyTo} />
+      {!activeRoute && (
+        <TheDrop venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
+      )}
+
+      {/* Venue type filter pills */}
+      <div style={{
+        position: 'absolute', top: '64px', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 399, display: 'flex', gap: 6, pointerEvents: 'auto',
+        background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)', borderRadius: 20, padding: '6px 8px',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+      }}>
+        {([['all', 'All', '#FF8200'], ['bars', 'Bars', '#FF8200'], ['greek', 'Greek Life', '#C9A96E']] as const).map(([key, label, accent]) => {
+          const isSelected = venueFilter === key;
+          const isGold = key === 'greek';
+          return (
+            <button
+              key={key}
+              onClick={() => { hapticLight(); setVenueFilter(key as 'all' | 'bars' | 'greek'); }}
+              style={{
+                padding: '5px 13px', borderRadius: 14,
+                background: isSelected ? accent : 'transparent',
+                border: isSelected ? 'none' : `1px solid rgba(255,255,255,0.25)`,
+                color: isSelected ? (isGold ? '#1a1a2e' : 'white') : 'rgba(255,255,255,0.55)',
+                fontFamily: 'Satoshi, sans-serif', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                transform: isSelected ? 'scale(1.05)' : 'scale(1)',
+                transition: 'transform 0.2s ease, background 0.2s ease, color 0.2s ease',
+                boxShadow: isSelected ? `0 0 14px ${accent}60` : 'none',
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
       <MapView
         city={city}
         venues={venues}
+        venueFilter={venueFilter}
         counts={counts}
         liveVenueIds={liveVenueIds}
         pulsedVenueId={pulsedVenueId}
+        events={events}
+        coverPrices={coverPrices}
+        userLocation={userLocation}
+        route={activeRoute?.geometry ?? null}
+        routeDuration={activeRoute?.duration ?? null}
+        routeDistance={activeRoute?.distance ?? null}
+        routeDestination={activeRoute?.destinationName ?? null}
+        routeArrived={activeRoute?.arrived ?? false}
+        followMode={followMode}
         onVenueClick={handleVenueClick}
+        onEventClick={handleEventClick}
         onMapTap={handleMapTap}
+        onCityChange={onCityChange}
+        onCancelRoute={handleCancelRoute}
+        onPriceTap={(id, name) => { console.debug('[covers] Price tap:', name); setSelectedVenue(null); setSelectedEvent(null); setCoverVenue({ id, name }); }}
+        onToggleFollow={handleToggleFollow}
+        onUserDragMap={() => setFollowMode('free')}
         mapInstanceRef={mapInstanceRef}
       />
 
@@ -89,8 +391,40 @@ export function TonightPage({
         <VenueSheet
           venue={currentVenue}
           headcount={headcounts[currentVenue.id] ?? null}
+          venueEvent={events.find(e => e.venue_id === currentVenue.id && e.is_active) ?? null}
           username={username}
+          userId={userId}
+          onSignIn={onSignIn}
           onClose={handleClose}
+          onGetThere={() => handleGetThere(currentVenue)}
+          getThereLoading={getThereLoading}
+          onAskVenny={onAskVenny ? () => onAskVenny(currentVenue, headcounts[currentVenue.id] ?? null) : undefined}
+          coverPriceInfo={coverPrices?.get(currentVenue.id) ?? null}
+          onBuyCover={coverPrices?.has(currentVenue.id) && onBuyCover
+            ? () => { setSelectedVenue(null); setCoverVenue({ id: currentVenue.id, name: currentVenue.name }); }
+            : undefined}
+        />
+      )}
+
+      {selectedEvent && (
+        <EventCard
+          event={selectedEvent}
+          userId={userId}
+          venueName={selectedEvent.venue_id ? venues.find(v => v.id === selectedEvent.venue_id)?.name ?? null : null}
+          onSignIn={onSignIn}
+          onClose={handleEventClose}
+        />
+      )}
+
+      {coverVenue && coverPrices?.get(coverVenue.id) && onBuyCover && (
+        <CoverPurchaseSheet
+          venueId={coverVenue.id}
+          venueName={coverVenue.name}
+          priceInfo={coverPrices.get(coverVenue.id)!}
+          alreadyPurchasedQR={myPurchases?.get(coverVenue.id)?.qr_code ?? null}
+          purchasing={purchasing ?? false}
+          onBuy={onBuyCover}
+          onClose={() => setCoverVenue(null)}
         />
       )}
     </div>

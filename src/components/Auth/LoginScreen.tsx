@@ -87,7 +87,9 @@ export function LoginScreen({ onSendLink, onBrowseAsGuest }: LoginScreenProps) {
           className="w-full h-[52px] rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
           style={{
             fontFamily: 'Satoshi, sans-serif',
-            background: 'linear-gradient(135deg, #FF5E1A, #FF2D05)',
+            background: '#FF8200',
+            cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent',
           }}
         >
           {loading ? (
@@ -113,9 +115,10 @@ export function LoginScreen({ onSendLink, onBrowseAsGuest }: LoginScreenProps) {
           <div className="flex-1 h-px bg-[#2A2A30]" />
         </div>
         <button
+          type="button"
           onClick={onBrowseAsGuest}
           className="w-full h-12 rounded-xl font-medium text-[#8A8A95] text-sm flex items-center justify-center gap-2 bg-[#111114] border border-[#2A2A30] hover:border-[#55555F] transition-colors active:scale-[0.98]"
-          style={{ fontFamily: 'Satoshi, sans-serif' }}
+          style={{ fontFamily: 'Satoshi, sans-serif', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
         >
           <MapPin size={16} strokeWidth={1.5} />
           Browse as Guest

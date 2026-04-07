@@ -1,3 +1,4 @@
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { getInitials } from '../../lib/utils';
 import type { CityKey } from '../../lib/constants';
 import { CityToggle } from './CityToggle';
@@ -8,9 +9,53 @@ interface HeaderProps {
   totalCount: number;
   username: string;
   onAvatarPress?: () => void;
+  activeTab?: string;
 }
 
-export function Header({ city, onCityChange, totalCount, username, onAvatarPress }: HeaderProps) {
+export function Header({ city, onCityChange, totalCount, username, onAvatarPress, activeTab }: HeaderProps) {
+  const isPortal = activeTab === 'portal';
+
+  // Animated total count
+  const [displayCount, setDisplayCount] = useState(totalCount);
+  const prevCountRef = useRef(totalCount);
+  const animFrameRef = useRef(0);
+  const [fireScale, setFireScale] = useState(1);
+
+  const animateTo = useCallback((from: number, to: number) => {
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    const diff = to - from;
+    const absDiff = Math.abs(diff);
+    const effectiveFrom = absDiff > 10 ? to - Math.sign(diff) * 3 : from;
+    const duration = 600;
+    const start = performance.now();
+    const range = to - effectiveFrom;
+
+    function tick(now: number) {
+      const elapsed = now - start;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplayCount(Math.round(effectiveFrom + range * eased));
+      if (t < 1) {
+        animFrameRef.current = requestAnimationFrame(tick);
+      }
+    }
+    animFrameRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  useEffect(() => {
+    if (totalCount !== prevCountRef.current) {
+      animateTo(prevCountRef.current, totalCount);
+      // Fire emoji pulse
+      setFireScale(1.3);
+      const timer = setTimeout(() => setFireScale(1), 300);
+      prevCountRef.current = totalCount;
+      return () => clearTimeout(timer);
+    }
+  }, [totalCount, animateTo]);
+
+  useEffect(() => {
+    return () => { if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current); };
+  }, []);
   return (
     <header className="fixed top-0 left-0 right-0 bg-[#050507]"
       style={{
@@ -18,7 +63,8 @@ export function Header({ city, onCityChange, totalCount, username, onAvatarPress
         borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
         zIndex: 1000,
       }}>
-      <div className="px-4 pt-2 pb-2 flex items-center justify-between">
+      <div className="pt-2 pb-2 flex items-center justify-between"
+        style={{ paddingLeft: 'max(20px, env(safe-area-inset-left, 20px))', paddingRight: '16px' }}>
         <div>
           <h1
             style={{
@@ -40,11 +86,17 @@ export function Header({ city, onCityChange, totalCount, username, onAvatarPress
               lineHeight: 1,
             }}
           >
-            {totalCount > 0 ? (
+            {displayCount > 0 ? (
               <>
-                {'\uD83D\uDD25'}{' '}
+                <span style={{
+                  display: 'inline-block',
+                  transform: `scale(${fireScale})`,
+                  transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+                }}>
+                  {'\uD83D\uDD25'}
+                </span>{' '}
                 <span style={{ color: '#fff', fontWeight: 700 }}>
-                  {totalCount}
+                  {displayCount}
                 </span>{' '}
                 <span style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
                   people out right now
@@ -57,26 +109,39 @@ export function Header({ city, onCityChange, totalCount, username, onAvatarPress
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <CityToggle city={city} onChange={onCityChange} />
-          <button
-            type="button"
-            onClick={onAvatarPress}
-            className="w-9 h-9 rounded-full bg-[#111114] border border-[#2A2A30] flex items-center justify-center text-xs font-bold active:scale-95 transition-transform"
-            style={{
-              fontFamily: 'Satoshi, sans-serif',
-              color: '#FF8200',
-              cursor: 'pointer',
-              padding: 0,
-              WebkitTapHighlightColor: 'transparent',
-              touchAction: 'manipulation',
-              position: 'relative',
-              zIndex: 10,
-            }}
-          >
-            {getInitials(username)}
-          </button>
-        </div>
+        {isPortal ? (
+          <span style={{
+            fontFamily: 'Satoshi, sans-serif',
+            fontSize: '13px',
+            fontWeight: 700,
+            color: 'rgba(255,255,255,0.35)',
+            letterSpacing: '1px',
+            textTransform: 'uppercase',
+          }}>
+            Portal
+          </span>
+        ) : (
+          <div className="flex items-center gap-2">
+            <CityToggle city={city} onChange={onCityChange} />
+            <button
+              type="button"
+              onClick={onAvatarPress}
+              className="w-9 h-9 rounded-full bg-[#111114] border border-[#2A2A30] flex items-center justify-center text-xs font-bold active:scale-95 transition-transform"
+              style={{
+                fontFamily: 'Satoshi, sans-serif',
+                color: '#FF8200',
+                cursor: 'pointer',
+                padding: 0,
+                WebkitTapHighlightColor: 'transparent',
+                touchAction: 'manipulation',
+                position: 'relative',
+                zIndex: 10,
+              }}
+            >
+              {getInitials(username)}
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

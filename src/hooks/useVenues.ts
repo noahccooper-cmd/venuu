@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, envReady } from '../lib/supabase';
 import type { Venue } from '../lib/types';
-import type { CityKey } from '../lib/constants';
+import { CITIES, type CityKey } from '../lib/constants';
 
 export function useVenues(city: CityKey) {
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -13,8 +13,8 @@ export function useVenues(city: CityKey) {
     setError(false);
     const { data, error: err } = await supabase
       .from('venues')
-      .select('id, created_at, name, slug, city, category, address, lat, lng, image_url, cover_price, deals, hours, instagram, vibe, has_live_cam, live_cam_url, cam_coming_soon, is_active, sort_order, capacity, is_clicker_live, staff_code, phone, website, description, rating, review_count, tonight_special, special_updated_at, special, cover_charge')
-      .eq('city', city)
+      .select('id, created_at, name, slug, city, category, address, lat, lng, image_url, cover_price, deals, hours, instagram, vibe, has_live_cam, live_cam_url, cam_coming_soon, is_active, sort_order, capacity, is_clicker_live, staff_code, phone, website, description, rating, review_count, tonight_special, special_updated_at, special, cover_charge, featured, featured_label, loyalty_active, nfc_tag_id, nfc_required')
+      .ilike('city', `%${city}%`)
       .or('is_active.eq.true,is_active.is.null')
       .order('sort_order');
 
@@ -54,7 +54,7 @@ export function useVenues(city: CityKey) {
         },
         (payload) => {
           const updated = payload.new as Venue;
-          if (updated.city !== city) return;
+          if (updated.city !== CITIES[city].dbCity) return;
           setVenues(prev =>
             prev.map(v => v.id === updated.id ? { ...v, ...updated } : v)
           );

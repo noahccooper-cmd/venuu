@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Loader2, Check, X } from 'lucide-react';
 import { supabase, envReady } from '../../lib/supabase';
-import type { CityKey } from '../../lib/constants';
+import { CITIES, type CityKey } from '../../lib/constants';
 
 interface OnboardScreenProps {
   onComplete: (username: string, classYear: number, city: CityKey) => Promise<{ error: unknown }>;
@@ -118,23 +118,16 @@ export function OnboardScreen({ onComplete }: OnboardScreenProps) {
           <label className="text-[#8A8A95] text-xs font-medium mb-1.5 block" style={{ fontFamily: 'Satoshi, sans-serif' }}>
             Your city
           </label>
-          <div className="flex bg-[#111114] rounded-xl border border-[#2A2A30] overflow-hidden">
-            {(['knoxville', 'tampa'] as CityKey[]).map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCity(c)}
-                className={`flex-1 h-12 text-sm font-medium transition-all ${
-                  city === c
-                    ? 'bg-[#FF5E1A] text-white'
-                    : 'text-[#8A8A95] hover:text-white'
-                }`}
-                style={{ fontFamily: 'Satoshi, sans-serif' }}
-              >
-                {c === 'knoxville' ? 'Knoxville' : 'Tampa'}
-              </button>
+          <select
+            value={city}
+            onChange={(e) => setCity(e.target.value as CityKey)}
+            className="w-full h-12 px-4 bg-[#111114] border border-[#2A2A30] rounded-xl text-white text-sm outline-none focus:border-[#FF5E1A] transition-colors appearance-none"
+            style={{ fontFamily: 'Satoshi, sans-serif' }}
+          >
+            {(Object.keys(CITIES) as CityKey[]).map((c) => (
+              <option key={c} value={c}>{CITIES[c].name}, {CITIES[c].state}</option>
             ))}
-          </div>
+          </select>
         </div>
 
         {error && (
@@ -149,7 +142,9 @@ export function OnboardScreen({ onComplete }: OnboardScreenProps) {
           className="w-full h-[52px] rounded-xl font-bold text-white text-base flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
           style={{
             fontFamily: 'Satoshi, sans-serif',
-            background: 'linear-gradient(135deg, #FF5E1A, #FF2D05)',
+            background: '#FF8200',
+            cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent',
           }}
         >
           {loading ? <Loader2 size={20} className="animate-spin" /> : "LET'S GO"}

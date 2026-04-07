@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { X, MapPin, LogOut } from 'lucide-react';
-import type { Profile } from '../../lib/types';
+import { X, MapPin } from 'lucide-react';
 import type { CityKey } from '../../lib/constants';
 
 interface ProfileOverlayProps {
@@ -8,22 +7,20 @@ interface ProfileOverlayProps {
   onClose: () => void;
   isLoggedIn: boolean;
   needsOnboard: boolean;
-  profile: Profile | null;
   onSendMagicLink: (email: string) => Promise<{ error: unknown }>;
   onCompleteOnboard: (username: string, classYear: number, city: CityKey) => Promise<{ error: unknown }>;
-  onSignOut: () => Promise<void>;
   onBrowseAsGuest: () => void;
 }
+
+const FONT = 'Satoshi, sans-serif';
 
 export function ProfileOverlay({
   open,
   onClose,
   isLoggedIn,
   needsOnboard,
-  profile,
   onSendMagicLink,
   onCompleteOnboard,
-  onSignOut,
   onBrowseAsGuest,
 }: ProfileOverlayProps) {
   const [email, setEmail] = useState('');
@@ -59,11 +56,6 @@ export function ProfileOverlay({
     }
   };
 
-  const handleSignOut = async () => {
-    await onSignOut();
-    onClose();
-  };
-
   const handleGuest = () => {
     onBrowseAsGuest();
     onClose();
@@ -80,104 +72,84 @@ export function ProfileOverlay({
         style={{
           width: 'min(340px, 85vw)',
           animation: 'slide-in-right 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <div className="flex items-center justify-between px-5 pt-5 pb-3"
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0"
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)' }}>
-          <h2 className="text-white font-bold text-lg" style={{ fontFamily: 'Satoshi, sans-serif' }}>
+          <h2 className="text-white font-bold text-lg" style={{ fontFamily: FONT }}>
             Profile
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-full bg-[#111114] text-[#8A8A95] hover:text-white transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-full bg-[#111114] text-[#8A8A95] hover:text-white transition-colors"
+            style={{ WebkitTapHighlightColor: 'transparent', cursor: 'pointer' }}
+          >
             <X size={16} strokeWidth={1.5} />
           </button>
         </div>
 
-        <div className="px-5 py-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 80px)' }}>
-          {/* Logged in with profile */}
-          {isLoggedIn && !needsOnboard && profile && (
-            <div className="space-y-5">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-[#FF5E1A] flex items-center justify-center">
-                  <span className="text-white font-bold text-lg" style={{ fontFamily: 'Satoshi, sans-serif' }}>
-                    {profile.username.slice(0, 2).toUpperCase()}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-white font-bold" style={{ fontFamily: 'Satoshi, sans-serif' }}>
-                    @{profile.username}
-                  </p>
-                  <p className="text-[#8A8A95] text-sm" style={{ fontFamily: 'Satoshi, sans-serif' }}>
-                    Class of {profile.class_year}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-[#111114] rounded-xl p-4 border border-[#2A2A30]">
-                <div className="flex justify-between items-center">
-                  <span className="text-[#8A8A95] text-sm" style={{ fontFamily: 'Satoshi, sans-serif' }}>Total check-ins</span>
-                  <span className="text-white font-bold" style={{ fontFamily: 'Satoshi, sans-serif' }}>{profile.total_checkins}</span>
-                </div>
-              </div>
-
-              <button
-                onClick={handleSignOut}
-                className="w-full h-11 rounded-xl bg-[#111114] border border-[#2A2A30] text-[#8A8A95] text-sm font-medium flex items-center justify-center gap-2 hover:text-[#FF2D05] hover:border-[#FF2D0533] transition-colors"
-                style={{ fontFamily: 'Satoshi, sans-serif' }}
-              >
-                <LogOut size={14} strokeWidth={1.5} />
-                Sign Out
-              </button>
-            </div>
-          )}
-
-          {/* Needs onboarding */}
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-5 pb-8" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {/* ═══ Needs onboarding ═══ */}
           {isLoggedIn && needsOnboard && (
             <div className="space-y-4">
-              <p className="text-white font-bold text-base" style={{ fontFamily: 'Satoshi, sans-serif' }}>
+              <p className="text-white font-bold text-base" style={{ fontFamily: FONT }}>
                 Create your profile
               </p>
               <div>
-                <label className="text-[#8A8A95] text-xs mb-1 block" style={{ fontFamily: 'Satoshi, sans-serif' }}>Username</label>
+                <label className="text-[#8A8A95] text-xs mb-1 block" style={{ fontFamily: FONT }}>Username</label>
                 <input
                   value={username}
                   onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                   maxLength={20}
                   placeholder="username"
                   className="w-full h-11 rounded-xl bg-[#111114] border border-[#2A2A30] px-4 text-white text-sm outline-none focus:border-[#FF5E1A] transition-colors"
-                  style={{ fontFamily: 'Satoshi, sans-serif' }}
+                  style={{ fontFamily: FONT }}
                 />
               </div>
               <div>
-                <label className="text-[#8A8A95] text-xs mb-1 block" style={{ fontFamily: 'Satoshi, sans-serif' }}>Class year</label>
+                <label className="text-[#8A8A95] text-xs mb-1 block" style={{ fontFamily: FONT }}>Class year</label>
                 <select
                   value={classYear}
                   onChange={e => setClassYear(e.target.value)}
                   className="w-full h-11 rounded-xl bg-[#111114] border border-[#2A2A30] px-4 text-white text-sm outline-none focus:border-[#FF5E1A] transition-colors"
-                  style={{ fontFamily: 'Satoshi, sans-serif' }}
+                  style={{ fontFamily: FONT }}
                 >
                   {[2024, 2025, 2026, 2027, 2028, 2029].map(y => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
               </div>
-              {error && <p className="text-[#FF2D05] text-xs" style={{ fontFamily: 'Satoshi, sans-serif' }}>{error}</p>}
+              {error && <p className="text-[#FF2D05] text-xs" style={{ fontFamily: FONT }}>{error}</p>}
               <button
+                type="button"
                 onClick={handleOnboard}
                 disabled={loading || username.length < 3}
-                className="w-full h-11 rounded-xl font-bold text-white text-sm transition-all active:scale-[0.98] disabled:opacity-50"
-                style={{ fontFamily: 'Satoshi, sans-serif', background: 'linear-gradient(135deg, #FF5E1A, #FF2D05)' }}
+                className="w-full rounded-xl font-bold text-white text-sm transition-all active:scale-[0.98] disabled:opacity-50"
+                style={{
+                  fontFamily: FONT,
+                  height: 48,
+                  background: '#FF8200',
+                  border: 'none',
+                  cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
               >
                 {loading ? 'Creating...' : 'Create Profile'}
               </button>
             </div>
           )}
 
-          {/* Not logged in */}
+          {/* ═══ Not logged in ═══ */}
           {!isLoggedIn && (
             <div className="space-y-4">
               {!linkSent ? (
                 <>
-                  <p className="text-white font-bold text-base" style={{ fontFamily: 'Satoshi, sans-serif' }}>
+                  <p className="text-white font-bold text-base" style={{ fontFamily: FONT }}>
                     Sign in to check in & chat
                   </p>
                   <div>
@@ -187,28 +159,42 @@ export function ProfileOverlay({
                       type="email"
                       placeholder="your@email.edu"
                       className="w-full h-11 rounded-xl bg-[#111114] border border-[#2A2A30] px-4 text-white text-sm outline-none focus:border-[#FF5E1A] transition-colors"
-                      style={{ fontFamily: 'Satoshi, sans-serif' }}
+                      style={{ fontFamily: FONT }}
                       onKeyDown={e => e.key === 'Enter' && handleSendLink()}
                     />
                   </div>
-                  {error && <p className="text-[#FF2D05] text-xs" style={{ fontFamily: 'Satoshi, sans-serif' }}>{error}</p>}
+                  {error && <p className="text-[#FF2D05] text-xs" style={{ fontFamily: FONT }}>{error}</p>}
                   <button
+                    type="button"
                     onClick={handleSendLink}
                     disabled={loading || !email.includes('@')}
-                    className="w-full h-11 rounded-xl font-bold text-white text-sm transition-all active:scale-[0.98] disabled:opacity-50"
-                    style={{ fontFamily: 'Satoshi, sans-serif', background: 'linear-gradient(135deg, #FF5E1A, #FF2D05)' }}
+                    className="w-full rounded-xl font-bold text-white text-sm transition-all active:scale-[0.98] disabled:opacity-50"
+                    style={{
+                      fontFamily: FONT,
+                      height: 48,
+                      background: '#FF8200',
+                      border: 'none',
+                      cursor: 'pointer',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
                   >
                     {loading ? 'Sending...' : 'Send Magic Link'}
                   </button>
                   <div className="flex items-center gap-3 my-2">
                     <div className="flex-1 h-px bg-[#2A2A30]" />
-                    <span className="text-[#55555F] text-xs" style={{ fontFamily: 'Satoshi, sans-serif' }}>or</span>
+                    <span className="text-[#55555F] text-xs" style={{ fontFamily: FONT }}>or</span>
                     <div className="flex-1 h-px bg-[#2A2A30]" />
                   </div>
                   <button
+                    type="button"
                     onClick={handleGuest}
-                    className="w-full h-11 rounded-xl bg-[#111114] border border-[#2A2A30] text-[#8A8A95] text-sm font-medium flex items-center justify-center gap-2 hover:text-white transition-colors"
-                    style={{ fontFamily: 'Satoshi, sans-serif' }}
+                    className="w-full rounded-xl bg-[#111114] border border-[#2A2A30] text-[#8A8A95] text-sm font-medium flex items-center justify-center gap-2 hover:text-white transition-colors"
+                    style={{
+                      fontFamily: FONT,
+                      height: 48,
+                      cursor: 'pointer',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
                   >
                     <MapPin size={14} strokeWidth={1.5} />
                     Browse as Guest
@@ -216,10 +202,10 @@ export function ProfileOverlay({
                 </>
               ) : (
                 <div className="text-center py-6">
-                  <p className="text-white font-bold text-base mb-2" style={{ fontFamily: 'Satoshi, sans-serif' }}>
+                  <p className="text-white font-bold text-base mb-2" style={{ fontFamily: FONT }}>
                     Check your email
                   </p>
-                  <p className="text-[#8A8A95] text-sm" style={{ fontFamily: 'Satoshi, sans-serif' }}>
+                  <p className="text-[#8A8A95] text-sm" style={{ fontFamily: FONT }}>
                     We sent a magic link to {email}
                   </p>
                 </div>

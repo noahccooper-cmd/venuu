@@ -46,6 +46,11 @@ export interface Venue {
   special_updated_at: string | null;
   special: string | null;
   cover_charge: string | null;
+  featured: boolean;
+  featured_label: string | null;
+  loyalty_active: boolean;
+  nfc_tag_id: string | null;
+  nfc_required: boolean;
 }
 
 export interface Checkin {
@@ -127,4 +132,115 @@ export interface ClickerLog {
   action: 'enter' | 'exit';
   night_of: string;
   count_after: number;
+}
+
+export interface VenueEvent {
+  id: string;
+  venue_id: string | null;
+  city: string;
+  title: string;
+  description: string | null;
+  event_type: 'party' | 'brand' | 'greek' | 'launch' | 'special';
+  host_name: string;
+  start_time: string;
+  end_time: string | null;
+  latitude: number;
+  longitude: number;
+  image_url: string | null;
+  created_by: string;
+  created_at: string;
+  is_active: boolean;
+  expires_at: string;
+  // Ticket fields
+  has_tickets: boolean;
+  ticket_price: number | null;    // cents
+  total_tickets: number | null;
+  tickets_sold: number;
+  sale_starts_at: string | null;
+  sale_ends_at: string | null;
+}
+
+export type EventTicketStatus = 'completed' | 'used' | 'refunded';
+
+export interface EventTicket {
+  id: string;
+  event_id: string;
+  venue_id: string | null;
+  user_id: string;
+  price_paid: number;          // cents
+  platform_fee: number;        // cents
+  stripe_payment_intent_id: string | null;
+  qr_code: string;
+  status: EventTicketStatus;
+  purchased_at: string;
+  used_at: string | null;
+}
+
+/* ── Dynamic Cover Pricing ── */
+
+export interface CoverConfig {
+  id: string;
+  venue_id: string;
+  night_of: string;
+  base_price: number;       // cents
+  cap_price: number;        // cents
+  capacity: number;
+  open_time: string;
+  close_time: string;
+  current_price: number;    // cents — live price
+  covers_sold: number;
+  is_active: boolean;
+  security_fee_percent: number;
+  platform_fee_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CoverPurchaseStatus = 'pending' | 'completed' | 'refunded' | 'used';
+
+export interface CoverPurchase {
+  id: string;
+  cover_config_id: string;
+  venue_id: string;
+  user_id: string;
+  price_paid: number;       // cents
+  platform_fee: number;     // cents (8% venuu cut)
+  venue_payout: number;     // cents (venue cut after fees)
+  security_fee: number;     // cents (security org cut, 0 if no org)
+  stripe_payment_intent_id: string;
+  stripe_transfer_id: string | null;
+  status: CoverPurchaseStatus;
+  qr_code: string;
+  purchased_at: string;
+  used_at: string | null;
+}
+
+export interface CoverPriceHistory {
+  id: string;
+  cover_config_id: string;
+  price: number;            // cents
+  covers_sold_at_tick: number;
+  recorded_at: string;
+}
+
+export interface VenueStripeAccount {
+  id: string;
+  venue_id: string;
+  stripe_account_id: string;
+  is_verified: boolean;
+  created_at: string;
+}
+
+/* ── Security Organizations ── */
+
+export interface SecurityOrganization {
+  id: string;
+  name: string;
+  org_code: string;
+  city: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  created_at: string;
+  is_active: boolean;
 }

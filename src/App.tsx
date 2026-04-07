@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { envReady } from './lib/supabase';
 import { useCity } from './hooks/useCity';
 import { useVenues } from './hooks/useVenues';
@@ -9,22 +9,46 @@ import { BottomNav, type Tab } from './components/Layout/BottomNav';
 import { TonightPage } from './pages/TonightPage';
 import { PrecapPage } from './pages/PrecapPage';
 import { PortalPage } from './pages/PortalPage';
-import { UsernameScreen } from './components/UsernameScreen';
 import { SignInSheet } from './components/Auth/SignInSheet';
+import { NicknameScreen } from './components/Auth/NicknameScreen';
 import { ProfileOverlay } from './components/Profile/ProfileOverlay';
+import { ProfileScreen } from './components/Profile/ProfileScreen';
+import { OnboardingScreen } from './components/Onboarding/OnboardingScreen';
+import { PushBanner } from './components/Notifications/PushBanner';
+import { usePushNotifications } from './hooks/usePushNotifications';
+import { useEvents } from './hooks/useEvents';
+import { useUserLocation } from './hooks/useUserLocation';
+import { useCoverPricing } from './hooks/useCoverPricing';
+import { useCoverPurchase } from './hooks/useCoverPurchase';
+import type { Venue, Headcount } from './lib/types';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('tonight');
-  const [username, setUsername] = useState<string | null>(
-    () => localStorage.getItem('venue_username')
-  );
+  const [focusedVenue, setFocusedVenue] = useState<{ venue: Venue; headcount: Headcount | null } | null>(null);
+  const username = localStorage.getItem('venue_username') ?? 'Guest';
   const [showSplash, setShowSplash] = useState(true);
+  const [onboarded, setOnboarded] = useState(() => localStorage.getItem('venuu_onboarded') === 'true');
   const [showSignIn, setShowSignIn] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const { city, switchCity } = useCity();
   const { user, profile, needsOnboard, signInWithApple, sendMagicLink, createProfile, signOut } = useAuth();
   const { venues, error: venuesError, refetch: refetchVenues } = useVenues(city);
   const { headcounts, pulsedVenueId } = useHeadcounts(city);
+  const { events } = useEvents(city);
+  const userLocation = useUserLocation();
+  const { coverPrices } = useCoverPricing(city);
+  const { purchasing, myPurchases, purchaseCover, fetchMyPurchases } = useCoverPurchase(user?.id ?? null);
+
+  // Push notifications — only activates on native iOS when signed in
+  usePushNotifications(user?.id ?? null, city);
+
+  // Fetch user's cover purchases on sign-in
+  useEffect(() => { if (user?.id) fetchMyPurchases(); }, [user?.id, fetchMyPurchases]);
+
+  const handleAskVenny = useCallback((venue: Venue, headcount: Headcount | null) => {
+    setFocusedVenue({ venue, headcount });
+    setTab('precap');
+  }, []);
 
   // Splash: always show for 2.5s, then fade out over 500ms (CSS transition)
   useEffect(() => {
@@ -32,27 +56,29 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Build counts map from headcounts (portal data only)
+  // Build counts map from headcounts — any venue with count > 0 tonight shows on map.
+  // Headcounts persist for the entire night regardless of whether the bouncer is still connected.
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
     for (const [venueId, hc] of Object.entries(headcounts)) {
-      if (hc.is_live) {
+      if (hc.current_count > 0) {
         map[venueId] = hc.current_count;
       }
     }
     return map;
   }, [headcounts]);
 
-  // Total count across all live venues
+  // Total count across all venues with headcount tonight
   const totalCount = useMemo(() => {
     return Object.values(counts).reduce((sum, c) => sum + c, 0);
   }, [counts]);
 
-  // Set of venue IDs with live headcount
+  // Set of venue IDs with a live bouncer actively tracking (green LIVE badge).
+  // This only controls the LIVE badge — the headcount and glow stay regardless.
   const liveVenueIds = useMemo(() => {
     return new Set(
       Object.entries(headcounts)
-        .filter(([, hc]) => hc.is_live)
+        .filter(([, hc]) => hc.is_live && hc.current_count > 0)
         .map(([id]) => id)
     );
   }, [headcounts]);
@@ -79,9 +105,18 @@ export default function App() {
     );
   }
 
-  // Username onboarding — first open
-  if (!username) {
-    return <UsernameScreen onComplete={setUsername} />;
+  // City onboarding — first open (after splash fades)
+  if (!onboarded && !showSplash) {
+    return (
+      <OnboardingScreen
+        onComplete={(selectedCity) => {
+          switchCity(selectedCity);
+          localStorage.setItem('venuu_onboarded', 'true');
+          setOnboarded(true);
+        }}
+        signInWithApple={signInWithApple}
+      />
+    );
   }
 
   // Connection error — venues failed to load
@@ -97,9 +132,10 @@ export default function App() {
             Having trouble connecting...
           </p>
           <button
+            type="button"
             onClick={refetchVenues}
-            className="px-6 py-3 rounded-xl text-white font-bold text-sm active:scale-[0.97] transition-transform"
-            style={{ fontFamily: 'Satoshi, sans-serif', background: 'linear-gradient(135deg, #FF5E1A, #FF2D05)' }}
+            className="px-6 rounded-xl text-white font-bold text-sm active:scale-[0.97] transition-transform"
+            style={{ fontFamily: 'Satoshi, sans-serif', background: '#FF8200', height: 48, minWidth: 120, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
           >
             Retry
           </button>
@@ -115,6 +151,7 @@ export default function App() {
         onCityChange={switchCity}
         totalCount={totalCount}
         username={username}
+        activeTab={tab}
         onAvatarPress={() => {
           if (user) {
             setShowProfile(true);
@@ -133,16 +170,28 @@ export default function App() {
           headcounts={headcounts}
           liveVenueIds={liveVenueIds}
           pulsedVenueId={pulsedVenueId}
+          events={events}
+          userLocation={userLocation}
+          coverPrices={coverPrices}
+          purchasing={purchasing}
+          myPurchases={myPurchases as Map<string, { qr_code: string }>}
+          onBuyCover={purchaseCover}
           username={username}
+          userId={user?.id ?? null}
+          onSignIn={() => setShowSignIn(true)}
+          onCityChange={switchCity}
+          onAskVenny={handleAskVenny}
         />
       </div>
 
       {/* Precap tab — AI nightlife assistant */}
       <div className={tab === 'precap' ? '' : 'hidden'}>
         <PrecapPage
+          key={focusedVenue?.venue.id ?? 'default'}
           venues={venues}
           headcounts={headcounts}
           username={username}
+          focusedVenue={focusedVenue}
         />
       </div>
 
@@ -151,6 +200,7 @@ export default function App() {
         <PortalPage onExit={() => setTab('tonight')} />
       </div>
 
+      <PushBanner />
       <BottomNav active={tab} onChange={setTab} />
 
       {/* Sign In Sheet — shown when not authenticated */}
@@ -162,16 +212,30 @@ export default function App() {
         />
       )}
 
-      {/* Profile Overlay — shown when authenticated */}
+      {/* Full-screen profile — authenticated user with profile */}
+      {showProfile && user && profile && !needsOnboard && (
+        <ProfileScreen
+          profile={profile}
+          onClose={() => setShowProfile(false)}
+          onSignOut={signOut}
+        />
+      )}
+
+      {/* Full-screen nickname setup — shown automatically after sign-in if no profile */}
+      {user && needsOnboard && (
+        <NicknameScreen
+          onComplete={(username) => createProfile(username, 2027, city)}
+        />
+      )}
+
+      {/* Profile Overlay — sign-in prompt for guests */}
       <ProfileOverlay
-        open={showProfile}
+        open={showProfile && !user}
         onClose={() => setShowProfile(false)}
-        isLoggedIn={!!user}
-        needsOnboard={needsOnboard}
-        profile={profile}
+        isLoggedIn={false}
+        needsOnboard={false}
         onSendMagicLink={sendMagicLink}
         onCompleteOnboard={createProfile}
-        onSignOut={signOut}
         onBrowseAsGuest={() => setShowProfile(false)}
       />
 

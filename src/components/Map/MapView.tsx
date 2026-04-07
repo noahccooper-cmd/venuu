@@ -2,48 +2,259 @@ import { useEffect, useRef, useCallback, useState, type MutableRefObject } from 
 import mapboxgl from 'mapbox-gl';
 import { CITIES, MAPBOX_STYLE, type CityKey } from '../../lib/constants';
 import { mapboxToken, mapboxReady } from '../../lib/supabase';
-import { getDotTier, getShortName, formatCount, getCoverLabel } from '../../lib/utils';
-import type { Venue } from '../../lib/types';
+import { getShortName, formatCount, getCoverLabel } from '../../lib/utils';
+import { getEventTimeLabel } from '../../lib/eventUtils';
+import { formatWalkDuration, formatWalkDistance } from '../../lib/directions';
+import { formatCoverPriceShort } from '../../lib/coverPricing';
+import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
+import { getNightPhase, fetchRoutesForParticles, spawnParticle, tickParticle, particlesToGeoJSON, type Particle, type RouteCache } from '../../lib/mapEffects';
+import type { Venue, VenueEvent } from '../../lib/types';
+
+/* ── Animated Count Helper ──────────── */
+
+/** Animate a DOM element's text from one number to another over 600ms ease-out.
+ *  If the jump is > 10, skip to within 3 of the target and tick the last 3. */
+function animateCountTo(
+  el: HTMLElement,
+  from: number,
+  to: number,
+  fmt: (n: number) => string,
+) {
+  if (from === to || to === 0) {
+    el.textContent = to === 0 ? '' : fmt(to);
+    return;
+  }
+
+  // Determine effective start: skip to within 3 if big jump
+  const diff = to - from;
+  const absDiff = Math.abs(diff);
+  const effectiveFrom = absDiff > 10 ? to - Math.sign(diff) * 3 : from;
+
+  // Immediately show the skip-to value if we jumped
+  if (effectiveFrom !== from) {
+    el.textContent = fmt(effectiveFrom);
+  }
+
+  const duration = 600;
+  const start = performance.now();
+  const range = to - effectiveFrom;
+
+  function tick(now: number) {
+    const elapsed = now - start;
+    const t = Math.min(elapsed / duration, 1);
+    // ease-out cubic
+    const eased = 1 - Math.pow(1 - t, 3);
+    const current = Math.round(effectiveFrom + range * eased);
+    el.textContent = fmt(current);
+    if (t < 1) requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
+}
+
+/* ── 7-Stage Heat Map Bubble Visuals ──────────── */
+
+interface BubbleVisuals {
+  stage: number;
+  color: string;
+  size: number;
+  glow: string;
+  pulse: string;
+  fontSize: string;
+  showRing: boolean;
+  showCount: boolean;
+}
+
+/** Font size based on headcount for readability at every bubble size */
+function getCountFontSize(count: number): string {
+  if (count <= 15) return '10px';
+  if (count <= 35) return '11px';
+  if (count <= 60) return '13px';
+  if (count <= 100) return '15px';
+  if (count <= 150) return '17px';
+  return '19px';
+}
+
+function getVenueVisuals(headcount: number): BubbleVisuals {
+  // Stage 0: empty — gray dot, no number
+  if (headcount === 0) return {
+    stage: 0, color: '#6B7280', size: 24, glow: 'none',
+    pulse: 'none', fontSize: '0px', showRing: false, showCount: false,
+  };
+  const fontSize = getCountFontSize(headcount);
+  if (headcount <= 10) return {
+    stage: 1, color: '#3B82F6', size: 28, glow: '0 0 8px rgba(59,130,246,0.4)',
+    pulse: 'none', fontSize, showRing: false, showCount: true,
+  };
+  if (headcount <= 30) return {
+    stage: 2, color: '#8B5CF6', size: 32, glow: '0 0 12px rgba(139,92,246,0.5)',
+    pulse: 'venue-pulse-slow 3s ease-in-out infinite', fontSize, showRing: false, showCount: true,
+  };
+  if (headcount <= 60) return {
+    stage: 3, color: '#F59E0B', size: 36, glow: '0 0 16px rgba(245,158,11,0.5)',
+    pulse: 'venue-pulse-slow 2.5s ease-in-out infinite', fontSize, showRing: false, showCount: true,
+  };
+  if (headcount <= 120) return {
+    stage: 4, color: '#EF4444', size: 42, glow: '0 0 20px rgba(239,68,68,0.5)',
+    pulse: 'venue-pulse-medium 2s ease-in-out infinite', fontSize, showRing: false, showCount: true,
+  };
+  if (headcount <= 200) return {
+    stage: 5, color: '#FF6B2C', size: 48, glow: '0 0 24px rgba(255,107,44,0.6)',
+    pulse: 'venue-pulse-fast 1.5s ease-in-out infinite', fontSize, showRing: false, showCount: true,
+  };
+  // Stage 6: 201+
+  if (headcount <= 350) return {
+    stage: 6, color: '#EC4899', size: 54, glow: '0 0 30px rgba(236,72,153,0.6)',
+    pulse: 'venue-pulse-fast 1.2s ease-in-out infinite', fontSize, showRing: true, showCount: true,
+  };
+  // Stage 7: 351+ legendary
+  return {
+    stage: 7, color: '#EC4899', size: 58, glow: '0 0 36px rgba(236,72,153,0.7), 0 0 60px rgba(236,72,153,0.3)',
+    pulse: 'venue-pulse-legendary 1s ease-in-out infinite', fontSize, showRing: true, showCount: true,
+  };
+}
+
+/** Set animation on an element with -webkit- prefix for iOS Capacitor compat */
+function setAnim(el: HTMLElement, value: string) {
+  el.style.animation = value;
+  (el.style as unknown as Record<string, string>).webkitAnimation = value;
+}
+
+/* ── Types ──────────── */
 
 interface MarkerEntry {
   marker: mapboxgl.Marker;
   el: HTMLDivElement;
-  dotEl: HTMLDivElement;
+  bubbleEl: HTMLDivElement;
+  glowEl: HTMLDivElement;
+  particlesEl: HTMLDivElement;
+  ringEl: HTMLDivElement;
+  ring2El: HTMLDivElement;
   countEl: HTMLSpanElement;
   labelEl: HTMLDivElement;
+  featuredBadgeEl: HTMLDivElement;
+  featuredLabelEl: HTMLDivElement;
   liveEl: HTMLDivElement;
   coverEl: HTMLDivElement;
-  currentTier: string;
+  priceTagEl: HTMLDivElement;
+  currentStage: number;
   currentCount: number;
+  isFeatured: boolean;
+  isFraternity: boolean;
+  hasEvent: boolean;
+}
+
+interface UserLocationPoint {
+  lng: number;
+  lat: number;
+  accuracy: number;
 }
 
 interface MapViewProps {
   city: CityKey;
   venues: Venue[];
+  venueFilter?: 'all' | 'bars' | 'greek';
   counts: Record<string, number>;
   liveVenueIds: Set<string>;
   pulsedVenueId: string | null;
+  events?: VenueEvent[];
+  coverPrices?: Map<string, CoverPriceInfo>;
+  userLocation?: UserLocationPoint | null;
+  route?: GeoJSON.LineString | null;
+  routeDuration?: number | null;
+  routeDistance?: number | null;
+  routeDestination?: string | null;
+  routeArrived?: boolean;
+  followMode?: 'free' | 'center' | 'bearing';
   onVenueClick: (venue: Venue) => void;
+  onEventClick?: (event: VenueEvent) => void;
   onMapTap?: () => void;
+  onCityChange?: (city: CityKey) => void;
+  onCancelRoute?: () => void;
+  onPriceTap?: (venueId: string, venueName: string) => void;
+  onToggleFollow?: () => void;
+  onUserDragMap?: () => void;
   mapInstanceRef?: MutableRefObject<mapboxgl.Map | null>;
 }
 
+/* ── Events GeoJSON builder ──────────── */
+
+const EVENT_LAYERS = ['events-label', 'events-core', 'events-ring', 'events-pulse', 'events-glow', 'events-aura', 'events-ping1', 'events-ping2', 'events-ping3'] as const;
+
+function buildEventsGeoJSON(events: VenueEvent[], venues: Venue[]): GeoJSON.FeatureCollection {
+  const venueMap = new Map(venues.map(v => [v.id, v]));
+  return {
+    type: 'FeatureCollection',
+    features: events.map(evt => {
+      let lng = evt.longitude;
+      let lat = evt.latitude;
+      if (evt.venue_id) {
+        const v = venueMap.get(evt.venue_id);
+        if (v) { lng = v.lng; lat = v.lat; }
+      }
+      const isFrat = evt.venue_id ? venueMap.get(evt.venue_id)?.category === 'fraternity' : false;
+      return {
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [lng, lat] },
+        properties: {
+          id: evt.id,
+          label: `\u26A1 ${evt.title}\n${getEventTimeLabel(evt.start_time, evt.expires_at).text}`,
+          isFratEvent: isFrat ? 1 : 0,
+        },
+      };
+    }),
+  };
+}
+
+const SEC_BUBBLES: { key: string; abbrev: string; bg: string; text: string; border: string; label: string; fontSize?: string }[] = [
+  { key: 'knoxville', abbrev: 'UT', bg: '#FF8200', text: '#fff', border: '#CC6800', label: 'Knoxville' },
+  { key: 'athens', abbrev: 'UGA', bg: '#BA0C2F', text: '#fff', border: '#8A091F', label: 'Athens' },
+  { key: 'tuscaloosa', abbrev: 'BAMA', bg: '#9E1B32', text: '#fff', border: '#6E1222', label: 'Tuscaloosa', fontSize: '10px' },
+  { key: 'baton_rouge', abbrev: 'LSU', bg: '#461D7C', text: '#fff', border: '#30145A', label: 'Baton Rouge' },
+  { key: 'auburn', abbrev: 'AU', bg: '#0C2340', text: '#fff', border: '#F26522', label: 'Auburn' },
+  { key: 'oxford', abbrev: 'OLEMISS', bg: '#CE1126', text: '#fff', border: '#14213D', label: 'Oxford', fontSize: '9px' },
+  { key: 'starkville', abbrev: 'MSU', bg: '#660000', text: '#fff', border: '#440000', label: 'Starkville' },
+  { key: 'lexington', abbrev: 'UK', bg: '#0033A0', text: '#fff', border: '#002270', label: 'Lexington' },
+  { key: 'fayetteville', abbrev: 'ARK', bg: '#9D2235', text: '#fff', border: '#6D1825', label: 'Fayetteville' },
+  { key: 'columbia_mo', abbrev: 'MIZ', bg: '#F1B82D', text: '#000', border: '#C49520', label: 'Columbia' },
+  { key: 'columbia_sc', abbrev: 'SC', bg: '#73000A', text: '#fff', border: '#530007', label: 'Columbia' },
+  { key: 'gainesville', abbrev: 'UF', bg: '#0021A5', text: '#fff', border: '#FA4616', label: 'Gainesville' },
+  { key: 'nashville', abbrev: 'VU', bg: '#CFAE70', text: '#000', border: '#A08850', label: 'Nashville' },
+  { key: 'college_station', abbrev: 'A&M', bg: '#500000', text: '#fff', border: '#300000', label: 'College Station', fontSize: '11px' },
+  { key: 'norman', abbrev: 'OU', bg: '#841617', text: '#fff', border: '#FDF9D8', label: 'Norman' },
+  { key: 'austin', abbrev: 'TEX', bg: '#BF5700', text: '#fff', border: '#333F48', label: 'Austin' },
+];
+
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onVenueClick, onMapTap, mapInstanceRef }: MapViewProps) {
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityChange, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, MarkerEntry>>(new Map());
   const markersVisibleRef = useRef(true);
   const tMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const cityMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const animFrameRef = useRef<number>(0);
+  const routeCoordsRef = useRef<[number, number][] | null>(null);
+  const particlesRef = useRef<Particle[]>([]);
+  const routeCacheRef = useRef<RouteCache | null>(null);
+  const nightPhaseRef = useRef(getNightPhase());
+  const entrancePlayedRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
+  const eventsRef = useRef(events);
   const onVenueClickRef = useRef(onVenueClick);
+  const onEventClickRef = useRef(onEventClick);
+  const onCityChangeRef = useRef(onCityChange);
+  const onPriceTapRef = useRef(onPriceTap);
   venuesRef.current = venues;
   countsRef.current = counts;
+  eventsRef.current = events;
   onVenueClickRef.current = onVenueClick;
+  onCityChangeRef.current = onCityChange;
+  onPriceTapRef.current = onPriceTap;
 
   useEffect(() => {
     if (!mapContainer.current || !mapboxReady) return;
@@ -57,12 +268,12 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
       center: [config.center.lng, config.center.lat],
       zoom: config.zoom,
       bearing: 0,
-      pitch: 0,
+      pitch: 30,
       minZoom: 1,
       maxZoom: 18,
       attributionControl: false,
       failIfMajorPerformanceCaveat: false,
-      preserveDrawingBuffer: true,
+      preserveDrawingBuffer: false,
       antialias: false,
     });
 
@@ -74,12 +285,14 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
       e.preventDefault();
     });
     map.getCanvas().addEventListener('webglcontextrestored', () => {
+      map.resize();
       map.triggerRepaint();
     });
 
     /* ── Zoom-aware: remove/add markers to free GPU entirely ── */
     let markersVisible = true;
     let tVisible = true;
+    let cityBubblesVisible = false;
 
     map.on('zoom', () => {
       const zoom = map.getZoom();
@@ -105,6 +318,16 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
         if (tMarkerRef.current) tMarkerRef.current.addTo(map);
         tVisible = true;
       }
+
+      // City bubbles: show when zoom < 9, hide when >= 9
+      if (zoom < 9 && !cityBubblesVisible) {
+        cityMarkersRef.current.forEach(m => m.addTo(map));
+        cityBubblesVisible = true;
+      }
+      if (zoom >= 9 && cityBubblesVisible) {
+        cityMarkersRef.current.forEach(m => m.remove());
+        cityBubblesVisible = false;
+      }
     });
 
     // Set initial state in case map starts zoomed out
@@ -114,9 +337,11 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
     }
 
     map.on('load', () => {
+      // ── Event pill background image (SDF 1×1 pixel used with icon-text-fit) ──
+      const pillData = new Uint8Array([0, 0, 0, 217]); // rgba(0,0,0,0.85)
+      map.addImage('event-pill-bg', { width: 1, height: 1, data: pillData }, { sdf: true });
+
       // ── Power T — fixed geographic marker at UTK campus ──
-      // Stays at fixed coordinates; Mapbox handles positioning via transform.
-      // We ONLY touch opacity on the inner element for zoom-based fading.
       const tEl = document.createElement('div');
       tEl.className = 'power-t-marker';
       tEl.innerHTML = `<svg width="32" height="32" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
@@ -128,13 +353,384 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
         .setLngLat([-83.9295, 35.9544])
         .addTo(map);
 
-      // Prevent the Mapbox wrapper from ever transitioning its transform.
-      // getElement() returns the .mapboxgl-marker wrapper that Mapbox positions.
       const tWrapperEl = tMarker.getElement();
       tWrapperEl.style.transition = 'none';
       tWrapperEl.style.willChange = 'transform';
 
       tMarkerRef.current = tMarker;
+
+      // ── SEC city bubbles — visible at low zoom levels ──
+      const cityMarkers: mapboxgl.Marker[] = [];
+      SEC_BUBBLES.forEach((b) => {
+        const cityConfig = CITIES[b.key as CityKey];
+        if (!cityConfig) return;
+
+        const el = document.createElement('div');
+        el.style.cssText = 'cursor:pointer;display:flex;flex-direction:column;align-items:center;';
+        el.innerHTML = `<div style="width:44px;height:44px;border-radius:50%;background:${b.bg};border:3px solid ${b.border};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:${b.fontSize || '13px'};color:${b.text};font-family:Satoshi,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.4);">${b.abbrev}</div><span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 3px rgba(0,0,0,0.8);font-family:Satoshi,sans-serif;">${b.label}</span>`;
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onCityChangeRef.current?.(b.key as CityKey);
+        });
+
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([cityConfig.center.lng, cityConfig.center.lat]);
+
+        cityMarkers.push(marker);
+      });
+      cityMarkersRef.current = cityMarkers;
+
+      // If map starts zoomed out, show city bubbles immediately
+      if (map.getZoom() < 9) {
+        cityMarkers.forEach(m => m.addTo(map));
+        cityBubblesVisible = true;
+      }
+
+      // ── Route layers (gradient energy flow) ──
+      // Trail: faded gray line showing where user walked
+      map.addSource('route-trail', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'route-trail',
+        type: 'line',
+        source: 'route-trail',
+        paint: { 'line-color': '#8A8A95', 'line-width': 3, 'line-opacity': 0.15 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+
+      // Main route: gradient from user → destination
+      map.addSource('route-source', {
+        type: 'geojson',
+        lineMetrics: true,
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      // Glow layer (wide, blurred gradient)
+      map.addLayer({
+        id: 'route-glow',
+        type: 'line',
+        source: 'route-source',
+        paint: {
+          'line-width': 16,
+          'line-opacity': 0.3,
+          'line-blur': 6,
+          'line-gradient': [
+            'interpolate', ['linear'], ['line-progress'],
+            0, '#FFFFFF',
+            0.15, '#FF8200',
+            0.5, '#FF4500',
+            0.85, '#00D4FF',
+            1.0, '#00FF88',
+          ],
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+
+      // Main gradient line
+      map.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route-source',
+        paint: {
+          'line-width': 6,
+          'line-opacity': 0.9,
+          'line-gradient': [
+            'interpolate', ['linear'], ['line-progress'],
+            0, '#FFFFFF',
+            0.15, '#FF8200',
+            0.5, '#FF4500',
+            0.85, '#00D4FF',
+            1.0, '#00FF88',
+          ],
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+
+      // Particle dot that travels along the route
+      map.addSource('route-particle', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'route-particle-glow',
+        type: 'circle',
+        source: 'route-particle',
+        paint: { 'circle-radius': 12, 'circle-color': '#FFFFFF', 'circle-opacity': 0.4, 'circle-blur': 1 },
+      });
+      map.addLayer({
+        id: 'route-particle-dot',
+        type: 'circle',
+        source: 'route-particle',
+        paint: { 'circle-radius': 4, 'circle-color': '#FFFFFF', 'circle-opacity': 0.9 },
+      });
+
+      // ── Event GeoJSON layers — electric blue pulsing glow ──
+      map.addSource('events-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      // Radar ping ring 1 (fast, 3s cycle)
+      map.addLayer({
+        id: 'events-ping1',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 15,
+          'circle-color': 'transparent',
+          'circle-opacity': 0,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#00D4FF',
+          'circle-stroke-opacity': 0.5,
+        },
+      });
+
+      // Radar ping ring 2 (medium, 4.5s cycle, 1.5s offset)
+      map.addLayer({
+        id: 'events-ping2',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 15,
+          'circle-color': 'transparent',
+          'circle-opacity': 0,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#4FC3F7',
+          'circle-stroke-opacity': 0.5,
+        },
+      });
+
+      // Radar ping ring 3 (wide, 6s cycle, 2s offset) — third concentric ring
+      map.addLayer({
+        id: 'events-ping3',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 15,
+          'circle-color': 'transparent',
+          'circle-opacity': 0,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#4FC3F7',
+          'circle-stroke-opacity': 0.35,
+        },
+      });
+
+      // Layer 0: wide aura (very faint, animated at different speed)
+      map.addLayer({
+        id: 'events-aura',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': ['case', ['==', ['get', 'isFratEvent'], 1], 45, 50],
+          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#00D4FF'],
+          'circle-opacity': ['case', ['==', ['get', 'isFratEvent'], 1], 0.06, 0.03],
+          'circle-blur': 1,
+        },
+      });
+
+      // Layer 1: outermost glow
+      map.addLayer({
+        id: 'events-glow',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 35,
+          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#00D4FF'],
+          'circle-opacity': 0.08,
+          'circle-blur': 1,
+        },
+      });
+
+      // Layer 2: animated pulse ring
+      map.addLayer({
+        id: 'events-pulse',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 25,
+          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#00D4FF'],
+          'circle-opacity': 0.15,
+        },
+      });
+
+      // Layer 3: inner ring
+      map.addLayer({
+        id: 'events-ring',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 15,
+          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#0088FF'],
+          'circle-opacity': 0.3,
+        },
+      });
+
+      // Layer 4: core dot — electric green, larger and brighter
+      map.addLayer({
+        id: 'events-core',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 10,
+          'circle-color': '#00FF88',
+          'circle-opacity': 1,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-opacity': 0.9,
+        },
+      });
+
+      // Layer 5: event title + time label — solid pill background above marker
+      map.addLayer({
+        id: 'events-label',
+        type: 'symbol',
+        source: 'events-source',
+        minzoom: 11,
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['Arial Unicode MS Bold'],
+          'text-size': 13,
+          'text-offset': [0, -4.2],
+          'text-anchor': 'bottom',
+          'text-max-width': 14,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'text-line-height': 1.3,
+          'text-letter-spacing': 0.02,
+          // Pill background via 1px SDF image stretched to text bounds
+          'icon-image': 'event-pill-bg',
+          'icon-text-fit': 'both',
+          'icon-text-fit-padding': [6, 12, 6, 12],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#FFFFFF',
+          'text-halo-color': 'rgba(79,195,247,0.35)',
+          'text-halo-width': 1,
+          'icon-color': 'rgba(0,0,0,0.88)',
+          'icon-opacity': 1,
+        },
+      });
+
+      // ── User location dot ──
+      map.addSource('user-location', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      // Accuracy circle (very faint)
+      map.addLayer({
+        id: 'user-accuracy',
+        type: 'circle',
+        source: 'user-location',
+        paint: {
+          'circle-radius': ['get', 'accuracyRadius'],
+          'circle-color': '#FF8200',
+          'circle-opacity': 0.05,
+        },
+      });
+
+      // Pulse ring (animated)
+      map.addLayer({
+        id: 'user-pulse',
+        type: 'circle',
+        source: 'user-location',
+        paint: {
+          'circle-radius': 10,
+          'circle-color': '#FF8200',
+          'circle-opacity': 0.3,
+        },
+      });
+
+      // Inner dot (white with orange border)
+      map.addLayer({
+        id: 'user-dot',
+        type: 'circle',
+        source: 'user-location',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#FFFFFF',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#FF8200',
+        },
+      });
+
+      // ── 3D Buildings (hidden by default, shown when pitch > 20) ──
+      map.addLayer({
+        id: '3d-buildings',
+        source: 'composite',
+        'source-layer': 'building',
+        filter: ['==', 'extrude', 'true'],
+        type: 'fill-extrusion',
+        minzoom: 14,
+        paint: {
+          'fill-extrusion-color': '#1a1a2e',
+          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-base': ['get', 'min_height'],
+          'fill-extrusion-opacity': 0,  // starts hidden, fades in with pitch
+        },
+      });
+
+      // ── Night sky (visible when pitch > 30) ──
+      map.addLayer({
+        id: 'sky',
+        type: 'sky',
+        paint: {
+          'sky-type': 'atmosphere',
+          'sky-atmosphere-sun': [0, -20],
+          'sky-atmosphere-sun-intensity': 2,
+          'sky-atmosphere-color': '#0D0D12',
+        },
+      });
+
+      // ── Nighttime atmosphere: darken water, parks, roads ──
+      try {
+        map.setPaintProperty('water', 'fill-color', '#0a0a14');
+      } catch { /* layer may not exist in style */ }
+      try {
+        map.setPaintProperty('landuse', 'fill-color', '#0d1a0d');
+      } catch { /* layer may not exist */ }
+
+      // ── Activity particles (fireflies between venues) ──
+      map.addSource('activity-particles', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'activity-particles-glow',
+        type: 'circle',
+        source: 'activity-particles',
+        minzoom: 12,
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#FF8200',
+          'circle-opacity': 0.15,
+          'circle-blur': 1,
+        },
+      });
+      map.addLayer({
+        id: 'activity-particles-dot',
+        type: 'circle',
+        source: 'activity-particles',
+        minzoom: 12,
+        paint: {
+          'circle-radius': 2,
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.5,
+        },
+      });
 
       setMapLoaded(true);
     });
@@ -142,13 +738,55 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
     mapRef.current = map;
     if (mapInstanceRef) mapInstanceRef.current = map;
 
+    // ── Fix black tiles: resize on visibility change, window resize, app foreground ──
+    const handleResize = () => {
+      if (mapRef.current) {
+        mapRef.current.resize();
+        mapRef.current.triggerRepaint();
+      }
+    };
+
+    // Tab becomes visible (user switches back to Tonight tab — display:none → visible)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        // Small delay lets the layout settle after display:none is removed
+        setTimeout(handleResize, 100);
+      }
+    };
+
+    // App returns from background on iOS (Capacitor fires resume)
+    const handleResume = () => { setTimeout(handleResize, 100); };
+
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('visibilitychange', handleVisibility);
+    document.addEventListener('resume', handleResume);
+
+    // Also observe the container becoming visible (catches tab switches via className='hidden')
+    let resizeObserver: ResizeObserver | null = null;
+    if (mapContainer.current) {
+      resizeObserver = new ResizeObserver(() => {
+        // Only fire when container has non-zero dimensions (became visible)
+        if (mapContainer.current && mapContainer.current.offsetHeight > 0) {
+          handleResize();
+        }
+      });
+      resizeObserver.observe(mapContainer.current);
+    }
+
     return () => {
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      document.removeEventListener('resume', handleResume);
+      resizeObserver?.disconnect();
+      cancelAnimationFrame(animFrameRef.current);
       markersRef.current.forEach(entry => entry.marker.remove());
       markersRef.current.clear();
       if (tMarkerRef.current) {
         tMarkerRef.current.remove();
         tMarkerRef.current = null;
       }
+      cityMarkersRef.current.forEach(m => m.remove());
+      cityMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
       if (mapInstanceRef) mapInstanceRef.current = null;
@@ -159,20 +797,36 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
   useEffect(() => {
     if (!mapRef.current || !mapLoaded) return;
     const map = mapRef.current;
-    const handleClick = () => { onMapTap?.(); };
+    const handleClick = (e: mapboxgl.MapMouseEvent) => {
+      // Don't dismiss cards when tapping on event markers
+      const hitLayers = EVENT_LAYERS.filter(l => map.getLayer(l));
+      if (hitLayers.length > 0) {
+        const hits = map.queryRenderedFeatures(e.point, { layers: hitLayers as unknown as string[] });
+        if (hits.length > 0) return;
+      }
+      onMapTap?.();
+    };
     map.on('click', handleClick);
     return () => { map.off('click', handleClick); };
   }, [mapLoaded, onMapTap]);
 
   useEffect(() => {
     if (!mapRef.current || !mapLoaded) return;
+    const map = mapRef.current;
     const config = CITIES[city];
-    mapRef.current.flyTo({
+    map.flyTo({
       center: [config.center.lng, config.center.lat],
       zoom: config.zoom,
       duration: 1500,
       essential: true,
     });
+    // Force re-render after fly completes to fix black tiles
+    const onMoveEnd = () => {
+      map.resize();
+      map.triggerRepaint();
+      map.off('moveend', onMoveEnd);
+    };
+    map.on('moveend', onMoveEnd);
   }, [city, mapLoaded]);
 
   const syncMarkers = useCallback(() => {
@@ -193,31 +847,117 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
       el.className = 'venue-marker';
       el.setAttribute('data-venue-id', venue.id);
 
-      const dotEl = document.createElement('div');
-      dotEl.className = 'venue-dot dot-t0';
+      // Main bubble
+      const bubbleEl = document.createElement('div');
+      bubbleEl.className = 'venue-bubble';
+      const initVisuals = getVenueVisuals(0);
+      bubbleEl.style.width = `${initVisuals.size}px`;
+      bubbleEl.style.height = `${initVisuals.size}px`;
+      bubbleEl.style.background = initVisuals.color;
+      bubbleEl.style.boxShadow = initVisuals.glow;
 
+      // Count inside bubble
       const countEl = document.createElement('span');
-      countEl.className = 'venue-count';
-      dotEl.appendChild(countEl);
+      countEl.className = 'venue-bubble-count';
+      bubbleEl.appendChild(countEl);
 
+      // Outer ring (hidden by default, shown for active venues)
+      const ringEl = document.createElement('div');
+      ringEl.className = 'venue-ring';
+      ringEl.style.display = 'none';
+
+      // Second ring (hidden by default, shown for 100+ double ring)
+      const ring2El = document.createElement('div');
+      ring2El.className = 'venue-ring';
+      ring2El.style.display = 'none';
+
+      // Heat glow (hidden by default, shown for active venues)
+      const glowEl = document.createElement('div');
+      glowEl.className = 'venue-heat-glow';
+      glowEl.style.display = 'none';
+
+      // Orbiting particles (hidden by default, shown for 100+)
+      const particlesEl = document.createElement('div');
+      particlesEl.className = 'venue-particles';
+      particlesEl.style.display = 'none';
+      particlesEl.innerHTML = '<i class="vp vp1"></i><i class="vp vp2"></i><i class="vp vp3"></i>';
+
+      // Cover charge bubble
+      const coverEl = document.createElement('div');
+      coverEl.className = 'venue-cover-bubble';
+      const initCover = venue.cover_charge;
+      coverEl.textContent = initCover ? getCoverLabel(initCover) : 'FREE';
+      bubbleEl.appendChild(coverEl);
+
+      // Featured badge (crown emoji, top-left of bubble)
+      const featuredBadgeEl = document.createElement('div');
+      featuredBadgeEl.className = 'venue-featured-badge';
+      featuredBadgeEl.textContent = '\u{1F451}';
+      featuredBadgeEl.style.display = 'none';
+      bubbleEl.appendChild(featuredBadgeEl);
+
+      // Label below
       const labelEl = document.createElement('div');
       labelEl.className = 'venue-label';
       labelEl.textContent = getShortName(venue.name);
 
+      // Featured label below venue name
+      const featuredLabelEl = document.createElement('div');
+      featuredLabelEl.className = 'venue-featured-label';
+      featuredLabelEl.style.display = 'none';
+
+      // Live badge
       const liveEl = document.createElement('div');
       liveEl.className = 'venue-live-badge';
       liveEl.innerHTML = '<span class="blink"></span>LIVE';
       liveEl.style.display = 'none';
 
-      const coverEl = document.createElement('div');
-      coverEl.className = 'venue-cover-bubble';
-      const initCover = venue.cover_charge;
-      coverEl.textContent = initCover ? getCoverLabel(initCover) : 'FREE';
+      // Cover price tag (hidden by default, shown when covers are active)
+      const priceTagEl = document.createElement('div');
+      priceTagEl.className = 'venue-price-tag';
+      priceTagEl.style.display = 'none';
+      priceTagEl.style.pointerEvents = 'auto';
+      priceTagEl.style.cursor = 'pointer';
+      priceTagEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onPriceTapRef.current?.(venue.id, venue.name);
+      });
 
-      dotEl.appendChild(coverEl);
-      el.appendChild(dotEl);
+      el.appendChild(glowEl);
+      el.appendChild(particlesEl);
+      el.appendChild(ring2El);
+      el.appendChild(ringEl);
+      el.appendChild(bubbleEl);
       el.appendChild(labelEl);
+      el.appendChild(featuredLabelEl);
       el.appendChild(liveEl);
+      el.appendChild(priceTagEl);
+
+      // Initialize featured state
+      const isFeatured = !!venue.featured;
+      if (isFeatured) {
+        featuredBadgeEl.style.display = 'flex';
+        if (venue.featured_label) {
+          featuredLabelEl.textContent = venue.featured_label;
+          featuredLabelEl.style.display = 'block';
+        }
+        // Apply featured base visuals
+        bubbleEl.style.background = 'linear-gradient(135deg, #7C3AED, #A855F7)';
+        bubbleEl.style.width = '44px';
+        bubbleEl.style.height = '44px';
+        bubbleEl.style.boxShadow = '0 0 20px rgba(168, 85, 247, 0.6)';
+        setAnim(bubbleEl, 'featured-breathe 3s ease-in-out infinite');
+      }
+
+      // Initialize fraternity styling
+      if (venue.category === 'fraternity' && !isFeatured) {
+        bubbleEl.style.background = 'linear-gradient(135deg, #F5F0EB, #EDE8E0)';
+        bubbleEl.style.border = '2px solid #C9A96E';
+        bubbleEl.style.boxShadow = '0 0 12px rgba(201, 169, 110, 0.3), 0 4px 12px rgba(0, 0, 0, 0.6)';
+        countEl.style.color = '#C9A96E';
+        countEl.style.textShadow = '0 0 10px rgba(201, 169, 110, 0.8)';
+        labelEl.style.color = '#F5F0EB';
+      }
 
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -227,63 +967,304 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
       const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
         .setLngLat([venue.lng, venue.lat]);
 
-      // Only attach to map if markers are currently visible (zoom >= 12)
       if (markersVisibleRef.current) {
         marker.addTo(mapRef.current!);
       }
 
-      // Lock the Mapbox wrapper so CSS transitions never catch its transform.
-      // Belt-and-suspenders with the CSS rule — this also covers browsers
-      // that don't support :has().
       const wrapperEl = marker.getElement();
       wrapperEl.style.transition = 'none';
       wrapperEl.style.willChange = 'transform';
 
       markersRef.current.set(venue.id, {
-        marker, el, dotEl, countEl, labelEl, liveEl, coverEl,
-        currentTier: 'dot-t0', currentCount: 0,
+        marker, el, bubbleEl, glowEl, particlesEl, ringEl, ring2El, countEl, labelEl, featuredBadgeEl, featuredLabelEl, liveEl, coverEl, priceTagEl,
+        currentStage: 0, currentCount: 0, isFeatured, isFraternity: venue.category === 'fraternity', hasEvent: false,
       });
     });
   }, [venues, mapLoaded]);
 
   useEffect(() => { syncMarkers(); }, [syncMarkers]);
 
+  // ── Filter pill visibility — show/hide markers via CSS, never delete them ──
   useEffect(() => {
+    if (!mapLoaded) return;
+    markersRef.current.forEach((entry, venueId) => {
+      const venue = venuesRef.current.find(v => v.id === venueId);
+      if (!venue) return;
+      const visible = !venueFilter || venueFilter === 'all'
+        || (venueFilter === 'bars' && venue.category !== 'fraternity')
+        || (venueFilter === 'greek' && venue.category === 'fraternity');
+      entry.el.style.display = visible ? '' : 'none';
+    });
+  }, [venueFilter, mapLoaded]);
+
+  // ── Fetch walking routes for activity particles ──
+  useEffect(() => {
+    if (!mapLoaded) return;
+    // Collect active venues (headcount > 0)
+    const active: { id: string; lng: number; lat: number }[] = [];
+    for (const v of venues) {
+      if ((counts[v.id] ?? 0) > 0) active.push({ id: v.id, lng: v.lng, lat: v.lat });
+    }
+    if (active.length < 2) return;
+
+    fetchRoutesForParticles(active, mapboxToken, routeCacheRef.current).then(cache => {
+      routeCacheRef.current = cache;
+      // Reset particles so they pick up new routes
+      particlesRef.current = [];
+    });
+  }, [venues, counts, mapLoaded]);
+
+  // ── Map entrance animation: dramatic city reveal on first load ──
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded || entrancePlayedRef.current) return;
+    if (venues.length === 0) return; // wait for venues
+    entrancePlayedRef.current = true;
+    const map = mapRef.current;
+
+    // Start high, sweep down into city
+    const config = CITIES[city];
+    map.jumpTo({ center: [config.center.lng, config.center.lat], zoom: 4, pitch: 0, bearing: 0 });
+
+    // Hide all venue markers initially
+    markersRef.current.forEach(entry => {
+      entry.el.style.opacity = '0';
+      entry.el.style.transform = 'scale(0.5)';
+    });
+
+    // Dramatic fly-in
+    setTimeout(() => {
+      map.flyTo({
+        center: [config.center.lng, config.center.lat],
+        zoom: config.zoom,
+        pitch: 30,
+        duration: 2200,
+        essential: true,
+      });
+
+      // Stagger venue marker reveals after fly starts settling
+      setTimeout(() => {
+        let i = 0;
+        markersRef.current.forEach(entry => {
+          setTimeout(() => {
+            entry.el.style.transition = 'opacity 300ms ease-out, transform 300ms ease-out';
+            entry.el.style.opacity = '1';
+            entry.el.style.transform = 'scale(1)';
+          }, i * 50);
+          i++;
+        });
+      }, 1400); // start revealing during the last part of the fly
+    }, 200);
+  }, [mapLoaded, venues.length, city]);
+
+  // ── Apply heat map visuals based on headcounts ──
+  useEffect(() => {
+    // Build set of venue IDs with active events
+    const eventVenueIds = new Set<string>();
+    if (events) {
+      for (const evt of events) {
+        if (evt.venue_id && evt.is_active) eventVenueIds.add(evt.venue_id);
+      }
+    }
+
     markersRef.current.forEach((entry, venueId) => {
       const count = counts[venueId] ?? 0;
       const isLive = liveVenueIds.has(venueId);
       const isPulsed = pulsedVenueId === venueId;
-      const newTier = getDotTier(count);
+      const hasEvent = eventVenueIds.has(venueId);
+      const visuals = getVenueVisuals(count);
 
-      if (newTier !== entry.currentTier) {
-        entry.dotEl.classList.remove(entry.currentTier);
-        entry.dotEl.classList.add(newTier);
-        entry.currentTier = newTier;
+      // Update bubble visuals when stage changes
+      if (visuals.stage !== entry.currentStage) {
+        if (entry.isFeatured) {
+          // Featured: always purple gradient, min 44px, special glow
+          const featuredSize = Math.max(44, visuals.size);
+          entry.bubbleEl.style.width = `${featuredSize}px`;
+          entry.bubbleEl.style.height = `${featuredSize}px`;
+          entry.bubbleEl.style.background = 'linear-gradient(135deg, #7C3AED, #A855F7)';
+          entry.bubbleEl.style.boxShadow = count > 0
+            ? '0 0 30px rgba(168, 85, 247, 0.8)'
+            : '0 0 20px rgba(168, 85, 247, 0.6)';
+          setAnim(entry.bubbleEl, 'featured-breathe 3s ease-in-out infinite');
+          entry.bubbleEl.style.fontSize = visuals.fontSize;
+          // Adjust label for featured size
+          entry.labelEl.style.top = `${featuredSize / 2 + 6}px`;
+          entry.featuredLabelEl.style.top = `${featuredSize / 2 + 20}px`;
+        } else if (entry.isFraternity) {
+          // Fraternity: marble white with gold glow
+          entry.bubbleEl.style.width = `${visuals.size}px`;
+          entry.bubbleEl.style.height = `${visuals.size}px`;
+          entry.bubbleEl.style.background = 'linear-gradient(135deg, #F5F0EB, #EDE8E0)';
+          const fratGlow = count > 0
+            ? `0 0 ${12 + visuals.stage * 5}px rgba(201, 169, 110, 0.5), 0 4px 12px rgba(0,0,0,0.6)`
+            : '0 0 10px rgba(201, 169, 110, 0.25), 0 4px 12px rgba(0,0,0,0.6)';
+          entry.bubbleEl.style.boxShadow = fratGlow;
+          setAnim(entry.bubbleEl, visuals.pulse);
+          entry.bubbleEl.style.fontSize = visuals.fontSize;
+          entry.countEl.style.color = '#C9A96E';
+        } else {
+          entry.bubbleEl.style.width = `${visuals.size}px`;
+          entry.bubbleEl.style.height = `${visuals.size}px`;
+          entry.bubbleEl.style.background = visuals.color;
+          entry.bubbleEl.style.boxShadow = visuals.glow;
+          setAnim(entry.bubbleEl, visuals.pulse);
+          entry.bubbleEl.style.fontSize = visuals.fontSize;
+        }
+
+        // Tiered pulse rings for all active venues
+        if (count > 0) {
+          const ringColor = entry.isFraternity ? '#C9A96E' : visuals.color;
+          const ringSize = visuals.size + 16;
+          entry.ringEl.style.display = 'block';
+          entry.ringEl.style.width = `${ringSize}px`;
+          entry.ringEl.style.height = `${ringSize}px`;
+          entry.ringEl.style.border = `2px solid ${ringColor}`;
+
+          if (count <= 15) {
+            // Slow single ring
+            setAnim(entry.ringEl, 'ring-slow 2.5s ease-out infinite');
+            entry.ring2El.style.display = 'none';
+          } else if (count <= 50) {
+            // Medium single ring
+            setAnim(entry.ringEl, 'ring-medium 2s ease-out infinite');
+            entry.ring2El.style.display = 'none';
+          } else if (count <= 100) {
+            // Fast single ring
+            setAnim(entry.ringEl, 'ring-fast 1.5s ease-out infinite');
+            entry.ring2El.style.display = 'none';
+          } else {
+            // 100+: DOUBLE ring + glow
+            setAnim(entry.ringEl, 'ring-double-inner 1.2s ease-out infinite');
+            entry.ring2El.style.display = 'block';
+            entry.ring2El.style.width = `${ringSize + 8}px`;
+            entry.ring2El.style.height = `${ringSize + 8}px`;
+            entry.ring2El.style.border = `2px solid ${visuals.color}`;
+            setAnim(entry.ring2El, 'ring-double-outer 1.2s ease-out infinite 0.3s');
+            // Glowing box-shadow matching bubble color
+            entry.bubbleEl.style.boxShadow = `${visuals.glow}, 0 0 20px ${visuals.color}40`;
+          }
+        } else {
+          entry.ringEl.style.display = 'none';
+          entry.ring2El.style.display = 'none';
+        }
+
+        // Heat glow behind ALL active venue bubbles (+ featured always-on)
+        // Uses radial-gradient instead of filter:blur() for iOS WKWebView compat
+        const glowColor = entry.isFeatured ? '#A855F7' : entry.isFraternity ? '#C9A96E' : visuals.color;
+        const applyGlow = (sz: number, opacity: number) => {
+          entry.glowEl.style.display = 'block';
+          entry.glowEl.style.width = `${sz}px`;
+          entry.glowEl.style.height = `${sz}px`;
+          entry.glowEl.style.background = `radial-gradient(circle, ${glowColor} 0%, transparent 70%)`;
+          entry.glowEl.style.opacity = String(opacity);
+          entry.glowEl.style.filter = 'none';
+          setAnim(entry.glowEl, 'heat-glow-breathe 4s ease-in-out infinite');
+        };
+        if (entry.isFeatured && count === 0) {
+          applyGlow(84, 0.35);
+        } else if (count >= 100) {
+          const sz = (entry.isFeatured ? Math.max(44, visuals.size) : visuals.size) + 80;
+          applyGlow(sz, 0.5);
+        } else if (count >= 51) {
+          const sz = (entry.isFeatured ? Math.max(44, visuals.size) : visuals.size) + 55;
+          applyGlow(sz, 0.4);
+        } else if (count >= 16) {
+          const sz = (entry.isFeatured ? Math.max(44, visuals.size) : visuals.size) + 35;
+          applyGlow(sz, 0.3);
+        } else if (count >= 1) {
+          const sz = (entry.isFeatured ? Math.max(44, visuals.size) : visuals.size) + 20;
+          applyGlow(sz, 0.2);
+        } else {
+          entry.glowEl.style.display = 'none';
+        }
+
+        // Orbiting particles for 100+ headcount
+        if (count >= 100) {
+          entry.particlesEl.style.display = 'block';
+          // Set particle color via CSS custom property
+          entry.particlesEl.style.setProperty('--pc', glowColor);
+        } else {
+          entry.particlesEl.style.display = 'none';
+        }
+
+        // Adjust label position based on bubble size (non-featured)
+        if (!entry.isFeatured) {
+          entry.labelEl.style.top = `${visuals.size / 2 + 6}px`;
+        }
+
+        // Inner glow class for active bubbles
+        if (count > 0 || entry.isFeatured) {
+          entry.bubbleEl.classList.add('active-glow');
+        } else {
+          entry.bubbleEl.classList.remove('active-glow');
+        }
+
+        entry.currentStage = visuals.stage;
       }
 
+      // ── Event-charged venue override ──
+      // When a venue has an active event, turn the dot electric blue
+      if (hasEvent !== entry.hasEvent) {
+        entry.hasEvent = hasEvent;
+        if (hasEvent && !entry.isFeatured) {
+          entry.bubbleEl.style.background = '#00D4FF';
+          entry.bubbleEl.style.boxShadow = '0 0 16px rgba(0, 212, 255, 0.6)';
+          setAnim(entry.bubbleEl, 'event-charged-pulse 2s ease-in-out infinite');
+          // Also tint the DOM ring blue if visible
+          if (count > 0) {
+            entry.ringEl.style.border = '2px solid #00D4FF';
+            if (entry.ring2El.style.display === 'block') {
+              entry.ring2El.style.border = '2px solid #00D4FF';
+            }
+          }
+          // Tint glow blue
+          if (entry.glowEl.style.display !== 'none') {
+            entry.glowEl.style.background = 'radial-gradient(circle, #00D4FF 0%, transparent 70%)';
+          }
+        } else if (!hasEvent && !entry.isFeatured) {
+          // Revert to normal — force stage recalc next cycle
+          entry.bubbleEl.style.background = visuals.color;
+          entry.bubbleEl.style.boxShadow = visuals.glow;
+          setAnim(entry.bubbleEl, visuals.pulse);
+          if (count > 0) {
+            entry.ringEl.style.border = `2px solid ${visuals.color}`;
+          }
+        }
+      }
+
+      // Update count text with animated ticker + font size
       if (count !== entry.currentCount) {
-        entry.countEl.textContent = count > 0 ? formatCount(count) : '';
-        entry.countEl.classList.remove('bumping');
-        void entry.countEl.offsetWidth;
-        entry.countEl.classList.add('bumping');
+        entry.bubbleEl.style.fontSize = visuals.fontSize;
+        if (visuals.showCount) {
+          animateCountTo(entry.countEl, entry.currentCount, count, formatCount);
+        } else {
+          entry.countEl.textContent = '';
+        }
+        if (count > 0 && entry.currentCount > 0) {
+          entry.countEl.classList.remove('bumping');
+          void entry.countEl.offsetWidth;
+          entry.countEl.classList.add('bumping');
+        }
         entry.currentCount = count;
       }
 
+      // Live badge
       entry.liveEl.style.display = isLive ? 'flex' : 'none';
-      if (isLive) entry.dotEl.classList.add('live-ring');
-      else entry.dotEl.classList.remove('live-ring');
 
+      // Pulsed venue feedback
       if (isPulsed) {
-        entry.dotEl.classList.add('count-updated');
-        setTimeout(() => entry.dotEl.classList.remove('count-updated'), 500);
+        entry.bubbleEl.style.transition = 'none';
+        entry.bubbleEl.style.transform = 'translate(-50%, -50%) scale(1.2)';
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            entry.bubbleEl.style.transition = 'transform 0.4s ease-out';
+            entry.bubbleEl.style.transform = 'translate(-50%, -50%) scale(1)';
+          });
+        });
       }
-
     });
+  }, [counts, liveVenueIds, pulsedVenueId, events, mapLoaded]);
 
-  }, [counts, liveVenueIds, pulsedVenueId, mapLoaded]);
-
-  // ── Cover bubble sync — dedicated effect watching ONLY venues ──
-  // Mirrors the headcount pattern: state changes → effect fires → DOM updates
+  // ── Cover bubble sync ──
   useEffect(() => {
     if (!mapLoaded) return;
 
@@ -298,6 +1279,446 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
     });
   }, [venues, mapLoaded]);
 
+  // ── Cover price tags on venue markers ──
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const priceCount = coverPrices?.size ?? 0;
+    if (priceCount > 0) console.debug(`[covers] Rendering ${priceCount} price tags`);
+    markersRef.current.forEach((entry, venueId) => {
+      const info = coverPrices?.get(venueId);
+      if (!info) { entry.priceTagEl.style.display = 'none'; return; }
+
+      entry.priceTagEl.style.display = 'flex';
+
+      if (info.isSoldOut) {
+        // Sold out state
+        entry.priceTagEl.innerHTML = `<span class="pt-price" style="color:#FF2D05">SOLD OUT</span>`;
+        entry.priceTagEl.classList.remove('pt-urgency');
+      } else if (info.isFlat) {
+        // Flat price — no arrow, no remaining
+        entry.priceTagEl.innerHTML = `<span class="pt-price">${formatCoverPriceShort(info.currentPrice)}</span><span class="pt-remaining">${info.coversRemaining} left</span>`;
+        entry.priceTagEl.classList.remove('pt-urgency');
+      } else {
+        // Dynamic pricing — full ticker
+        const arrow = info.priceDirection === 'up' ? '\u2191' : info.priceDirection === 'down' ? '\u2193' : '\u2192';
+        const arrowColor = info.priceDirection === 'up' ? '#00FF88' : info.priceDirection === 'down' ? '#FF8200' : '#8A8A95';
+        const pctRemaining = info.capacity > 0 ? (info.coversRemaining / info.capacity) * 100 : 100;
+        const urgentText = pctRemaining < 20 ? '\uD83D\uDD25 Almost gone!' : `${info.coversRemaining} left`;
+        const isFratVenue = entry.isFraternity;
+        const priceColor = isFratVenue ? '#C9A96E' : info.priceColor;
+        entry.priceTagEl.innerHTML = `<span class="pt-price" style="color:${priceColor}">${formatCoverPriceShort(info.currentPrice)}</span><span class="pt-arrow" style="color:${arrowColor}">${arrow}</span><span class="pt-remaining" style="${pctRemaining < 20 ? 'color:#FF2D05' : ''}">${urgentText}</span>`;
+        // Urgency: price within 80% of range from base→cap
+        const priceRange = info.capPrice - info.basePrice;
+        const isNearMax = priceRange > 0 && (info.currentPrice - info.basePrice) / priceRange >= 0.8;
+        entry.priceTagEl.classList.toggle('pt-urgency', isNearMax || pctRemaining < 20);
+        // Flash on price change
+        if (info.currentPrice !== info.previousPrice) {
+          entry.priceTagEl.classList.remove('pt-flash-up', 'pt-flash-down');
+          void entry.priceTagEl.offsetWidth;
+          entry.priceTagEl.classList.add(info.priceDirection === 'up' ? 'pt-flash-up' : 'pt-flash-down');
+        }
+      }
+    });
+  }, [coverPrices, mapLoaded]);
+
+  // ── Ambient strip glow — subtle warmth when 3+ venues are active in Knoxville Strip ──
+  const stripGlowRef = useRef<mapboxgl.Marker | null>(null);
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+
+    // The Strip: Cumberland Ave area
+    const STRIP_CENTER: [number, number] = [-83.9285, 35.9579];
+    const STRIP_RADIUS = 0.008; // ~0.5 miles in degrees
+
+    // Count active venues near the strip
+    let activeInStrip = 0;
+    venues.forEach(v => {
+      const dlat = Math.abs(v.lat - STRIP_CENTER[1]);
+      const dlng = Math.abs(v.lng - STRIP_CENTER[0]);
+      if (dlat < STRIP_RADIUS && dlng < STRIP_RADIUS && (counts[v.id] ?? 0) > 0) {
+        activeInStrip++;
+      }
+    });
+
+    if (activeInStrip >= 3) {
+      if (!stripGlowRef.current) {
+        const el = document.createElement('div');
+        el.className = 'strip-ambient-glow';
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(STRIP_CENTER)
+          .addTo(mapRef.current);
+        const wrapperEl = marker.getElement();
+        wrapperEl.style.transition = 'none';
+        wrapperEl.style.willChange = 'transform';
+        stripGlowRef.current = marker;
+      }
+    } else {
+      if (stripGlowRef.current) {
+        stripGlowRef.current.remove();
+        stripGlowRef.current = null;
+      }
+    }
+  }, [venues, counts, mapLoaded]);
+
+  // ── Update event GeoJSON source when events or venues change ──
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    const source = mapRef.current.getSource('events-source') as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+    source.setData(buildEventsGeoJSON(events ?? [], venues));
+  }, [events, venues, mapLoaded]);
+
+  // ── Update route source when route prop changes ──
+  const prevRouteRef = useRef<GeoJSON.LineString | null>(null);
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    const map = mapRef.current;
+    const source = map.getSource('route-source') as mapboxgl.GeoJSONSource | undefined;
+    const trailSource = map.getSource('route-trail') as mapboxgl.GeoJSONSource | undefined;
+    const particleSource = map.getSource('route-particle') as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    if (route) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: route, properties: {} }],
+      });
+
+      // Build trail from walked portion (difference between full and current visible)
+      if (trailSource && prevRouteRef.current && userLocation) {
+        const fullCoords = prevRouteRef.current.coordinates as [number, number][];
+        const currentCoords = route.coordinates as [number, number][];
+        // Trail = full route coords up to where current route starts
+        if (fullCoords.length > currentCoords.length + 2) {
+          const trailEnd = fullCoords.length - currentCoords.length + 1;
+          const trailCoords = fullCoords.slice(0, trailEnd);
+          if (trailCoords.length >= 2) {
+            trailSource.setData({
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: trailCoords }, properties: {} }],
+            });
+          }
+        }
+      }
+
+      // Fit map to route bounds with padding (only on first set, not every update)
+      if (!prevRouteRef.current) {
+        const coords = route.coordinates as [number, number][];
+        if (coords.length > 1) {
+          const bounds = coords.reduce(
+            (b, c) => b.extend(c),
+            new mapboxgl.LngLatBounds(coords[0], coords[0]),
+          );
+          map.fitBounds(bounds, { padding: { top: 100, bottom: 120, left: 50, right: 50 }, duration: 600 });
+        }
+      }
+      prevRouteRef.current = route;
+      routeCoordsRef.current = route.coordinates as [number, number][];
+    } else {
+      source.setData({ type: 'FeatureCollection', features: [] });
+      trailSource?.setData({ type: 'FeatureCollection', features: [] });
+      particleSource?.setData({ type: 'FeatureCollection', features: [] });
+      prevRouteRef.current = null;
+      routeCoordsRef.current = null;
+    }
+  }, [route, mapLoaded, userLocation]);
+
+  // ── Update user location dot ──
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    const source = mapRef.current.getSource('user-location') as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    if (userLocation) {
+      // Convert accuracy (meters) to a rough pixel radius at current zoom
+      // At zoom 15, ~1 meter ≈ 0.5px. Scale logarithmically.
+      const metersPerPx = 156543.03 * Math.cos(userLocation.lat * Math.PI / 180) / Math.pow(2, mapRef.current.getZoom());
+      const accuracyRadius = Math.min(Math.max(userLocation.accuracy / metersPerPx, 8), 100);
+
+      source.setData({
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [userLocation.lng, userLocation.lat] },
+          properties: { accuracyRadius },
+        }],
+      });
+    } else {
+      source.setData({ type: 'FeatureCollection', features: [] });
+    }
+  }, [userLocation, mapLoaded]);
+
+  // ── Follow-mode: center/bearing on user location with cinematic transitions ──
+  const prevFollowRef = useRef<string>('free');
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded || !userLocation) return;
+    const map = mapRef.current;
+    const wasMode = prevFollowRef.current;
+    prevFollowRef.current = followMode ?? 'free';
+
+    if (followMode === 'free') {
+      // Don't snap pitch/bearing on exit — user may be exploring in 3D.
+      // Pitch resets naturally when they cycle back to 'center' mode.
+      return;
+    }
+
+    if (followMode === 'center') {
+      // Settle to default tilt, north-up, centered on user
+      map.easeTo({
+        center: [userLocation.lng, userLocation.lat],
+        pitch: 30,
+        bearing: 0,
+        duration: wasMode === 'bearing' ? 800 : 500,
+      });
+    } else if (followMode === 'bearing') {
+      // Cinematic sweep into 3D — pitch up, zoom in
+      map.easeTo({
+        center: [userLocation.lng, userLocation.lat],
+        pitch: 50,
+        zoom: Math.max(map.getZoom(), 15.5),
+        duration: 800,
+      });
+    }
+  }, [userLocation, followMode, mapLoaded]);
+
+  // Enable/disable rotation based on follow mode.
+  // In center mode: disable rotation for clean north-up.
+  // In free or bearing mode: enable full gestures for 3D exploration.
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    const map = mapRef.current;
+    const is3D = followMode !== 'center';
+    if (is3D) {
+      map.dragRotate.enable();
+      map.touchZoomRotate.enableRotation();
+      map.touchPitch.enable();
+    } else {
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
+      map.touchPitch.disable();
+    }
+  }, [followMode, mapLoaded]);
+
+  // Detect user drag → reset to free mode
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    const map = mapRef.current;
+    const handleDrag = () => { onUserDragMap?.(); };
+    map.on('dragstart', handleDrag);
+    return () => { map.off('dragstart', handleDrag); };
+  }, [mapLoaded, onUserDragMap]);
+
+  // ── Unified animation loop — optimized for 30fps paint updates + 60fps particle ──
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    const map = mapRef.current;
+    let lastPaintFrame = 0;
+
+    // Cache layer existence checks (layers don't appear/disappear at runtime)
+    const hasEventPulse = !!map.getLayer('events-pulse');
+    const hasEventAura = !!map.getLayer('events-aura');
+    const hasEventGlow = !!map.getLayer('events-glow');
+    const hasPing1 = !!map.getLayer('events-ping1');
+    const hasPing2 = !!map.getLayer('events-ping2');
+    const hasPing3 = !!map.getLayer('events-ping3');
+    const hasUserPulse = !!map.getLayer('user-pulse');
+    let skipSecondary = false; // skip non-critical animations when frame budget exceeded
+    let lastFrameTime = 0;
+
+    function animate() {
+      const now = performance.now();
+
+      // ── Paint property updates throttled to ~30fps (every 33ms) ──
+      if (now - lastPaintFrame > 33) {
+        lastPaintFrame = now;
+
+        // Frame budget monitor: if last frame was slow, skip secondary animations
+        if (lastFrameTime > 16) {
+          skipSecondary = true;
+          // Also reduce particle count
+          if (particlesRef.current.length > 10) {
+            particlesRef.current.length = Math.floor(particlesRef.current.length / 2);
+          }
+        } else {
+          skipSecondary = false;
+        }
+
+        // Event pulse — 2s cycle
+        const sin2 = Math.sin(((now % 2000) / 2000) * Math.PI * 2);
+        if (hasEventPulse) {
+          map.setPaintProperty('events-pulse', 'circle-radius', 25 + sin2 * 5);
+          map.setPaintProperty('events-pulse', 'circle-opacity', 0.175 + sin2 * 0.075);
+        }
+
+        // Secondary animations — skipped when frame budget exceeded
+        if (!skipSecondary) {
+          // Event aura — 3s cycle
+          const sin3 = Math.sin(((now % 3000) / 3000) * Math.PI * 2);
+          if (hasEventAura) {
+            map.setPaintProperty('events-aura', 'circle-radius', 50 + sin3 * 8);
+            map.setPaintProperty('events-aura', 'circle-opacity', 0.03 + sin3 * 0.015);
+          }
+
+          // Radar pings
+          const p1 = (now % 3000) / 3000;
+          if (hasPing1) {
+            map.setPaintProperty('events-ping1', 'circle-radius', 15 + p1 * 110);
+            map.setPaintProperty('events-ping1', 'circle-stroke-opacity', 0.6 * (1 - p1));
+          }
+          const p2 = ((now + 1500) % 4500) / 4500;
+          if (hasPing2) {
+            map.setPaintProperty('events-ping2', 'circle-radius', 15 + p2 * 130);
+            map.setPaintProperty('events-ping2', 'circle-stroke-opacity', 0.55 * (1 - p2));
+          }
+          const p3 = ((now + 3000) % 6000) / 6000;
+          if (hasPing3) {
+            map.setPaintProperty('events-ping3', 'circle-radius', 15 + p3 * 155);
+            map.setPaintProperty('events-ping3', 'circle-stroke-opacity', 0.35 * (1 - p3));
+          }
+        }
+
+        // User dot pulse — 2s cycle
+        const uSin = Math.sin(((now % 2000) / 2000) * Math.PI * 2);
+        if (hasUserPulse) {
+          map.setPaintProperty('user-pulse', 'circle-radius', 15 + uSin * 5);
+          map.setPaintProperty('user-pulse', 'circle-opacity', 0.2 - uSin * 0.1);
+        }
+
+        if (!skipSecondary) {
+          // 3D buildings: fade in/out based on pitch (visible when pitch > 15)
+          const pitch = map.getPitch();
+          const buildingOpacity = pitch > 15 ? Math.min((pitch - 15) / 30, 0.5) : 0;
+          if (map.getLayer('3d-buildings')) {
+            map.setPaintProperty('3d-buildings', 'fill-extrusion-opacity', buildingOpacity);
+          }
+
+          // Frat event color fade: blue (#7EB8FF) ↔ marble white (#F5F0EB), 4s cycle
+          const fratT = (Math.sin(now / 4000 * Math.PI * 2) + 1) / 2;
+          const fr = Math.round(126 + (245 - 126) * fratT);
+          const fg = Math.round(184 + (240 - 184) * fratT);
+          const fb = Math.round(255 + (235 - 255) * fratT);
+          const fratColor = `rgb(${fr},${fg},${fb})`;
+          if (hasEventPulse) {
+            map.setPaintProperty('events-pulse', 'circle-color', ['case', ['==', ['get', 'isFratEvent'], 1], fratColor, '#00D4FF']);
+          }
+          if (hasEventGlow) {
+            map.setPaintProperty('events-glow', 'circle-color', ['case', ['==', ['get', 'isFratEvent'], 1], fratColor, '#00D4FF']);
+          }
+        }
+      }
+
+      // ── Route particle — runs at full 60fps for smooth movement ──
+      const rCoords = routeCoordsRef.current;
+      if (rCoords && rCoords.length > 1) {
+        const particleT = (now % 4000) / 4000;
+        const totalSegments = rCoords.length - 1;
+        const exactIdx = particleT * totalSegments;
+        const idx = Math.floor(exactIdx);
+        const frac = exactIdx - idx;
+        const nextIdx = Math.min(idx + 1, totalSegments);
+
+        // Linear interpolation between coordinate points → smooth glide
+        const lng = rCoords[idx][0] + (rCoords[nextIdx][0] - rCoords[idx][0]) * frac;
+        const lat = rCoords[idx][1] + (rCoords[nextIdx][1] - rCoords[idx][1]) * frac;
+
+        const pSrc = map.getSource('route-particle') as mapboxgl.GeoJSONSource | undefined;
+        if (pSrc) {
+          pSrc.setData({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lng, lat] },
+            properties: {},
+          });
+        }
+      }
+
+      // ── Activity particles — realistic people walking along streets ──
+      // Only at zoom > 12, only when cached routes exist, hard cap 25
+      if (now - lastPaintFrame < 5) { // piggyback on 30fps gate
+        const zoom = map.getZoom();
+        const pSrcAct = map.getSource('activity-particles') as mapboxgl.GeoJSONSource | undefined;
+        const cache = routeCacheRef.current;
+        if (pSrcAct && zoom > 12 && cache && cache.routes.length > 0) {
+          if (now % 60000 < 33) nightPhaseRef.current = getNightPhase();
+          const phase = nightPhaseRef.current;
+          const targetCount = Math.min(phase.particleCount, 25);
+
+          const particles = particlesRef.current;
+          while (particles.length < targetCount) {
+            const p = spawnParticle(cache, phase);
+            if (p) particles.push(p);
+            else break;
+          }
+          while (particles.length > targetCount) particles.pop();
+
+          const positions: [number, number][] = [];
+          const colors: string[] = [];
+          for (let i = particles.length - 1; i >= 0; i--) {
+            const result = tickParticle(particles[i], now);
+            if (result.done) {
+              const p = spawnParticle(cache, phase);
+              if (p) particles[i] = p;
+              else particles.splice(i, 1);
+            } else {
+              positions.push(result.pos);
+              colors.push(result.color);
+            }
+          }
+
+          if (positions.length > 0) {
+            pSrcAct.setData(particlesToGeoJSON(positions, colors));
+          } else {
+            pSrcAct.setData({ type: 'FeatureCollection', features: [] });
+          }
+        } else if (pSrcAct) {
+          // No routes or zoomed out — clear particles
+          if (particlesRef.current.length > 0) {
+            particlesRef.current = [];
+            pSrcAct.setData({ type: 'FeatureCollection', features: [] });
+          }
+        }
+      }
+
+      lastFrameTime = performance.now() - now;
+      animFrameRef.current = requestAnimationFrame(animate);
+    }
+
+    animFrameRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animFrameRef.current);
+  }, [mapLoaded]);
+
+  // ── Event layer click handler ──
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) return;
+    const map = mapRef.current;
+
+    const handleEventLayerClick = (e: mapboxgl.MapLayerMouseEvent) => {
+      const feature = e.features?.[0];
+      if (!feature) return;
+      const eventId = feature.properties?.id as string | undefined;
+      if (!eventId) return;
+      const evt = eventsRef.current?.find(ev => ev.id === eventId);
+      if (evt) {
+        e.originalEvent.stopPropagation();
+        onEventClickRef.current?.(evt);
+      }
+    };
+
+    map.on('click', 'events-core', handleEventLayerClick);
+    map.on('click', 'events-ring', handleEventLayerClick);
+
+    const setCursor = () => { map.getCanvas().style.cursor = 'pointer'; };
+    const resetCursor = () => { map.getCanvas().style.cursor = ''; };
+    map.on('mouseenter', 'events-core', setCursor);
+    map.on('mouseleave', 'events-core', resetCursor);
+
+    return () => {
+      map.off('click', 'events-core', handleEventLayerClick);
+      map.off('click', 'events-ring', handleEventLayerClick);
+      map.off('mouseenter', 'events-core', setCursor);
+      map.off('mouseleave', 'events-core', resetCursor);
+    };
+  }, [mapLoaded]);
+
   if (!mapboxReady) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-[#050507]">
@@ -308,5 +1729,116 @@ export function MapView({ city, venues, counts, liveVenueIds, pulsedVenueId, onV
     );
   }
 
-  return <div ref={mapContainer} className="w-full h-full" />;
+  return (
+    <div className="w-full h-full" style={{ position: 'relative' }}>
+      <div ref={mapContainer} className="w-full h-full" />
+
+      {/* Walking navigation overlays */}
+      {route && routeDuration != null && routeDistance != null && (
+        <>
+          {/* Walking time pill (top) */}
+          <div className="route-pill-enter" style={{
+            position: 'absolute',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 500,
+            background: routeArrived ? '#00FF88' : '#1C1C2E',
+            borderLeft: routeArrived ? '3px solid #00FF88' : '3px solid #FF8200',
+            borderRadius: '12px',
+            padding: routeArrived ? '10px 20px' : '8px 16px',
+            minWidth: '140px',
+            textAlign: 'center',
+            boxShadow: routeArrived ? '0 4px 24px rgba(0, 255, 136, 0.3)' : '0 4px 20px rgba(0,0,0,0.5)',
+            pointerEvents: 'none',
+            transition: 'background 0.3s, box-shadow 0.3s, border-left 0.3s',
+          }}>
+            {routeArrived ? (
+              <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '15px', fontWeight: 800, color: '#050507', margin: 0 }}>
+                {'\uD83C\uDF89'} You made it to {routeDestination}!
+              </p>
+            ) : (
+              <>
+                <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '14px', fontWeight: 700, color: 'white', margin: 0 }}>
+                  {'\uD83D\uDEB6'} {formatWalkDuration(routeDuration)} walk
+                </p>
+                <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '12px', color: '#8A8A95', margin: '2px 0 0' }}>
+                  {formatWalkDistance(routeDistance)}{routeDestination ? ` to ${routeDestination}` : ''}
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* Cancel bar (bottom) — hidden on arrival since it auto-dismisses */}
+          {!routeArrived && <div className="route-cancel-enter" style={{
+            position: 'absolute',
+            bottom: '8px',
+            left: '12px',
+            right: '12px',
+            zIndex: 500,
+          }}>
+            <button
+              onClick={onCancelRoute}
+              className="active:scale-[0.98] transition-transform"
+              style={{
+                width: '100%',
+                height: '44px',
+                borderRadius: '12px',
+                background: '#1C1C2E',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'white',
+                fontSize: '14px',
+                fontWeight: 600,
+                fontFamily: 'Satoshi, sans-serif',
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {'\u2715'} End Navigation
+            </button>
+          </div>}
+        </>
+      )}
+
+      {/* Follow-me button — always visible when location is available */}
+      {userLocation && onToggleFollow && (
+        <button
+          onClick={onToggleFollow}
+          className="active:scale-[0.95] transition-transform"
+          style={{
+            position: 'absolute',
+            bottom: route ? '180px' : '120px',
+            right: '16px',
+            zIndex: 500,
+            width: '48px',
+            height: '48px',
+            borderRadius: '24px',
+            background: '#1C1C2E',
+            border: followMode === 'free' ? '1px solid #333' : '1px solid #FF8200',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+            WebkitTapHighlightColor: 'transparent',
+            transition: 'border-color 0.2s, bottom 0.3s',
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={followMode === 'free' ? '#8A8A95' : '#FF8200'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {followMode === 'bearing' ? (
+              // Compass arrow for bearing mode
+              <><polygon points="12 2 19 21 12 17 5 21" fill="#FF8200" stroke="#FF8200" /></>
+            ) : (
+              // Crosshair for free/center mode
+              <>
+                <circle cx="12" cy="12" r="4" fill={followMode === 'center' ? '#FF8200' : 'none'} />
+                <line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
+              </>
+            )}
+          </svg>
+        </button>
+      )}
+    </div>
+  );
 }

@@ -1,15 +1,23 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase, envReady } from '../lib/supabase';
-import { getCommentDay } from '../lib/utils';
+import { getNightOf } from '../lib/utils';
 import type { VenueRecap } from '../lib/types';
 
-export function useVenueRecaps(venueId: string | null) {
+export function useVenueRecaps(venueId: string | null, username?: string) {
   const [recaps, setRecaps] = useState<VenueRecap[]>([]);
-  const dayOf = getCommentDay();
+  const [avgRating, setAvgRating] = useState<number | null>(null);
+  const [totalRecaps, setTotalRecaps] = useState(0);
+  const nightOf = getNightOf();
   // Track IDs we already have to avoid realtime duplicates
   const knownIds = useRef(new Set<string>());
 
-  // Fetch recaps for venue + today
+  // Whether the current user already posted tonight
+  const hasUserRecapped = useMemo(() => {
+    if (!username) return false;
+    return recaps.some(r => r.username === username);
+  }, [recaps, username]);
+
+  // Fetch tonight's recaps for this venue
   useEffect(() => {
     if (!envReady || !venueId) {
       setRecaps([]);
@@ -21,7 +29,7 @@ export function useVenueRecaps(venueId: string | null) {
       .from('venue_recaps')
       .select('*')
       .eq('venue_id', venueId)
-      .eq('day_of', dayOf)
+      .eq('day_of', nightOf)
       .order('created_at', { ascending: false })
       .limit(50)
       .then(({ data, error }) => {
@@ -33,7 +41,32 @@ export function useVenueRecaps(venueId: string | null) {
         knownIds.current = new Set(rows.map(r => r.id));
         setRecaps(rows);
       });
-  }, [venueId, dayOf]);
+  }, [venueId, nightOf]);
+
+  // Fetch all-time rating stats for this venue
+  useEffect(() => {
+    if (!envReady || !venueId) {
+      setAvgRating(null);
+      setTotalRecaps(0);
+      return;
+    }
+
+    supabase
+      .from('venue_recaps')
+      .select('stars')
+      .eq('venue_id', venueId)
+      .then(({ data, error }) => {
+        if (error || !data || data.length === 0) {
+          setAvgRating(null);
+          setTotalRecaps(0);
+          return;
+        }
+        const rows = data as { stars: number }[];
+        const sum = rows.reduce((acc, r) => acc + r.stars, 0);
+        setAvgRating(Math.round((sum / rows.length) * 10) / 10);
+        setTotalRecaps(rows.length);
+      });
+  }, [venueId, recaps.length]); // re-fetch when new recaps are added
 
   // Real-time subscription for new recaps from OTHER users
   useEffect(() => {
@@ -51,7 +84,7 @@ export function useVenueRecaps(venueId: string | null) {
         },
         (payload) => {
           const row = payload.new as VenueRecap;
-          if (row.day_of !== dayOf) return;
+          if (row.day_of !== nightOf) return;
           if (knownIds.current.has(row.id)) return;
           knownIds.current.add(row.id);
           setRecaps(prev => [row, ...prev]);
@@ -62,9 +95,9 @@ export function useVenueRecaps(venueId: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [venueId, dayOf]);
+  }, [venueId, nightOf]);
 
-  const submitRecap = useCallback(async (username: string, body: string, stars: number) => {
+  const submitRecap = useCallback(async (uname: string, body: string, stars: number) => {
     if (!envReady || !venueId || !body.trim() || stars < 1) return;
 
     const trimmed = body.trim().slice(0, 200);
@@ -76,15 +109,20 @@ export function useVenueRecaps(venueId: string | null) {
       .insert({
         id: optimisticId,
         venue_id: venueId,
-        username,
+        username: uname,
         body: trimmed,
         stars,
-        day_of: dayOf,
+        day_of: nightOf,
       })
       .select()
       .single();
 
     if (error) {
+      // Handle unique constraint violation (duplicate recap)
+      if (error.code === '23505') {
+        console.warn('[recap] Duplicate — already posted tonight');
+        return;
+      }
       console.error('[recap] Insert error:', error.message);
       return;
     }
@@ -94,7 +132,14 @@ export function useVenueRecaps(venueId: string | null) {
       knownIds.current.add(row.id);
       setRecaps(prev => [row, ...prev]);
     }
-  }, [venueId, dayOf]);
+  }, [venueId, nightOf]);
 
-  return { recaps, submitRecap };
+  return {
+    recaps,
+    submitRecap,
+    avgRating,
+    totalRecaps,
+    tonightCount: recaps.length,
+    hasUserRecapped,
+  };
 }

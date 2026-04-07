@@ -67,10 +67,11 @@ export function SignInSheet({ onClose, onSignedIn, signInWithApple }: SignInShee
 
           {/* Apple Sign In Button */}
           <button
+            type="button"
             onClick={handleAppleSignIn}
             disabled={loading}
             className="w-full max-w-sm h-[52px] rounded-xl font-semibold text-white text-base flex items-center justify-center gap-3 bg-black border border-[#2A2A30] transition-all active:scale-[0.98] disabled:opacity-60"
-            style={{ fontFamily: 'Satoshi, sans-serif' }}
+            style={{ fontFamily: 'Satoshi, sans-serif', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
           >
             {loading ? (
               <Loader2 size={20} className="animate-spin" />
@@ -97,9 +98,10 @@ export function SignInSheet({ onClose, onSignedIn, signInWithApple }: SignInShee
 
           {/* Maybe later */}
           <button
+            type="button"
             onClick={onClose}
             className="mt-5 text-[#55555F] text-sm transition-colors active:text-[#8A8A95]"
-            style={{ fontFamily: 'Satoshi, sans-serif' }}
+            style={{ fontFamily: 'Satoshi, sans-serif', minHeight: 44, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
           >
             Maybe later
           </button>

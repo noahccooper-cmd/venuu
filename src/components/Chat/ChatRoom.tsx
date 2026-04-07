@@ -89,10 +89,11 @@ export function ChatRoom({ messages, loading, userId, isLoggedIn, onSend, onLogi
             disabled={!isLoggedIn}
           />
           <button
+            type="button"
             onClick={handleSend}
             disabled={!body.trim() || sending}
             className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 disabled:opacity-40"
-            style={{ background: 'linear-gradient(135deg, #FF5E1A, #FF2D05)' }}
+            style={{ background: '#FF8200', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
           >
             <Send size={18} strokeWidth={1.5} className="text-white ml-0.5" />
           </button>

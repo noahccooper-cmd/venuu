@@ -70,7 +70,9 @@ export function UsernameScreen({ onComplete }: UsernameScreenProps) {
             className="w-full h-[52px] rounded-xl font-bold text-white text-base flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-40 mt-6"
             style={{
               fontFamily: 'Satoshi, sans-serif',
-              background: 'linear-gradient(135deg, #FF5E1A, #FF2D05)',
+              background: '#FF8200',
+              cursor: 'pointer',
+              WebkitTapHighlightColor: 'transparent',
             }}
           >
             LET'S GO

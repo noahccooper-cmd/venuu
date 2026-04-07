@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyC3rn53C9ILsEqylVeDF0F2Bo3M1PPg6xA</string>
+	<key>GCM_SENDER_ID</key>
+	<string>54859186711</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.venuu.app</string>
+	<key>PROJECT_ID</key>
+	<string>venuu-app-8c4c4</string>
+	<key>STORAGE_BUCKET</key>
+	<string>venuu-app-8c4c4.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false/>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false/>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true/>
+	<key>IS_GCM_ENABLED</key>
+	<true/>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:54859186711:ios:8016d9019595ce2b4cd252</string>
+</dict>
+</plist>

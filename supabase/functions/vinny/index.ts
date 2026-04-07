@@ -23,7 +23,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'gpt-4o',
-        max_tokens: 300,
+        max_tokens: 150,
         temperature: 0.9,
         messages: [
           { role: 'system', content: systemPrompt },
