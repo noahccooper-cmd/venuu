@@ -287,29 +287,27 @@ export function ClickerView({
       setTimeout(() => setBroadcastConfirm(''), 2000);
       return;
     }
-    // Fire push notification to all students in this city (non-blocking)
-    // Uses direct fetch with anon key — bouncer is not logged in via Supabase Auth
+    // Fire push notification to all students in this city
     const trimmedMessage = broadcastText.trim();
     const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5b3V2aHRnendjYnFweWxjc3NrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzQ5NDYsImV4cCI6MjA4Njc1MDk0Nn0.kr1qQ1jyFBaNDP351aMihxNO3K4GFf_XJEfHRZ9MZ-E';
+    const pushBody = { venue_id: venue.id, venue_name: venue.name, drop_text: trimmedMessage, drop_id: '', city: venue.city };
+    console.log('[drop] reached push-drop call point');
+    console.log('[drop] about to invoke push-drop with:', pushBody);
     try {
-      console.debug('[drop] Firing push-drop for', venue.name, 'in', venue.city);
-      fetch('https://tyouvhtgzwcbqpylcssk.supabase.co/functions/v1/push-drop', {
+      const res = await fetch('https://tyouvhtgzwcbqpylcssk.supabase.co/functions/v1/push-drop', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': anonKey,
           'Authorization': `Bearer ${anonKey}`,
         },
-        body: JSON.stringify({ venue_id: venue.id, message: trimmedMessage, city: venue.city }),
-      }).then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) console.warn('[drop] push-drop error:', res.status, data);
-        else console.debug('[drop] push-drop sent:', data);
-      }).catch((err: Error) => {
-        console.warn('[drop] push-drop failed:', err.message);
+        body: JSON.stringify(pushBody),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) console.error('[drop] push-drop error:', res.status, data);
+      else console.log('[drop] push-drop success:', data);
     } catch (err) {
-      console.warn('[drop] push-drop invoke error:', (err as Error).message);
+      console.error('[drop] push-drop FAILED:', err);
     }
 
     setBroadcastText('');

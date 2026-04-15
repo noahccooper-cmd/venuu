@@ -273,6 +273,7 @@ export function VenueSheet({
   onBuyCover,
 }: VenueSheetProps) {
   const [sheetState, setSheetState] = useState<SheetState>('peeked');
+
   const sheetRef = useRef<HTMLDivElement>(null);
   const recapRef = useRef<HTMLDivElement>(null);
   const recapData = useVenueRecaps(venue.id, username);

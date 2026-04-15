@@ -1920,3 +1920,7 @@ body {
   0%, 100% { border-left-color: inherit; }
   50% { border-left-color: rgba(255,255,255,0.4); }
 }
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(0.98); }
+}

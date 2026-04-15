@@ -102,7 +102,7 @@ export function EventCreator({ venue }: EventCreatorProps) {
       else if (saleEndTime) saleEndsAt = new Date(`${eventDate}T${saleEndTime}:00`).toISOString();
     }
 
-    const { error } = await supabase.from('events').insert({
+    const { data: insertedEvent, error } = await supabase.from('events').insert({
       venue_id: venue.id,
       city: venue.city,
       title: title.trim(),
@@ -122,7 +122,7 @@ export function EventCreator({ venue }: EventCreatorProps) {
       tickets_sold: 0,
       sale_starts_at: saleStartsAt,
       sale_ends_at: saleEndsAt,
-    });
+    }).select('id').single();
 
     if (error) {
       console.error('[event] Insert error:', error.message);
@@ -132,32 +132,31 @@ export function EventCreator({ venue }: EventCreatorProps) {
       return;
     }
 
-    // Fire push notification (non-blocking, same pattern as Drop)
+    // Fire push notification
+    console.log('[event] reached push-event call point');
+    const pushBody = {
+      venue_id: venue.id,
+      venue_name: venue.name,
+      event_name: title.trim(),
+      event_id: insertedEvent?.id ?? '',
+      city: venue.city,
+    };
+    console.log('[event] about to invoke push-event with:', pushBody);
     try {
-      console.debug('[event] Firing push-event for', title.trim(), 'in', venue.city);
-      fetch(PUSH_URL, {
+      const res = await fetch(PUSH_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': ANON_KEY,
           'Authorization': `Bearer ${ANON_KEY}`,
         },
-        body: JSON.stringify({
-          title: title.trim(),
-          venue_name: venue.name,
-          host_name: hostName.trim(),
-          city: venue.city,
-          start_time: startTime,
-        }),
-      }).then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) console.warn('[event] push-event error:', res.status, data);
-        else console.debug('[event] push-event sent:', data);
-      }).catch((err: Error) => {
-        console.warn('[event] push-event failed:', err.message);
+        body: JSON.stringify(pushBody),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) console.error('[event] push-event error:', res.status, data);
+      else console.log('[event] push-event success:', data);
     } catch (err) {
-      console.warn('[event] push-event invoke error:', (err as Error).message);
+      console.error('[event] push-event FAILED:', err);
     }
 
     // Reset form
