@@ -14,23 +14,6 @@ export interface CheckinResult {
 
 export type CheckinStatus = 'scanning' | 'detected' | 'verifying';
 
-/**
- * Normalise a raw NFC tag UID to an uppercase hex string with no separators.
- * The plugin returns id as number[] (per type definitions), but we guard for
- * string form just in case.
- */
-function normalizeTagUid(rawId: unknown): string {
-  if (Array.isArray(rawId)) {
-    return (rawId as number[])
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
-      .toUpperCase();
-  }
-  if (typeof rawId === 'string') {
-    return rawId.replace(/[:\s-]/g, '').toUpperCase();
-  }
-  return String(rawId).toUpperCase();
-}
 
 export async function isNfcAvailable(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
@@ -41,6 +24,100 @@ export async function isNfcAvailable(): Promise<boolean> {
   } catch (e) {
     console.error('[nfc] isSupported threw:', e);
     return false;
+  }
+}
+
+function parseNdefTextPayload(event: NfcEvent): string | null {
+  try {
+    console.log('[nfc] parsing NDEF — full event:', JSON.stringify(event));
+
+    // Try multiple possible shapes since plugin types are loose
+    const tag = event?.tag as Record<string, unknown> | undefined;
+    if (!tag) {
+      console.warn('[nfc] no tag in event');
+      return null;
+    }
+    console.log('[nfc] tag keys:', Object.keys(tag));
+
+    // Try ndefMessage first (most common), then records, then messages
+    let records: unknown[] | undefined;
+    if (Array.isArray(tag.ndefMessage)) records = tag.ndefMessage as unknown[];
+    else if (Array.isArray(tag.records)) records = tag.records as unknown[];
+    else if (Array.isArray(tag.messages)) records = tag.messages as unknown[];
+
+    if (!records || records.length === 0) {
+      console.warn('[nfc] no NDEF records found in tag');
+      return null;
+    }
+    console.log('[nfc] found', records.length, 'NDEF records');
+
+    // Look at the first record
+    const firstRecord = records[0] as Record<string, unknown>;
+    console.log('[nfc] first record keys:', Object.keys(firstRecord));
+
+    // Try multiple payload field names
+    const rawPayload = firstRecord.payload ?? firstRecord.data ?? firstRecord.value;
+    if (!rawPayload) {
+      console.warn('[nfc] first record has no payload field');
+      return null;
+    }
+
+    // Convert payload to Uint8Array regardless of input shape
+    let bytes: Uint8Array;
+    if (rawPayload instanceof Uint8Array) {
+      bytes = rawPayload;
+    } else if (Array.isArray(rawPayload)) {
+      bytes = new Uint8Array(rawPayload as number[]);
+    } else if (typeof rawPayload === 'string') {
+      // Some plugins return base64-encoded payloads
+      try {
+        const binary = atob(rawPayload as string);
+        bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      } catch {
+        // If not base64, assume it's already the text content directly
+        console.log('[nfc] payload is plain string, returning as-is');
+        return (rawPayload as string).trim() || null;
+      }
+    } else {
+      console.warn('[nfc] unknown payload type:', typeof rawPayload);
+      return null;
+    }
+
+    console.log('[nfc] payload bytes length:', bytes.length);
+    if (bytes.length < 2) {
+      console.warn('[nfc] payload too short');
+      return null;
+    }
+
+    // Parse NDEF text record: byte 0 is status, lower 6 bits = lang code length
+    const statusByte = bytes[0];
+    const langLen = statusByte & 0x3F;
+    console.log('[nfc] status byte:', statusByte.toString(16), 'langLen:', langLen);
+
+    if (1 + langLen > bytes.length) {
+      console.warn('[nfc] langLen overruns payload');
+      return null;
+    }
+
+    const textBytes = bytes.slice(1 + langLen);
+    const text = new TextDecoder('utf-8').decode(textBytes).trim();
+
+    if (!text) {
+      console.warn('[nfc] decoded text is empty');
+      return null;
+    }
+
+    // Mask the password in the log
+    const masked = text.length > 6
+      ? `${text.slice(0, 3)}...${text.slice(-3)} (len ${text.length})`
+      : `*** (len ${text.length})`;
+    console.log('[nfc] parsed password:', masked);
+
+    return text;
+  } catch (err) {
+    console.error('[nfc] parseNdefTextPayload threw:', err);
+    return null;
   }
 }
 
@@ -114,48 +191,14 @@ export async function startNfcCheckin(
     console.log('[nfc] tag event:', JSON.stringify(event));
     if (settled) { console.log('[nfc] already settled — skip'); return; }
 
-    const rawId = event?.tag?.id;
-    console.log('[nfc] raw id:', rawId, 'type:', typeof rawId, 'isArray:', Array.isArray(rawId));
-    const tagUid = normalizeTagUid(rawId);
-    console.log('[nfc] normalised UID:', tagUid);
-
-    if (!tagUid) {
-      console.warn('[nfc] empty UID');
+    const password = parseNdefTextPayload(event);
+    if (!password) {
+      console.warn('[nfc] failed to parse password from tag');
       settle({ success: false, error: 'tag_not_registered' });
       return;
     }
 
     onStatusChange?.('detected');
-
-    console.log('[nfc] looking up tag in DB...');
-    const { data: tag, error: tagError } = await supabase
-      .from('nfc_tags')
-      .select('venue_id, is_active')
-      .eq('tag_uid', tagUid)
-      .maybeSingle();
-
-    console.log('[nfc] DB result:', { tag, tagError, tagUid });
-
-    if (tagError) {
-      console.error('[nfc] DB error:', tagError.message);
-      settle({ success: false, error: 'tag_lookup_failed' });
-      return;
-    }
-    if (!tag) {
-      console.warn('[nfc] UID not registered:', tagUid);
-      settle({ success: false, error: 'tag_not_registered' });
-      return;
-    }
-    if (!tag.is_active) {
-      console.warn('[nfc] tag disabled');
-      settle({ success: false, error: 'tag_disabled' });
-      return;
-    }
-    if (tag.venue_id !== venueId) {
-      console.warn('[nfc] wrong venue — tag.venue_id:', tag.venue_id, 'expected:', venueId);
-      settle({ success: false, error: 'wrong_venue_tag' });
-      return;
-    }
 
     // Tag verified — NOW get GPS
     console.log('[nfc] tag verified — getting GPS');
@@ -180,7 +223,7 @@ export async function startNfcCheckin(
 
     const deviceInfo = await Device.getId();
 
-    console.log('[nfc] calling record_venue_checkin RPC');
+    console.log('[nfc] calling record_venue_checkin RPC with password');
     const { data, error } = await supabase.rpc('record_venue_checkin', {
       p_user_id: user.id,
       p_venue_id: venueId,
@@ -188,6 +231,7 @@ export async function startNfcCheckin(
       p_user_lat: lat,
       p_user_lng: lng,
       p_device_id: deviceInfo.identifier,
+      p_nfc_password: password,
     });
 
     console.log('[nfc] RPC result:', { data, error });
@@ -233,13 +277,23 @@ export async function startNfcCheckin(
     const h3 = await CapacitorNfc.addListener(
       'nfcStateChange' as Parameters<typeof CapacitorNfc.addListener>[0],
       (event) => {
+        const evt = event as { status?: string; enabled?: boolean };
         console.log('[nfc] nfcStateChange:', JSON.stringify(event));
+
+        // NFC_OK + enabled means "session is alive and ready" — NOT a failure
+        const isHealthyStartup = evt?.status === 'NFC_OK' && evt?.enabled === true;
+        if (isHealthyStartup) {
+          console.log('[nfc] session is alive and ready — waiting for tag');
+          return;
+        }
+
+        // Any non-healthy state before a tag was received = failure
         if (!settled && !tagEventReceived) {
           console.error(
-            '[nfc] session ended before any tag was read.\n' +
-            '[nfc] Most likely cause: TAG entitlement missing from provisioning profile.\n' +
-            '[nfc] Fix: Apple Developer Portal → App ID → enable "NFC Tag Reading" →\n' +
-            '[nfc]       regenerate provisioning profile → Xcode clean build.',
+            '[nfc] session ended before any tag was read. status:',
+            evt?.status,
+            'enabled:',
+            evt?.enabled,
           );
           settle({ success: false, error: 'scan_failed' });
         }

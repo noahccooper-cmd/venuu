@@ -18,16 +18,18 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<key>LSApplicationCategoryType</key>
+	<string></string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>venuu uses NFC to verify check-ins at participating venues so you can earn loyalty rewards.</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>venuu uses your camera to scan QR codes for cover charge entry.</string>
-	<key>NFCReaderUsageDescription</key>
-	<string>venuu uses NFC to check you in at venues and earn loyalty rewards.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>venuu uses your location to show nearby venues and verify check-ins.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
