@@ -6,8 +6,8 @@ import { hapticSuccess } from '../lib/haptics';
 import type { CoverPurchase } from '../lib/types';
 
 const STRIPE_PK = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
-const SUPABASE_URL = 'https://tyouvhtgzwcbqpylcssk.supabase.co';
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5b3V2aHRnendjYnFweWxjc3NrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzQ5NDYsImV4cCI6MjA4Njc1MDk0Nn0.kr1qQ1jyFBaNDP351aMihxNO3K4GFf_XJEfHRZ9MZ-E';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
 let stripePromise: ReturnType<typeof loadStripe> | null = null;
 function getStripe() {
