@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Minus, Plus, LogOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { formatCount, formatTime, timeAgo } from '../../lib/utils';
-import { getTonightDate } from '../../lib/nightlyCode';
+import { formatCount, formatTime, timeAgo, getTonightDate } from '../../lib/utils';
 import type { Venue, Headcount } from '../../lib/types';
 import type { EndNightSummary } from '../../hooks/usePortal';
 import { EventCreator } from './EventCreator';

@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { supabase } from '../../lib/supabase';
 import { formatCoverPrice, formatCoverPriceShort, parseQRCode } from '../../lib/coverPricing';
-import { getTonightDate } from '../../lib/nightlyCode';
+import { getTonightDate } from '../../lib/utils';
 import { hapticSuccess, hapticError, hapticLight } from '../../lib/haptics';
 import type { Venue, CoverConfig } from '../../lib/types';
 

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { supabase, envReady } from '../lib/supabase';
-import { getTonightDate } from '../lib/nightlyCode';
+import { getTonightDate } from '../lib/utils';
 import { hapticSuccess } from '../lib/haptics';
 import type { CoverPurchase } from '../lib/types';
 

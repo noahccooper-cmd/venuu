@@ -90,3 +90,19 @@ export function getCapacityColor(percent: number): string {
   if (percent >= 50) return '#FFAA00';
   return '#00E676';
 }
+
+/**
+ * Returns the current "night" date as YYYY-MM-DD.
+ * Nightlife rolls over at 4am — so 2am Sunday is still "Saturday night".
+ */
+export function getTonightDate(): string {
+  const now = new Date();
+  // If before 5am, count as previous day's night
+  if (now.getHours() < 5) {
+    now.setDate(now.getDate() - 1);
+  }
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}

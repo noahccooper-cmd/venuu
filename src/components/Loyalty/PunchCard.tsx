@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useLoyalty } from '../../hooks/useLoyalty';
 import { CheckinButton } from '../CheckinButton';
 import { supabase } from '../../lib/supabase';
-import { getTonightDate } from '../../lib/nightlyCode';
+import { getTonightDate } from '../../lib/utils';
 import { Confetti } from '../Effects/Confetti';
 import { CheckInCelebration } from '../UI/CheckInCelebration';
 
