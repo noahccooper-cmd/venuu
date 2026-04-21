@@ -43,3 +43,4 @@ ios/App/build/
 ios/App/public/
 android/app/build/
 tree.txt
+supabase/.temp/
