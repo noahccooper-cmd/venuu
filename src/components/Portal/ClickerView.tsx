@@ -251,28 +251,51 @@ export function ClickerView({
 
   const handleSaveReward = useCallback(async () => {
     if (!loyaltyReward.trim() || loyaltySaving) return;
+    if (!venue.staff_code) {
+      setLoyaltySaveConfirm('save_failed');
+      setTimeout(() => setLoyaltySaveConfirm(''), 2500);
+      return;
+    }
     setLoyaltySaving(true);
     setLoyaltySaveConfirm('');
 
-    const { error } = await supabase.from('venue_rewards').upsert({
-      venue_id: venue.id,
-      reward_text: loyaltyReward.trim(),
-      visits_required: loyaltyVisitsReq,
-      reward_description: loyaltyDescription.trim() || null,
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'venue_id' });
+    let failed = false;
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/update-venue-rewards`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          reward_text: loyaltyReward.trim(),
+          visits_required: loyaltyVisitsReq,
+          reward_description: loyaltyDescription.trim() || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[rewards] update-venue-rewards error:', res.status, data);
+        failed = true;
+      }
+    } catch (err) {
+      console.error('[rewards] update-venue-rewards FAILED:', err);
+      failed = true;
+    }
 
     setLoyaltySaving(false);
 
-    if (error) {
+    if (failed) {
       setLoyaltySaveConfirm('save_failed');
     } else {
       hapticLight();
       setLoyaltySaveConfirm('Saved \u2713');
     }
     setTimeout(() => setLoyaltySaveConfirm(''), 2500);
-  }, [venue.id, loyaltyReward, loyaltyVisitsReq, loyaltyDescription, loyaltySaving]);
+  }, [venue.id, venue.staff_code, loyaltyReward, loyaltyVisitsReq, loyaltyDescription, loyaltySaving]);
 
   const handleSendUpdate = useCallback(async () => {
     if (!broadcastText.trim()) return;
