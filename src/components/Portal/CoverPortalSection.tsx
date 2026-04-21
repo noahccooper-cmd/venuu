@@ -22,6 +22,7 @@ interface ScanResult {
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5b3V2aHRnendjYnFweWxjc3NrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzQ5NDYsImV4cCI6MjA4Njc1MDk0Nn0.kr1qQ1jyFBaNDP351aMihxNO3K4GFf_XJEfHRZ9MZ-E';
 const CONNECT_URL = 'https://tyouvhtgzwcbqpylcssk.supabase.co/functions/v1/create-stripe-connect';
 const PUSH_COVERS_URL = 'https://tyouvhtgzwcbqpylcssk.supabase.co/functions/v1/push-covers';
+const UPSERT_COVER_URL = 'https://tyouvhtgzwcbqpylcssk.supabase.co/functions/v1/upsert-cover-config';
 
 export function CoverPortalSection({ venue }: CoverPortalSectionProps) {
   const [config, setConfig] = useState<CoverConfig | null>(null);
@@ -116,6 +117,9 @@ export function CoverPortalSection({ venue }: CoverPortalSectionProps) {
     if (!base || capacity <= 0 || (pricingMode === 'dynamic' && (!cap || cap <= base))) {
       setSaveMsg('Check your prices'); setTimeout(() => setSaveMsg(''), 2000); return;
     }
+    if (!venue.staff_code) {
+      setSaveMsg('Session expired — log in again'); setTimeout(() => setSaveMsg(''), 2000); return;
+    }
 
     setSaving(true);
     const today = new Date();
@@ -126,32 +130,43 @@ export function CoverPortalSection({ venue }: CoverPortalSectionProps) {
     closeTime.setHours(ch, cm, 0, 0);
     if (ch < oh) closeTime.setDate(closeTime.getDate() + 1); // past midnight
 
-    // Bars: 8% platform fee. Fraternities: 12% (set via FratPortal).
-    const platformFee = venue.category === 'fraternity' ? 0.12 : 0.08;
     console.debug('[covers] Upserting config for venue:', venue.id, 'night:', nightOf, 'base:', base, 'cap:', cap);
-    const { data, error } = await supabase.from('cover_configs').upsert({
-      venue_id: venue.id,
-      night_of: nightOf,
-      base_price: base,
-      cap_price: cap,
-      capacity,
-      open_time: openTime.toISOString(),
-      close_time: closeTime.toISOString(),
-      current_price: base,
-      covers_sold: config?.covers_sold ?? 0,
-      is_active: true,
-      platform_fee_percent: platformFee,
-      pricing_mode: pricingMode,
-    }, { onConflict: 'venue_id,night_of' }).select().maybeSingle();
-    console.debug('[covers] Upsert result:', error ? `error: ${error.message}` : 'success');
+    let data: { success?: boolean; config?: CoverConfig; error?: string; message?: string } = {};
+    let ok = false;
+    try {
+      const res = await fetch(UPSERT_COVER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          mode: 'start',
+          night_of: nightOf,
+          base_price: base,
+          cap_price: pricingMode === 'flat' ? base : cap,
+          capacity,
+          open_time: openTime.toISOString(),
+          close_time: closeTime.toISOString(),
+          pricing_mode: pricingMode,
+        }),
+      });
+      data = await res.json().catch(() => ({}));
+      ok = res.ok && !!data.success;
+      if (!ok) console.error('[covers] upsert-cover-config error:', res.status, data);
+    } catch (err) {
+      console.error('[covers] upsert-cover-config FAILED:', err);
+    }
 
     setSaving(false);
-    if (error) {
-      console.error('[covers] upsert error:', error.message, error.details, error.hint);
-      setSaveMsg(`Failed to save: ${error.message}`);
+    if (!ok) {
+      setSaveMsg(data.message ? `Failed to save: ${data.message}` : 'Failed to save');
       hapticError();
     } else {
-      setConfig(data as CoverConfig);
+      setConfig(data.config as CoverConfig);
       setSaveMsg('Covers are live! \u2713');
       // Push notification to all students in the city (non-blocking)
       fetch(PUSH_COVERS_URL, {
@@ -161,7 +176,7 @@ export function CoverPortalSection({ venue }: CoverPortalSectionProps) {
       }).catch(() => {});
     }
     setTimeout(() => setSaveMsg(''), 2000);
-  }, [venue.id, venue.name, venue.city, nightOf, baseInput, capInput, capacityInput, openTimeInput, closeTimeInput, config?.covers_sold]);
+  }, [venue.id, venue.name, venue.city, venue.staff_code, nightOf, baseInput, capInput, capacityInput, openTimeInput, closeTimeInput, pricingMode]);
 
   const handleConnectStripe = useCallback(async () => {
     setConnectingStripe(true);
@@ -210,9 +225,35 @@ export function CoverPortalSection({ venue }: CoverPortalSectionProps) {
 
   const handleStopSelling = useCallback(async () => {
     if (!config) return;
-    await supabase.from('cover_configs').update({ is_active: false }).eq('id', config.id);
+    if (!venue.staff_code) {
+      console.error('[covers] stop: missing staff_code');
+      return;
+    }
+    try {
+      const res = await fetch(UPSERT_COVER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          mode: 'stop',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[covers] stop error:', res.status, data);
+        return;
+      }
+    } catch (err) {
+      console.error('[covers] stop FAILED:', err);
+      return;
+    }
     setConfig(prev => prev ? { ...prev, is_active: false } : null);
-  }, [config]);
+  }, [config, venue.id, venue.staff_code]);
 
   const handleScan = useCallback(async () => {
     setScanResult(null);
