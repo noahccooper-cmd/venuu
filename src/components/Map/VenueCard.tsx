@@ -588,13 +588,6 @@ export function VenueSheet({
                 {'\uD83D\uDCB5'} {!venue.cover_charge || venue.cover_charge.toUpperCase() === 'FREE' || venue.cover_charge.toUpperCase() === 'NO COVER' ? 'FREE ENTRY' : `COVER: ${venue.cover_charge}`}
               </span>
             </div>
-            {venue.special && (
-              <div className="cover-banner">
-                <span className="special-pill">
-                  {'\uD83C\uDF89'} {venue.special}
-                </span>
-              </div>
-            )}
             <TonightBanner venue={venue} />
           </>
         )}

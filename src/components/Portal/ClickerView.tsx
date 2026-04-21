@@ -74,10 +74,10 @@ export function ClickerView({
     const loadSpecial = async () => {
       const { data } = await supabase
         .from('venues')
-        .select('special, loyalty_active')
+        .select('tonight_special, loyalty_active')
         .eq('id', venue.id)
         .maybeSingle();
-      if (data?.special) setSpecialText(data.special);
+      if (data?.tonight_special) setSpecialText(data.tonight_special);
       if (data?.loyalty_active !== undefined) setLoyaltyActive(data.loyalty_active);
     };
     const loadReward = async () => {
@@ -214,23 +214,79 @@ export function ClickerView({
 
   const handleSetSpecial = useCallback(async () => {
     if (!specialText.trim()) return;
-    await supabase
-      .from('venues')
-      .update({ special: specialText.trim() })
-      .eq('id', venue.id);
+    if (!venue.staff_code) {
+      setSpecialConfirm('Session expired — log in again');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/set-venue-special`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          special_text: specialText.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[special] set-venue-special error:', res.status, data);
+        setSpecialConfirm('Failed to set');
+        setTimeout(() => setSpecialConfirm(''), 2000);
+        return;
+      }
+    } catch (err) {
+      console.error('[special] set-venue-special FAILED:', err);
+      setSpecialConfirm('Failed to set');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
     setSpecialConfirm('Special set ✓');
     setTimeout(() => setSpecialConfirm(''), 2000);
-  }, [specialText, venue.id]);
+  }, [specialText, venue.id, venue.staff_code]);
 
   const handleClearSpecial = useCallback(async () => {
-    await supabase
-      .from('venues')
-      .update({ special: null })
-      .eq('id', venue.id);
+    if (!venue.staff_code) {
+      setSpecialConfirm('Session expired — log in again');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/set-venue-special`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          special_text: null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[special] set-venue-special clear error:', res.status, data);
+        setSpecialConfirm('Failed to clear');
+        setTimeout(() => setSpecialConfirm(''), 2000);
+        return;
+      }
+    } catch (err) {
+      console.error('[special] set-venue-special clear FAILED:', err);
+      setSpecialConfirm('Failed to clear');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
     setSpecialText('');
     setSpecialConfirm('Special cleared');
     setTimeout(() => setSpecialConfirm(''), 2000);
-  }, [venue.id]);
+  }, [venue.id, venue.staff_code]);
 
   const handleCoverTap = useCallback(async (preset: string) => {
     setSelectedCover(preset);
