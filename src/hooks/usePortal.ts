@@ -6,6 +6,9 @@ import type { Venue, Headcount } from '../lib/types';
 const COOLDOWN_MS = 150;
 const PORTAL_VENUE_KEY = 'portal_venue_id';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+
 export interface EndNightSummary {
   venueName: string;
   peakCount: number;
@@ -257,36 +260,48 @@ export function usePortal() {
 
   const endNight = useCallback(async () => {
     if (!venue) return;
+    if (!venue.staff_code) {
+      console.error('[portal] end-night: missing staff_code');
+      return;
+    }
     const nightOf = getNightOf();
+
+    let peakCount = headcount?.peak_count ?? 0;
+    let peakTime = headcount?.updated_at ?? new Date().toISOString();
+
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/end-night`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          night_of: nightOf,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[portal] end-night error:', res.status, data);
+        return;
+      }
+      peakCount = data.peak_count ?? peakCount;
+      peakTime = data.peak_time ?? peakTime;
+    } catch (err) {
+      console.error('[portal] end-night FAILED:', err);
+      return;
+    }
 
     const summary: EndNightSummary = {
       venueName: venue.name,
-      peakCount: headcount?.peak_count ?? 0,
-      peakTime: headcount?.updated_at ?? new Date().toISOString(),
+      peakCount,
+      peakTime,
     };
 
-    // 1. Reset headcount to 0 and mark not live — End Night is a deliberate
-    // action that fully closes the venue for the night. The bar goes dark.
-    // (If the bouncer merely disconnects/crashes WITHOUT tapping End Night,
-    // the count persists because disconnect() doesn't touch the DB.)
-    await supabase
-      .from('headcounts')
-      .update({ current_count: 0, is_live: false })
-      .eq('venue_id', venue.id)
-      .eq('night_of', nightOf);
-
-    // 2. Clear cover charge, tonight's special, and mark clicker not live
-    await supabase
-      .from('venues')
-      .update({
-        is_clicker_live: false,
-        cover_charge: null,
-        tonight_special: null,
-        special_updated_at: null,
-      })
-      .eq('id', venue.id);
-
-    // 3. Dispatch updates so map immediately reflects end-of-night
+    // Dispatch updates so map immediately reflects end-of-night
     window.dispatchEvent(new CustomEvent('venues-cover-update', {
       detail: { venueId: venue.id, cover_charge: null },
     }));
@@ -294,10 +309,10 @@ export function usePortal() {
       detail: { venueId: venue.id, currentCount: 0, isLive: false },
     }));
 
-    // 4. Clear persistence — End Night returns to login
+    // Clear persistence — End Night returns to login
     localStorage.removeItem(PORTAL_VENUE_KEY);
 
-    // 5. Update local state and show summary
+    // Update local state and show summary
     setHeadcount(prev => prev ? { ...prev, current_count: 0, is_live: false } : null);
     setVenue(prev => prev ? { ...prev, cover_charge: null, tonight_special: null, special_updated_at: null, is_clicker_live: false } : null);
     setEndSummary(summary);
