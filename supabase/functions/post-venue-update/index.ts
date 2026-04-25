@@ -96,14 +96,15 @@ serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${serviceKey}`,
+        "Authorization": `Bearer ${Deno.env.get("EDGE_JWT_ANON")!}`,
+        "apikey": Deno.env.get("EDGE_JWT_ANON")!,
       },
       body: JSON.stringify({
         venue_id: venue.id,
         venue_name: venue.name,
         drop_text: trimmed,
         drop_id: inserted.id,
-        city: venue.city,
+        city: venue.city.toLowerCase().split(",")[0].trim(),
       }),
     }).catch((err) => {
       console.error("[post-venue-update] push-drop fire-and-forget failed:", err?.message ?? err);
