@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Minus, Plus, LogOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { formatCount, formatTime, timeAgo } from '../../lib/utils';
-import { getTonightDate } from '../../lib/nightlyCode';
+import { formatCount, formatTime, timeAgo, getTonightDate } from '../../lib/utils';
 import type { Venue, Headcount } from '../../lib/types';
 import type { EndNightSummary } from '../../hooks/usePortal';
 import { EventCreator } from './EventCreator';
 import { CoverPortalSection } from './CoverPortalSection';
 import { hapticLight } from '../../lib/haptics';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? '';
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
 interface ClickerViewProps {
   venue: Venue;
@@ -72,10 +74,10 @@ export function ClickerView({
     const loadSpecial = async () => {
       const { data } = await supabase
         .from('venues')
-        .select('special, loyalty_active')
+        .select('tonight_special, loyalty_active')
         .eq('id', venue.id)
         .maybeSingle();
-      if (data?.special) setSpecialText(data.special);
+      if (data?.tonight_special) setSpecialText(data.tonight_special);
       if (data?.loyalty_active !== undefined) setLoyaltyActive(data.loyalty_active);
     };
     const loadReward = async () => {
@@ -212,23 +214,79 @@ export function ClickerView({
 
   const handleSetSpecial = useCallback(async () => {
     if (!specialText.trim()) return;
-    await supabase
-      .from('venues')
-      .update({ special: specialText.trim() })
-      .eq('id', venue.id);
+    if (!venue.staff_code) {
+      setSpecialConfirm('Session expired — log in again');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/set-venue-special`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          special_text: specialText.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[special] set-venue-special error:', res.status, data);
+        setSpecialConfirm('Failed to set');
+        setTimeout(() => setSpecialConfirm(''), 2000);
+        return;
+      }
+    } catch (err) {
+      console.error('[special] set-venue-special FAILED:', err);
+      setSpecialConfirm('Failed to set');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
     setSpecialConfirm('Special set ✓');
     setTimeout(() => setSpecialConfirm(''), 2000);
-  }, [specialText, venue.id]);
+  }, [specialText, venue.id, venue.staff_code]);
 
   const handleClearSpecial = useCallback(async () => {
-    await supabase
-      .from('venues')
-      .update({ special: null })
-      .eq('id', venue.id);
+    if (!venue.staff_code) {
+      setSpecialConfirm('Session expired — log in again');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/set-venue-special`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          special_text: null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[special] set-venue-special clear error:', res.status, data);
+        setSpecialConfirm('Failed to clear');
+        setTimeout(() => setSpecialConfirm(''), 2000);
+        return;
+      }
+    } catch (err) {
+      console.error('[special] set-venue-special clear FAILED:', err);
+      setSpecialConfirm('Failed to clear');
+      setTimeout(() => setSpecialConfirm(''), 2000);
+      return;
+    }
     setSpecialText('');
     setSpecialConfirm('Special cleared');
     setTimeout(() => setSpecialConfirm(''), 2000);
-  }, [venue.id]);
+  }, [venue.id, venue.staff_code]);
 
   const handleCoverTap = useCallback(async (preset: string) => {
     setSelectedCover(preset);
@@ -249,72 +307,94 @@ export function ClickerView({
 
   const handleSaveReward = useCallback(async () => {
     if (!loyaltyReward.trim() || loyaltySaving) return;
+    if (!venue.staff_code) {
+      setLoyaltySaveConfirm('save_failed');
+      setTimeout(() => setLoyaltySaveConfirm(''), 2500);
+      return;
+    }
     setLoyaltySaving(true);
     setLoyaltySaveConfirm('');
 
-    const { error } = await supabase.from('venue_rewards').upsert({
-      venue_id: venue.id,
-      reward_text: loyaltyReward.trim(),
-      visits_required: loyaltyVisitsReq,
-      reward_description: loyaltyDescription.trim() || null,
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'venue_id' });
+    let failed = false;
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/update-venue-rewards`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          reward_text: loyaltyReward.trim(),
+          visits_required: loyaltyVisitsReq,
+          reward_description: loyaltyDescription.trim() || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.error('[rewards] update-venue-rewards error:', res.status, data);
+        failed = true;
+      }
+    } catch (err) {
+      console.error('[rewards] update-venue-rewards FAILED:', err);
+      failed = true;
+    }
 
     setLoyaltySaving(false);
 
-    if (error) {
+    if (failed) {
       setLoyaltySaveConfirm('save_failed');
     } else {
       hapticLight();
       setLoyaltySaveConfirm('Saved \u2713');
     }
     setTimeout(() => setLoyaltySaveConfirm(''), 2500);
-  }, [venue.id, loyaltyReward, loyaltyVisitsReq, loyaltyDescription, loyaltySaving]);
+  }, [venue.id, venue.staff_code, loyaltyReward, loyaltyVisitsReq, loyaltyDescription, loyaltySaving]);
 
   const handleSendUpdate = useCallback(async () => {
     if (!broadcastText.trim()) return;
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    const { error } = await supabase.from('venue_updates').insert({
-      venue_id: venue.id,
-      venue_name: venue.name,
-      message: broadcastText.trim(),
-      expires_at: expiresAt,
-    });
-    if (error) {
-      console.error('[drop] Insert error:', error.message);
-      setBroadcastConfirm('Failed to send');
+    if (!venue.staff_code) {
+      setBroadcastConfirm('Session expired — log in again');
       setTimeout(() => setBroadcastConfirm(''), 2000);
       return;
     }
-    // Fire push notification to all students in this city
-    const trimmedMessage = broadcastText.trim();
-    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5b3V2aHRnendjYnFweWxjc3NrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNzQ5NDYsImV4cCI6MjA4Njc1MDk0Nn0.kr1qQ1jyFBaNDP351aMihxNO3K4GFf_XJEfHRZ9MZ-E';
-    const pushBody = { venue_id: venue.id, venue_name: venue.name, drop_text: trimmedMessage, drop_id: '', city: venue.city };
-    console.log('[drop] reached push-drop call point');
-    console.log('[drop] about to invoke push-drop with:', pushBody);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     try {
-      const res = await fetch('https://tyouvhtgzwcbqpylcssk.supabase.co/functions/v1/push-drop', {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/post-venue-update`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': anonKey,
-          'Authorization': `Bearer ${anonKey}`,
+          'apikey': ANON_KEY,
+          'Authorization': `Bearer ${ANON_KEY}`,
         },
-        body: JSON.stringify(pushBody),
+        body: JSON.stringify({
+          venue_id: venue.id,
+          portal_pin: venue.staff_code,
+          message: broadcastText.trim(),
+          expires_at: expiresAt,
+        }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) console.error('[drop] push-drop error:', res.status, data);
-      else console.log('[drop] push-drop success:', data);
+      if (!res.ok || !data.success) {
+        console.error('[drop] post-venue-update error:', res.status, data);
+        setBroadcastConfirm('Failed to send');
+        setTimeout(() => setBroadcastConfirm(''), 2000);
+        return;
+      }
     } catch (err) {
-      console.error('[drop] push-drop FAILED:', err);
+      console.error('[drop] post-venue-update FAILED:', err);
+      setBroadcastConfirm('Failed to send');
+      setTimeout(() => setBroadcastConfirm(''), 2000);
+      return;
     }
 
     setBroadcastText('');
     hapticLight();
     setBroadcastConfirm('Dropped \u2713');
     setTimeout(() => setBroadcastConfirm(''), 2000);
-  }, [broadcastText, venue.id, venue.name, venue.city]);
+  }, [broadcastText, venue.id, venue.staff_code]);
 
   // Fetch active venue updates for THIS venue only + realtime subscription
   useEffect(() => {

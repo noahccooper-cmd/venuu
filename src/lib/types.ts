@@ -24,7 +24,6 @@ export interface Venue {
   lat: number;
   lng: number;
   image_url: string | null;
-  cover_price: string | null;
   deals: string | null;
   hours: string | null;
   instagram: string | null;
@@ -44,7 +43,6 @@ export interface Venue {
   review_count: number | null;
   tonight_special: string | null;
   special_updated_at: string | null;
-  special: string | null;
   cover_charge: string | null;
   featured: boolean;
   featured_label: string | null;

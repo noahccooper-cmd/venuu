@@ -1,42 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Capacitor } from '@capacitor/core';
-import { Geolocation } from '@capacitor/geolocation';
 import { supabase, envReady } from '../lib/supabase';
-import { generateNightlyCode, getTonightDate } from '../lib/nightlyCode';
-
-const CHECK_IN_RADIUS_M = 200;
-
-/** Haversine distance in meters */
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6_371_000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/** Get current GPS position (native or web) */
-async function getCurrentPosition(): Promise<{ lat: number; lng: number; accuracy: number } | null> {
-  try {
-    if (Capacitor.isNativePlatform()) {
-      const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-      return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
-    }
-    return await new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve(null); return; }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 10000 },
-      );
-    });
-  } catch {
-    return null;
-  }
-}
+import { getTonightDate } from '../lib/utils';
 
 export interface LoyaltyState {
   visitCount: number;
@@ -48,9 +12,6 @@ export interface LoyaltyState {
   canRedeem: boolean;
   redemptionsCount: number;
   loading: boolean;
-  checkIn: (code: string, venueLat: number, venueLng: number) => Promise<{ success: boolean; error?: string }>;
-  checkInWithGeofence: (distance: number, isNearVenue: boolean) => Promise<{ success: boolean; error?: string }>;
-  checkInWithGPS: (venueLat: number, venueLng: number) => Promise<{ success: boolean; error?: string }>;
   recordExternalCheckIn: () => void;
   redeem: () => Promise<{ success: boolean }>;
 }
@@ -144,123 +105,6 @@ export function useLoyalty(venueId: string | null, userId: string | null): Loyal
   const effectiveVisits = visitCount - (redemptionsCount * visitsRequired);
   const canRedeem = effectiveVisits >= visitsRequired;
 
-  const checkIn = useCallback(async (code: string, venueLat: number, venueLng: number): Promise<{ success: boolean; error?: string }> => {
-    if (!venueId || !userId) {
-      return { success: false, error: 'Sign in to check in' };
-    }
-
-    const nightOf = getTonightDate();
-    const correctCode = generateNightlyCode(venueId, nightOf);
-
-    if (code !== correctCode) {
-      return { success: false, error: 'Wrong code. Check the sign at the bar.' };
-    }
-
-    // GPS verification — MUST be within 200m of venue
-    const pos = await getCurrentPosition();
-    if (!pos) {
-      return { success: false, error: 'Location access required to check in. Please enable GPS.' };
-    }
-    if (pos.accuracy > 100) {
-      return { success: false, error: 'GPS signal too weak. Move to an open area and try again.' };
-    }
-    const dist = haversine(pos.lat, pos.lng, venueLat, venueLng);
-    console.log('CODE CHECKIN GPS:', { userLat: pos.lat, userLng: pos.lng, venueLat, venueLng, distance: Math.round(dist), accuracy: pos.accuracy });
-    if (dist > CHECK_IN_RADIUS_M) {
-      return { success: false, error: 'You must be at the venue to check in' };
-    }
-
-    // Insert loyalty visit
-    const { error } = await supabase.from('loyalty_visits').insert({
-      user_id: userId,
-      venue_id: venueId,
-      code_entered: code,
-      night_of: nightOf,
-      verified_at: new Date().toISOString(),
-    });
-
-    if (error) {
-      if (error.code === '23505') {
-        setHasCheckedInTonight(true);
-        return { success: false, error: 'Already checked in tonight!' };
-      }
-      return { success: false, error: 'Something went wrong. Try again.' };
-    }
-
-    setVisitCount(prev => prev + 1);
-    setHasCheckedInTonight(true);
-    return { success: true };
-  }, [venueId, userId]);
-
-  const checkInWithGeofence = useCallback(async (distance: number, isNearVenue: boolean): Promise<{ success: boolean; error?: string }> => {
-    console.log('GEO CHECKIN ATTEMPT:', { userId, venueId, distance, isNearVenue });
-
-    // FIRST: reject unless geofence hook confirms nearness
-    if (!isNearVenue) {
-      return { success: false, error: 'Not at venue. Location check failed.' };
-    }
-
-    if (!venueId || !userId) {
-      return { success: false, error: 'Sign in to check in' };
-    }
-
-    // Double-check: reject if distance exceeds geofence radius
-    if (typeof distance !== 'number' || distance > 200) {
-      return { success: false, error: 'Too far from venue. Use the code instead.' };
-    }
-
-    const nightOf = getTonightDate();
-
-    const { error } = await supabase.from('loyalty_visits').insert({
-      user_id: userId,
-      venue_id: venueId,
-      code_entered: 'GEO',
-      night_of: nightOf,
-      verified_at: new Date().toISOString(),
-    });
-
-    if (error) {
-      if (error.code === '23505') {
-        setHasCheckedInTonight(true);
-        return { success: false, error: 'Already checked in tonight!' };
-      }
-      return { success: false, error: 'Something went wrong. Try again.' };
-    }
-
-    setVisitCount(prev => prev + 1);
-    setHasCheckedInTonight(true);
-    return { success: true };
-  }, [venueId, userId]);
-
-  /** GPS proximity check-in — for launch before NFC tags are deployed. */
-  const checkInWithGPS = useCallback(async (venueLat: number, venueLng: number): Promise<{ success: boolean; error?: string }> => {
-    if (!venueId || !userId) return { success: false, error: 'Sign in to check in' };
-
-    const pos = await getCurrentPosition();
-    if (!pos) return { success: false, error: 'Enable location to check in' };
-    if (pos.accuracy > 100) return { success: false, error: 'GPS signal too weak. Move outside and try again.' };
-
-    const dist = haversine(pos.lat, pos.lng, venueLat, venueLng);
-    if (dist > 100) return { success: false, error: `Get closer to check in (${Math.round(dist)}m away)` };
-
-    const nightOf = getTonightDate();
-    const { error } = await supabase.from('loyalty_visits').insert({
-      user_id: userId,
-      venue_id: venueId,
-      code_entered: 'GPS',
-      night_of: nightOf,
-    });
-
-    if (error) {
-      if (error.code === '23505') return { success: false, error: 'Already checked in tonight!' };
-      return { success: false, error: 'Check-in failed. Try again.' };
-    }
-
-    setVisitCount(prev => prev + 1);
-    setHasCheckedInTonight(true);
-    return { success: true };
-  }, [venueId, userId]);
-
   /** Sync local state after an external check-in (e.g. from useNFC). */
   const recordExternalCheckIn = useCallback(() => {
     setVisitCount(prev => prev + 1);
@@ -292,9 +136,6 @@ export function useLoyalty(venueId: string | null, userId: string | null): Loyal
     canRedeem,
     redemptionsCount,
     loading,
-    checkIn,
-    checkInWithGeofence,
-    checkInWithGPS,
     recordExternalCheckIn,
     redeem,
   };
