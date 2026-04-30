@@ -4,6 +4,7 @@ import { usePortal } from '../hooks/usePortal';
 import { PortalLogin } from '../components/Portal/PortalLogin';
 import { ClickerView } from '../components/Portal/ClickerView';
 import { SecurityPortal } from '../components/Portal/SecurityPortal';
+import { VenuuAdminView } from '../components/Portal/VenuuAdminView';
 import { FratPortal } from '../components/Portal/FratPortal';
 import { supabase, envReady } from '../lib/supabase';
 import type { SecurityOrganization } from '../lib/types';
@@ -43,6 +44,7 @@ export function PortalPage({ onExit }: PortalPageProps) {
     return saved === 'security' ? 'security' : 'venue';
   });
   const [secOrg, setSecOrg] = useState<SecurityOrganization | null>(null);
+  const [venuuAdmin, setVenuuAdmin] = useState(false);
 
   useEffect(() => {
     if (!envReady) return;
@@ -80,10 +82,19 @@ export function PortalPage({ onExit }: PortalPageProps) {
 
   const handleOrgLogin = useCallback(async (code: string): Promise<{ error: string | null }> => {
     if (!code.trim()) return { error: 'Enter a code' };
+    const trimmed = code.trim();
+
+    // venuu admin master code — routes to VenuuAdminView
+    const adminCode = import.meta.env.VITE_VENUU_ADMIN_CODE;
+    if (adminCode && trimmed.toUpperCase() === adminCode.toUpperCase()) {
+      setVenuuAdmin(true);
+      return { error: null };
+    }
+
     const { data, error: err } = await supabase
       .from('security_organizations')
       .select('*')
-      .ilike('org_code', code.trim())
+      .ilike('org_code', trimmed)
       .eq('is_active', true)
       .maybeSingle();
     if (err || !data) return { error: 'Invalid code' };
@@ -97,6 +108,11 @@ export function PortalPage({ onExit }: PortalPageProps) {
     setSecOrg(null);
     localStorage.removeItem(ORG_KEY);
   }, []);
+
+  // If venuu admin is unlocked, show venuu admin view
+  if (venuuAdmin) {
+    return <VenuuAdminView onExit={() => { setVenuuAdmin(false); if (onExit) onExit(); }} />;
+  }
 
   // If security org is logged in, show security portal
   if (secOrg) {
