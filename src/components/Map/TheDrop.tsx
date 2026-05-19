@@ -208,12 +208,14 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
   return (
     <>
       {/* Pill */}
-      <div style={{
+      <div className="drop-pill-wrapper" style={{
         position: 'absolute',
         top: '20px',
         left: 0,
         right: 0,
-        zIndex: 400,
+        // Rides above the VennyBar pill (zIndex 590) so the revenue
+        // surface always wins z-order conflicts at the top of the map.
+        zIndex: 600,
         display: 'flex',
         justifyContent: 'center',
         padding: '6px 0',

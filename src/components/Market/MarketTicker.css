@@ -1,0 +1,116 @@
+.market-ticker {
+  position: relative;
+  overflow: hidden;
+  height: 26px;
+  border-radius: 13px;
+  margin-top: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: background 800ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Edge fade — masks the entry/exit of each tick so the loop doesn't
+   pop. Overlays the full strip via z-index so it sits above the
+   scrolling track without intercepting taps. */
+.market-ticker::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(90deg,
+    rgba(15, 15, 22, 0.95) 0%,
+    transparent 8%,
+    transparent 92%,
+    rgba(15, 15, 22, 0.95) 100%);
+}
+
+/* ─── City-mood tint variants ─── */
+.market-ticker--hot {
+  background: linear-gradient(180deg,
+    rgba(40, 22, 8, 0.88) 0%,
+    rgba(20, 12, 6, 0.92) 100%);
+  box-shadow: inset 0 0 24px rgba(255, 130, 0, 0.08);
+}
+
+.market-ticker--neutral {
+  background: linear-gradient(180deg,
+    rgba(20, 20, 28, 0.88) 0%,
+    rgba(15, 15, 22, 0.92) 100%);
+}
+
+.market-ticker--cool {
+  background: linear-gradient(180deg,
+    rgba(14, 18, 30, 0.9) 0%,
+    rgba(10, 12, 20, 0.94) 100%);
+  box-shadow: inset 0 0 24px rgba(91, 107, 140, 0.10);
+}
+
+/* ─── Scrolling track ─── */
+.market-ticker__track {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  white-space: nowrap;
+  animation: market-ticker-scroll 30s linear infinite;
+  will-change: transform;
+}
+
+.market-ticker__track--paused {
+  animation-play-state: paused;
+}
+
+@keyframes market-ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ─── Entry ─── */
+.market-ticker__entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.market-ticker__name {
+  font-weight: 700;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: 0.06em;
+}
+
+.market-ticker__delta {
+  font-weight: 800;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.market-ticker__delta--up {
+  color: #1FE89A;
+  text-shadow: 0 0 6px rgba(31, 232, 154, 0.40);
+}
+
+.market-ticker__delta--down {
+  color: #E63956;
+  text-shadow: 0 0 6px rgba(230, 57, 86, 0.35);
+}
+
+.market-ticker__sep {
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 11px;
+  margin: 0 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .market-ticker__track { animation: none; }
+}

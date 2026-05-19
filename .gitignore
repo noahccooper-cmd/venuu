@@ -45,3 +45,4 @@ android/app/build/
 tree.txt
 supabase/.temp/
 supabase/.temp/
+.env.backup

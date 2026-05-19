@@ -1,18 +1,25 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { getInitials } from '../../lib/utils';
 import type { CityKey } from '../../lib/constants';
 import { CityToggle } from './CityToggle';
+
+/**
+ * Header — the top strip. Pre-Ship-1.2 contained an avatar button as
+ * the entry point to ProfileScreen. The bottom nav now owns the
+ * "You" tab, so the avatar was redundant clutter and is removed.
+ *
+ * Layout: venuu wordmark + live counter on the left, city dropdown
+ * on the right (Portal tab swaps the right side for a small Portal
+ * label).
+ */
 
 interface HeaderProps {
   city: CityKey;
   onCityChange: (city: CityKey) => void;
   totalCount: number;
-  username: string;
-  onAvatarPress?: () => void;
   activeTab?: string;
 }
 
-export function Header({ city, onCityChange, totalCount, username, onAvatarPress, activeTab }: HeaderProps) {
+export function Header({ city, onCityChange, totalCount, activeTab }: HeaderProps) {
   const isPortal = activeTab === 'portal';
 
   // Animated total count
@@ -56,6 +63,7 @@ export function Header({ city, onCityChange, totalCount, username, onAvatarPress
   useEffect(() => {
     return () => { if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current); };
   }, []);
+
   return (
     <header className="fixed top-0 left-0 right-0 bg-[#050507]"
       style={{
@@ -93,7 +101,7 @@ export function Header({ city, onCityChange, totalCount, username, onAvatarPress
                   transform: `scale(${fireScale})`,
                   transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
                 }}>
-                  {'\uD83D\uDD25'}
+                  {'🔥'}
                 </span>{' '}
                 <span style={{ color: '#fff', fontWeight: 700 }}>
                   {displayCount}
@@ -121,26 +129,7 @@ export function Header({ city, onCityChange, totalCount, username, onAvatarPress
             Portal
           </span>
         ) : (
-          <div className="flex items-center gap-2">
-            <CityToggle city={city} onChange={onCityChange} />
-            <button
-              type="button"
-              onClick={onAvatarPress}
-              className="w-9 h-9 rounded-full bg-[#111114] border border-[#2A2A30] flex items-center justify-center text-xs font-bold active:scale-95 transition-transform"
-              style={{
-                fontFamily: 'Satoshi, sans-serif',
-                color: '#FF8200',
-                cursor: 'pointer',
-                padding: 0,
-                WebkitTapHighlightColor: 'transparent',
-                touchAction: 'manipulation',
-                position: 'relative',
-                zIndex: 10,
-              }}
-            >
-              {getInitials(username)}
-            </button>
-          </div>
+          <CityToggle city={city} onChange={onCityChange} />
         )}
       </div>
     </header>

@@ -4,6 +4,8 @@ import { getEventTimeLabel } from '../../lib/eventUtils';
 import { useVenueRecaps } from '../../hooks/useVenueRecaps';
 import { PunchCard } from '../Loyalty/PunchCard';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
+import { recordSignal } from '../../lib/signals';
+import { openDirectionsTo } from '../../lib/directions';
 import type { Venue, Headcount, VenueEvent } from '../../lib/types';
 import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
 
@@ -36,14 +38,6 @@ function getUberUrl(venue: Venue): string {
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   if (isIOS) return `uber://?${params.toString()}`;
   return `https://m.uber.com/ul/?${params.toString()}`;
-}
-
-/* ── Directions helper ── */
-
-function getDirectionsUrl(venue: Venue): string {
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  if (isIOS) return `https://maps.apple.com/?daddr=${venue.lat},${venue.lng}&dirflg=w`;
-  return `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}&travelmode=walking`;
 }
 
 /* ── Tonight Banner (peek-visible, below venue name) ── */
@@ -291,6 +285,17 @@ export function VenueSheet({
     setSheetState('peeked');
     if (sheetRef.current) sheetRef.current.scrollTop = 0;
   }, [venue.id]);
+
+  useEffect(() => {
+    if (venue?.id) {
+      recordSignal({
+        venueId: venue.id,
+        signalType: 'card_view',
+        metadata: { venue_name: venue.name },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venue?.id]);
 
   const dismiss = useCallback(() => {
     setSheetState('hidden');
@@ -569,14 +574,13 @@ export function VenueSheet({
             </div>
           </div>
           {venue.address && (
-            <a
-              href={getDirectionsUrl(venue)}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => openDirectionsTo(venue.lat, venue.lng, venue.name, venue.id)}
               className="sheet-address"
             >
               {'\uD83D\uDCCD'} {venue.address}
-            </a>
+            </button>
           )}
         </div>}
 

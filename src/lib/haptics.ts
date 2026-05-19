@@ -17,6 +17,15 @@ export async function hapticHeavy() {
   try { await Haptics.impact({ style: ImpactStyle.Heavy }); } catch {}
 }
 
+/**
+ * Selection-style tick — the lightest haptic the OS exposes.
+ * Used for sheet snap transitions where we want a confirmation
+ * cue without the weight of an impact pulse.
+ */
+export async function hapticTick() {
+  try { await Haptics.selectionStart(); } catch {}
+}
+
 export async function hapticSuccess() {
   try { await Haptics.notification({ type: NotificationType.Success }); } catch {}
 }

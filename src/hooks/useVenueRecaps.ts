@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase, envReady } from '../lib/supabase';
 import { getNightOf } from '../lib/utils';
+import { recordSignal } from '../lib/signals';
 import type { VenueRecap } from '../lib/types';
 
 export function useVenueRecaps(venueId: string | null, username?: string) {
@@ -131,6 +132,17 @@ export function useVenueRecaps(venueId: string | null, username?: string) {
       const row = data as VenueRecap;
       knownIds.current.add(row.id);
       setRecaps(prev => [row, ...prev]);
+    }
+
+    // PREDICTION ENGINE: log recap post as a signal
+    if (venueId) {
+      recordSignal({
+        venueId,
+        signalType: 'recap_post',
+        sourceTable: 'venue_recaps',
+        sourceRowId: optimisticId,
+        metadata: { stars, body_length: trimmed.length },
+      });
     }
   }, [venueId, nightOf]);
 

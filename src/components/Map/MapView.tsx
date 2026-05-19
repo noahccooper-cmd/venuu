@@ -1,5 +1,9 @@
-import { useEffect, useRef, useCallback, useState, type MutableRefObject } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState, type MutableRefObject } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import mapboxgl from 'mapbox-gl';
+import { Globe, Share2 } from 'lucide-react';
+import type { CityAggregate } from '../../hooks/useCityAggregates';
+import type { ColdOpenPhase } from '../../hooks/useColdOpen';
 import { CITIES, MAPBOX_STYLE, type CityKey } from '../../lib/constants';
 import { mapboxToken, mapboxReady } from '../../lib/supabase';
 import { getShortName, formatCount, getCoverLabel } from '../../lib/utils';
@@ -9,6 +13,45 @@ import { formatCoverPriceShort } from '../../lib/coverPricing';
 import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
 import { getNightPhase, fetchRoutesForParticles, spawnParticle, tickParticle, particlesToGeoJSON, type Particle, type RouteCache } from '../../lib/mapEffects';
 import type { Venue, VenueEvent } from '../../lib/types';
+import type { HeadcountEstimate } from '../../hooks/useVenuesInBounds';
+import { LiveVenueBubble } from './LiveVenueBubble';
+import { LiveEventsFeed } from './LiveEventsFeed';
+import { HeatFieldLayer } from './HeatFieldLayer';
+import { useHeatField } from '../../hooks/useHeatField';
+import type { Plan as VennyPlan } from '../Venny/PlanCard';
+import { FEATURE_FLAGS } from '../../lib/featureFlags';
+import { CityPulseLine } from '../Market/CityPulseLine';
+import { MoversChip } from '../Market/MoversDrawer';
+import { MarketPanel } from '../Market/MarketPanel';
+import { MarketTicker } from '../Market/MarketTicker';
+
+/** True between 5pm and 3am local — boosts heat-field intensity. */
+function isNightHours(): boolean {
+  const hour = new Date().getHours();
+  return hour >= 17 || hour < 3;
+}
+
+/** Great-circle distance in km between two (lat, lng) pairs. Used by
+ *  the smart-density name-label heuristic ("within ~500m of user"). */
+function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const x = Math.sin(dLat / 2) ** 2
+          + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+/** Venue augmented with the latest fused estimate from the prediction engine. */
+type VenueWithEstimate = Venue & { headcount_estimates?: HeadcountEstimate[] };
+
+/** Has this estimate enough information to take over the bubble visual? */
+function hasUsableEstimate(est: HeadcountEstimate | undefined): est is HeadcountEstimate {
+  if (!est) return false;
+  if (est.state_label === 'Unknown') return false;
+  return est.confidence_pct >= 10;
+}
 
 /* ── Animated Count Helper ──────────── */
 
@@ -137,6 +180,12 @@ interface MarkerEntry {
   liveEl: HTMLDivElement;
   coverEl: HTMLDivElement;
   priceTagEl: HTMLDivElement;
+  /** Mount point for the React-rendered LiveVenueBubble overlay. */
+  reactMount: HTMLDivElement;
+  /** React root that owns the LiveVenueBubble inside reactMount. */
+  reactRoot: Root;
+  /** True when the prediction-engine bubble has taken over the visual. */
+  hasLiveOverlay: boolean;
   currentStage: number;
   currentCount: number;
   isFeatured: boolean;
@@ -170,11 +219,42 @@ interface MapViewProps {
   onEventClick?: (event: VenueEvent) => void;
   onMapTap?: () => void;
   onCityChange?: (city: CityKey) => void;
+  /** Tap on a city dot at globe view — parent updates currentCity. */
+  onCityTapFromGlobe?: (city: CityKey) => void;
+  /** City rollups for the globe-view dot layer + headline counter. */
+  cityAggregates?: CityAggregate[];
+  /** Sum of `peopleOut` across `cityAggregates`. Shown in globe overlay. */
+  totalPeopleOut?: number;
+  /** True while the cold-open intro is playing — disables some UX. */
+  introActive?: boolean;
+  /** Current intro phase; bloom triggers only on 'bubble-bloom'. */
+  introPhase?: ColdOpenPhase;
+  /** Fires once the underlying mapboxgl.Map is constructed and assigned. */
+  onMapReady?: (map: mapboxgl.Map) => void;
+  /** Tap on the share button at globe view → share current snapshot. */
+  onShareGlobe?: () => void;
+  /** True while a share is mid-flight (canvas composite + share sheet). */
+  sharingGlobe?: boolean;
   onCancelRoute?: () => void;
   onPriceTap?: (venueId: string, venueName: string) => void;
   onToggleFollow?: () => void;
   onUserDragMap?: () => void;
   mapInstanceRef?: MutableRefObject<mapboxgl.Map | null>;
+  /** Venue IDs Venny has highlighted. When non-empty, matching bubbles
+   *  get an orange ring + scale boost and non-matching bubbles fade. */
+  highlightedVenueIds?: string[];
+  /** When non-null, render an orange route polyline + numbered stop
+   *  markers connecting the plan's stops, and fit camera to all. */
+  activePlan?: VennyPlan | null;
+  /** Called when the user taps a numbered route marker. */
+  onPlanStopTap?: (stopIndex: number) => void;
+  /** Stop index the parent currently considers "focused" (e.g. the
+   *  user tapped a stop in the sheet). Receives a brief pulse class
+   *  on its marker. */
+  focusedStopIndex?: number | null;
+  /** Plan sheet state — drives camera ease padding so the focused
+   *  stop stays visible above the sheet. */
+  sheetState?: 'pill' | 'card' | 'full' | null;
 }
 
 /* ── Events GeoJSON builder ──────────── */
@@ -206,34 +286,70 @@ function buildEventsGeoJSON(events: VenueEvent[], venues: Venue[]): GeoJSON.Feat
   };
 }
 
-const SEC_BUBBLES: { key: string; abbrev: string; bg: string; text: string; border: string; label: string; fontSize?: string }[] = [
-  { key: 'knoxville', abbrev: 'UT', bg: '#FF8200', text: '#fff', border: '#CC6800', label: 'Knoxville' },
-  { key: 'athens', abbrev: 'UGA', bg: '#BA0C2F', text: '#fff', border: '#8A091F', label: 'Athens' },
-  { key: 'tuscaloosa', abbrev: 'BAMA', bg: '#9E1B32', text: '#fff', border: '#6E1222', label: 'Tuscaloosa', fontSize: '10px' },
-  { key: 'baton_rouge', abbrev: 'LSU', bg: '#461D7C', text: '#fff', border: '#30145A', label: 'Baton Rouge' },
-  { key: 'auburn', abbrev: 'AU', bg: '#0C2340', text: '#fff', border: '#F26522', label: 'Auburn' },
-  { key: 'oxford', abbrev: 'OLEMISS', bg: '#CE1126', text: '#fff', border: '#14213D', label: 'Oxford', fontSize: '9px' },
-  { key: 'starkville', abbrev: 'MSU', bg: '#660000', text: '#fff', border: '#440000', label: 'Starkville' },
-  { key: 'lexington', abbrev: 'UK', bg: '#0033A0', text: '#fff', border: '#002270', label: 'Lexington' },
-  { key: 'fayetteville', abbrev: 'ARK', bg: '#9D2235', text: '#fff', border: '#6D1825', label: 'Fayetteville' },
-  { key: 'columbia_mo', abbrev: 'MIZ', bg: '#F1B82D', text: '#000', border: '#C49520', label: 'Columbia' },
-  { key: 'columbia_sc', abbrev: 'SC', bg: '#73000A', text: '#fff', border: '#530007', label: 'Columbia' },
-  { key: 'gainesville', abbrev: 'UF', bg: '#0021A5', text: '#fff', border: '#FA4616', label: 'Gainesville' },
-  { key: 'nashville', abbrev: 'VU', bg: '#CFAE70', text: '#000', border: '#A08850', label: 'Nashville' },
-  { key: 'college_station', abbrev: 'A&M', bg: '#500000', text: '#fff', border: '#300000', label: 'College Station', fontSize: '11px' },
-  { key: 'norman', abbrev: 'OU', bg: '#841617', text: '#fff', border: '#FDF9D8', label: 'Norman' },
-  { key: 'austin', abbrev: 'TEX', bg: '#BF5700', text: '#fff', border: '#333F48', label: 'Austin' },
-];
+/**
+ * drawLineProgress — given an ordered list of [lng, lat] coords and a
+ * progress fraction `t` in [0,1], returns the coords subset that
+ * represents the line "drawn in" to that fraction of total length.
+ * The last point is interpolated between two consecutive coords so the
+ * animation looks continuous rather than stepping segment-by-segment.
+ */
+function drawLineProgress(coords: [number, number][], t: number): [number, number][] {
+  if (coords.length === 0) return [];
+  if (t <= 0) return [coords[0]];
+  if (t >= 1) return coords;
+
+  // Compute segment lengths in plain euclidean lng/lat space — close
+  // enough for short city-scale plans, and avoids haversine costs on
+  // every RAF tick.
+  let total = 0;
+  const segLens: number[] = [];
+  for (let i = 1; i < coords.length; i++) {
+    const dx = coords[i][0] - coords[i - 1][0];
+    const dy = coords[i][1] - coords[i - 1][1];
+    const len = Math.hypot(dx, dy);
+    segLens.push(len);
+    total += len;
+  }
+  if (total === 0) return [coords[0]];
+
+  const target = total * t;
+  const out: [number, number][] = [coords[0]];
+  let acc = 0;
+  for (let i = 0; i < segLens.length; i++) {
+    const next = acc + segLens[i];
+    if (next >= target) {
+      const local = (target - acc) / (segLens[i] || 1);
+      const x = coords[i][0] + (coords[i + 1][0] - coords[i][0]) * local;
+      const y = coords[i][1] + (coords[i + 1][1] - coords[i][1]) * local;
+      out.push([x, y]);
+      return out;
+    }
+    out.push(coords[i + 1]);
+    acc = next;
+  }
+  return out;
+}
 
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityChange, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef }: MapViewProps) {
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState }: MapViewProps) {
+  // Side pills (share-globe / globe / follow-me) fade out and slide
+  // down while the plan sheet covers the bottom of the map. They
+  // remain visible at PILL state (sheet is at the top) and when no
+  // sheet is active.
+  const sheetHidesSidePills = sheetState === 'card' || sheetState === 'full';
+  const sidePillSheetStyle: React.CSSProperties = {
+    opacity: sheetHidesSidePills ? 0 : 1,
+    pointerEvents: sheetHidesSidePills ? 'none' : 'auto',
+    transform: sheetHidesSidePills ? 'translateY(20px)' : 'translateY(0)',
+    transition: 'opacity 320ms cubic-bezier(0.2, 0.7, 0.2, 1), transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1), border-color 0.2s, bottom 0.3s',
+  };
+
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, MarkerEntry>>(new Map());
   const markersVisibleRef = useRef(true);
   const tMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  const cityMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const animFrameRef = useRef<number>(0);
   const routeCoordsRef = useRef<[number, number][] | null>(null);
   const particlesRef = useRef<Particle[]>([]);
@@ -241,20 +357,79 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const nightPhaseRef = useRef(getNightPhase());
   const entrancePlayedRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  // Market-mode zoom bucket. Only the bucket transitions trigger a
+  // React re-render of the LiveVenueBubble overlay — keeps zoom
+  // interactions cheap. Snapped to a representative zoom number so
+  // the bubble can do its own < 13 / < 15 / >= 15 tier math.
+  const [marketZoom, setMarketZoom] = useState<number>(16);
+  const marketZoomBucketRef = useRef<'wide' | 'mid' | 'tight'>('tight');
+  // Market View Mode — the signature gesture. Chip morphs upward
+  // into MarketPanel via shared layoutId; map bubbles BOLD-transform
+  // with staggered choreography while active.
+  const [marketViewActive, setMarketViewActive] = useState(false);
+  // Currently-spotlighted venue from the panel; the matching bubble
+  // overrides scale + adds a pulsing glow. Cleared on exit.
+  const [spotlightVenueId, setSpotlightVenueId] = useState<string | null>(null);
+  const exitMarketView = useCallback(() => {
+    setMarketViewActive(false);
+    setSpotlightVenueId(null);
+  }, []);
+  // Biggest absolute delta in this batch defines the BOLD entry
+  // stagger curve. Each bubble's `movementMagnitude` = |its delta| /
+  // maxAbsDelta, so the strongest mover gets delay 0, weakest gets
+  // ~600ms. Recomputed when the venue list changes.
+  const maxAbsDelta = useMemo(() => {
+    let max = 0;
+    for (const v of venues as VenueWithEstimate[]) {
+      const d = v.headcount_estimates?.[0]?.delta_pct;
+      if (typeof d === 'number') {
+        const abs = Math.abs(d);
+        if (abs > max) max = abs;
+      }
+    }
+    return max > 0 ? max : 1;
+  }, [venues]);
+  // Top-5 venues by |delta_pct| — these always show their name label
+  // regardless of zoom. Membership is computed once per venue batch and
+  // memoized so the per-marker render loop is a cheap Set.has() lookup.
+  const topMoverIds = useMemo(() => {
+    const ranked = (venues as VenueWithEstimate[])
+      .map(v => ({ id: v.id, abs: Math.abs(v.headcount_estimates?.[0]?.delta_pct ?? 0) }))
+      .filter(x => x.abs > 0)
+      .sort((a, b) => b.abs - a.abs)
+      .slice(0, 5);
+    return new Set(ranked.map(x => x.id));
+  }, [venues]);
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
+  // ── Venny plan route refs ──
+  // Mapbox source+layer pair for the route polyline + glow, plus DOM
+  // markers anchored at each stop. animFrame and `lastSignature` let
+  // us avoid re-animating the draw-in when only the camera moves.
+  const planMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const planAnimRafRef = useRef<number | null>(null);
+  const planSignatureRef = useRef<string | null>(null);
+  const onPlanStopTapRef = useRef(onPlanStopTap);
+  onPlanStopTapRef.current = onPlanStopTap;
   const eventsRef = useRef(events);
   const onVenueClickRef = useRef(onVenueClick);
   const onEventClickRef = useRef(onEventClick);
-  const onCityChangeRef = useRef(onCityChange);
   const onPriceTapRef = useRef(onPriceTap);
   venuesRef.current = venues;
   countsRef.current = counts;
   eventsRef.current = events;
   onVenueClickRef.current = onVenueClick;
-  onCityChangeRef.current = onCityChange;
   onPriceTapRef.current = onPriceTap;
+
+  // Heat field — the atmospheric layer beneath the bubbles.
+  const { geojson: heatGeojson } = useHeatField(city);
+
+  // ── Globe view state (zoom < 4 → "we're at the globe") ───────
+  const [isAtGlobe, setIsAtGlobe] = useState(false);
+  const onCityTapFromGlobeRef = useRef(onCityTapFromGlobe);
+  onCityTapFromGlobeRef.current = onCityTapFromGlobe;
+  const cityPulseFrameRef = useRef<number>(0);
 
   useEffect(() => {
     if (!mapContainer.current || !mapboxReady) return;
@@ -271,6 +446,8 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       pitch: 30,
       minZoom: 1,
       maxZoom: 18,
+      // Globe at low zoom (< ~5) auto-transitions to Mercator as you zoom in.
+      projection: { name: 'globe' },
       attributionControl: false,
       failIfMajorPerformanceCaveat: false,
       preserveDrawingBuffer: false,
@@ -292,7 +469,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     /* ── Zoom-aware: remove/add markers to free GPU entirely ── */
     let markersVisible = true;
     let tVisible = true;
-    let cityBubblesVisible = false;
 
     map.on('zoom', () => {
       const zoom = map.getZoom();
@@ -319,14 +495,14 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         tVisible = true;
       }
 
-      // City bubbles: show when zoom < 9, hide when >= 9
-      if (zoom < 9 && !cityBubblesVisible) {
-        cityMarkersRef.current.forEach(m => m.addTo(map));
-        cityBubblesVisible = true;
-      }
-      if (zoom >= 9 && cityBubblesVisible) {
-        cityMarkersRef.current.forEach(m => m.remove());
-        cityBubblesVisible = false;
+      // Market-mode bucket. Snap to a representative zoom number so
+      // bubbles only repaint when crossing a tier boundary, not on
+      // every animation tick.
+      const nextBucket: 'wide' | 'mid' | 'tight' =
+        zoom < 13 ? 'wide' : zoom < 15 ? 'mid' : 'tight';
+      if (nextBucket !== marketZoomBucketRef.current) {
+        marketZoomBucketRef.current = nextBucket;
+        setMarketZoom(nextBucket === 'wide' ? 11 : nextBucket === 'mid' ? 14 : 16);
       }
     });
 
@@ -337,6 +513,123 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     }
 
     map.on('load', () => {
+      // ── Globe-view fog: deep purple atmosphere with magenta rim ──
+      // Visible primarily at low zoom (≤ ~5) when the globe projection
+      // is active. Auto-fades into a Mercator view as the user zooms in.
+      try {
+        map.setFog({
+          'color':          'rgba(100, 80, 180, 0.4)',
+          'high-color':     'rgba(200, 100, 220, 0.5)',
+          'horizon-blend':  0.05,
+          'space-color':    'rgba(10, 14, 28, 1.0)',
+          'star-intensity': 0.6,
+        });
+      } catch (err) {
+        console.warn('[MapView] setFog failed:', err);
+      }
+
+      // ── City dots (globe view) — one Point per launch market.
+      // Source data is populated from the cityAggregates prop in a
+      // separate effect below; we set up empty here so the layers
+      // exist by the time aggregates arrive.
+      map.addSource('venuu-cities', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      // Outer pulse ring — added FIRST so the inner dot stays on top.
+      map.addLayer({
+        id: 'city-dots-pulse',
+        type: 'circle',
+        source: 'venuu-cities',
+        minzoom: 0,
+        maxzoom: 6,
+        paint: {
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            0, 12, 2, 18, 4, 28, 6, 0,
+          ],
+          'circle-color': [
+            'match', ['get', 'dominantState'],
+            'Surging', '#1FE89A',
+            'Packed',  '#7D1C33',
+            'Busy',    '#8B4023',
+            'Lively',  '#B58A2C',
+            'Quiet',   '#5E4480',
+            '#5E4480',
+          ],
+          'circle-opacity': 0.0, // breath-loop animates this
+          'circle-blur': 0.4,
+          'circle-stroke-width': 0,
+        },
+      });
+
+      // Inner solid dot — sits on top of the pulse ring.
+      map.addLayer({
+        id: 'city-dots-inner',
+        type: 'circle',
+        source: 'venuu-cities',
+        minzoom: 0,
+        maxzoom: 6,
+        paint: {
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            0, 6, 2, 8, 4, 14, 6, 0,
+          ],
+          'circle-color': [
+            'match', ['get', 'dominantState'],
+            'Surging', '#1FE89A',
+            'Packed',  '#7D1C33',
+            'Busy',    '#8B4023',
+            'Lively',  '#B58A2C',
+            'Quiet',   '#5E4480',
+            '#5E4480',
+          ],
+          'circle-opacity': 0.95,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': 'rgba(255, 255, 255, 0.5)',
+        },
+      });
+
+      // City dot tap → fly down to the city + tell parent to switch.
+      map.on('click', 'city-dots-inner', (e) => {
+        const f = e.features?.[0];
+        if (!f || !f.geometry || f.geometry.type !== 'Point') return;
+        const coords = f.geometry.coordinates as [number, number];
+        const cityKey = (f.properties?.city ?? '') as CityKey;
+        map.flyTo({
+          center: coords,
+          zoom: 13.5,
+          pitch: 45,
+          bearing: -8,
+          duration: 2200,
+          curve: 1.42,
+          essential: true,
+        });
+        if (cityKey) onCityTapFromGlobeRef.current?.(cityKey);
+      });
+      map.on('mouseenter', 'city-dots-inner', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'city-dots-inner', () => {
+        map.getCanvas().style.cursor = '';
+      });
+
+      // City-dot pulse loop — 1.6s sinusoidal opacity breath.
+      const pulseStartedAt = performance.now();
+      const tickPulse = (now: number) => {
+        if (!map.getLayer('city-dots-pulse')) return;
+        const elapsed = (now - pulseStartedAt) / 1000;
+        const opacity = 0.4 + 0.3 * Math.sin((elapsed * 2 * Math.PI) / 1.6);
+        try {
+          map.setPaintProperty('city-dots-pulse', 'circle-opacity', opacity);
+        } catch {
+          // layer briefly gone during a style swap — next tick recovers
+        }
+        cityPulseFrameRef.current = requestAnimationFrame(tickPulse);
+      };
+      cityPulseFrameRef.current = requestAnimationFrame(tickPulse);
+
       // ── Event pill background image (SDF 1×1 pixel used with icon-text-fit) ──
       const pillData = new Uint8Array([0, 0, 0, 217]); // rgba(0,0,0,0.85)
       map.addImage('event-pill-bg', { width: 1, height: 1, data: pillData }, { sdf: true });
@@ -358,34 +651,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       tWrapperEl.style.willChange = 'transform';
 
       tMarkerRef.current = tMarker;
-
-      // ── SEC city bubbles — visible at low zoom levels ──
-      const cityMarkers: mapboxgl.Marker[] = [];
-      SEC_BUBBLES.forEach((b) => {
-        const cityConfig = CITIES[b.key as CityKey];
-        if (!cityConfig) return;
-
-        const el = document.createElement('div');
-        el.style.cssText = 'cursor:pointer;display:flex;flex-direction:column;align-items:center;';
-        el.innerHTML = `<div style="width:44px;height:44px;border-radius:50%;background:${b.bg};border:3px solid ${b.border};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:${b.fontSize || '13px'};color:${b.text};font-family:Satoshi,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.4);">${b.abbrev}</div><span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 3px rgba(0,0,0,0.8);font-family:Satoshi,sans-serif;">${b.label}</span>`;
-
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          onCityChangeRef.current?.(b.key as CityKey);
-        });
-
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-          .setLngLat([cityConfig.center.lng, cityConfig.center.lat]);
-
-        cityMarkers.push(marker);
-      });
-      cityMarkersRef.current = cityMarkers;
-
-      // If map starts zoomed out, show city bubbles immediately
-      if (map.getZoom() < 9) {
-        cityMarkers.forEach(m => m.addTo(map));
-        cityBubblesVisible = true;
-      }
 
       // ── Route layers (gradient energy flow) ──
       // Trail: faded gray line showing where user walked
@@ -737,6 +1002,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
     mapRef.current = map;
     if (mapInstanceRef) mapInstanceRef.current = map;
+    if (onMapReady) onMapReady(map);
 
     // ── Fix black tiles: resize on visibility change, window resize, app foreground ──
     const handleResize = () => {
@@ -779,14 +1045,16 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       document.removeEventListener('resume', handleResume);
       resizeObserver?.disconnect();
       cancelAnimationFrame(animFrameRef.current);
-      markersRef.current.forEach(entry => entry.marker.remove());
+      if (cityPulseFrameRef.current) cancelAnimationFrame(cityPulseFrameRef.current);
+      markersRef.current.forEach(entry => {
+        try { entry.reactRoot.unmount(); } catch { /* noop */ }
+        entry.marker.remove();
+      });
       markersRef.current.clear();
       if (tMarkerRef.current) {
         tMarkerRef.current.remove();
         tMarkerRef.current = null;
       }
-      cityMarkersRef.current.forEach(m => m.remove());
-      cityMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
       if (mapInstanceRef) mapInstanceRef.current = null;
@@ -835,6 +1103,13 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
     markersRef.current.forEach((entry, id) => {
       if (!currentIds.has(id)) {
+        // Tear down the React root before removing the marker so the
+        // attached LiveVenueBubble unmounts cleanly.
+        try {
+          entry.reactRoot.unmount();
+        } catch {
+          // unmount can throw during fast Strict-Mode tear-downs — safe to ignore
+        }
         entry.marker.remove();
         markersRef.current.delete(id);
       }
@@ -933,6 +1208,22 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       el.appendChild(liveEl);
       el.appendChild(priceTagEl);
 
+      // ── Prediction-engine overlay ─────────────────────────────
+      // Mount point for LiveVenueBubble. Sits on top of the legacy
+      // bubble; we make the legacy bubble visually invisible (but keep
+      // its layout slot for marker positioning) only when an estimate
+      // is present and confident enough — see syncLiveBubbles below.
+      const reactMount = document.createElement('div');
+      reactMount.className = 'venue-live-bubble-mount';
+      reactMount.style.position = 'absolute';
+      reactMount.style.top = '50%';
+      reactMount.style.left = '50%';
+      reactMount.style.transform = 'translate(-50%, -50%)';
+      reactMount.style.display = 'none';
+      reactMount.style.zIndex = '3';
+      el.appendChild(reactMount);
+      const reactRoot = createRoot(reactMount);
+
       // Initialize featured state
       const isFeatured = !!venue.featured;
       if (isFeatured) {
@@ -977,12 +1268,396 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
       markersRef.current.set(venue.id, {
         marker, el, bubbleEl, glowEl, particlesEl, ringEl, ring2El, countEl, labelEl, featuredBadgeEl, featuredLabelEl, liveEl, coverEl, priceTagEl,
+        reactMount, reactRoot, hasLiveOverlay: false,
         currentStage: 0, currentCount: 0, isFeatured, isFraternity: venue.category === 'fraternity', hasEvent: false,
       });
     });
   }, [venues, mapLoaded]);
 
   useEffect(() => { syncMarkers(); }, [syncMarkers]);
+
+  // ── Globe view: push city aggregates into the city-dots source ──
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const src = map.getSource('venuu-cities') as mapboxgl.GeoJSONSource | undefined;
+    if (!src) return;
+    const features = (cityAggregates ?? []).map(a => ({
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [a.centerLng, a.centerLat] },
+      properties: {
+        city: a.city,
+        cityName: a.cityName,
+        dominantState: a.dominantState,
+        peopleOut: a.peopleOut,
+        activeCount: a.activeCount,
+      },
+    }));
+    src.setData({ type: 'FeatureCollection', features });
+  }, [cityAggregates, mapLoaded]);
+
+  // ── Track zoom so we know when the user is at the globe view ──
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const handler = () => setIsAtGlobe(map.getZoom() < 4);
+    handler();
+    map.on('zoom', handler);
+    return () => { map.off('zoom', handler); };
+  }, [mapLoaded]);
+
+  // ── Prediction-engine bubble sync ─────────────────────────────
+  // For every marker, render LiveVenueBubble inside its React mount
+  // when the venue has a usable (confidence ≥ 10, state ≠ Unknown)
+  // estimate. Neutralise the legacy bubble visuals so the overlay is
+  // the only thing the user sees. Featured + fraternity venues keep
+  // their bespoke legacy styling — they aren't part of the prediction
+  // pipeline yet (frats are excluded server-side; featured is a
+  // different visual contract that supersedes the engine).
+  useEffect(() => {
+    if (!mapLoaded) return;
+
+    // Pre-compute bloom-stagger center once per render — bubbles closer
+    // to the screen center bloom first, outliers last (max 600 ms tail).
+    const map = mapRef.current;
+    const containerRect = (introActive && introPhase === 'bubble-bloom' && map)
+      ? map.getContainer().getBoundingClientRect()
+      : null;
+
+    const highlightSet = new Set(highlightedVenueIds ?? []);
+    const hasHighlight = highlightSet.size > 0;
+
+    venues.forEach(v => {
+      const entry = markersRef.current.get(v.id);
+      if (!entry) return;
+      if (entry.isFeatured || entry.isFraternity) return;
+
+      const est = (v as VenueWithEstimate).headcount_estimates?.[0];
+      const usable = hasUsableEstimate(est);
+
+      let bloomDelay: number | undefined;
+      if (containerRect && map) {
+        try {
+          const proj = map.project([v.lng, v.lat]);
+          const dx = proj.x - containerRect.width / 2;
+          const dy = proj.y - containerRect.height / 2;
+          const distFromCenter = Math.hypot(dx, dy);
+          const normalized = Math.min(distFromCenter / 400, 1);
+          bloomDelay = Math.floor(normalized * 600);
+        } catch {
+          bloomDelay = 0;
+        }
+      }
+
+      const isHighlighted = hasHighlight && highlightSet.has(v.id);
+
+      // Venny fade dim — soften non-highlighted markers while a search
+      // is active. Highlighted markers stay at full opacity and pop via
+      // the lvb-highlighted CSS class. Reset opacity when highlight is
+      // cleared so the legacy display path stays untouched.
+      if (hasHighlight) {
+        entry.el.style.opacity = isHighlighted ? '1' : '0.45';
+        entry.el.style.transition = 'opacity 320ms ease-out';
+        entry.el.style.zIndex = isHighlighted ? '10' : '';
+      } else if (entry.el.style.opacity) {
+        entry.el.style.opacity = '';
+        entry.el.style.zIndex = '';
+      }
+
+      // Per-venue magnitude for the BOLD stagger curve. Falls back to
+      // 0 when delta_pct is missing — those bubbles light last.
+      const venueAbsDelta = typeof est?.delta_pct === 'number' ? Math.abs(est.delta_pct) : 0;
+      const movementMagnitude = venueAbsDelta / maxAbsDelta;
+
+      // Smart-density name label heuristic: top-5 mover, spotlit,
+      // tight-zoom (≥ 16), or within ~500 m of the user's location.
+      // Everywhere else the bubble stays anonymous to keep the map
+      // legible at city zoom.
+      const isVenueSpotlight = marketViewActive && v.id === spotlightVenueId;
+      let showName = false;
+      if (isVenueSpotlight) {
+        showName = true;
+      } else if (topMoverIds.has(v.id)) {
+        showName = true;
+      } else if (marketZoom >= 16) {
+        showName = true;
+      } else if (userLocation && typeof v.lat === 'number' && typeof v.lng === 'number') {
+        const dKm = haversineKm(userLocation.lat, userLocation.lng, v.lat, v.lng);
+        if (dKm < 0.5) showName = true;
+      }
+
+      entry.reactRoot.render(
+        <LiveVenueBubble
+          venueId={v.id}
+          venueName={v.name}
+          coverCharge={v.cover_charge}
+          estimate={usable ? est : null}
+          introBloomDelay={bloomDelay}
+          highlighted={isHighlighted}
+          mapZoom={marketZoom}
+          marketView={marketViewActive}
+          isSpotlight={isVenueSpotlight}
+          movementMagnitude={movementMagnitude}
+          showName={showName}
+        />
+      );
+
+      if (usable && !entry.hasLiveOverlay) {
+        // Take over: hide legacy text, transparentise the legacy pill,
+        // stop its CSS animation, and reveal the React mount.
+        entry.countEl.style.opacity = '0';
+        entry.bubbleEl.style.background = 'transparent';
+        entry.bubbleEl.style.boxShadow = 'none';
+        entry.bubbleEl.style.border = 'none';
+        entry.bubbleEl.style.animation = 'none';
+        entry.bubbleEl.classList.remove('active-glow');
+        entry.reactMount.style.display = 'block';
+        // The Signature Display is ~58px tall; the legacy label sits at
+        // top:18px which lands inside the bubble's footprint. Push the
+        // label down so the venue name clears the bottom edge with a
+        // small breathing gap. Reset on the reverse path.
+        entry.labelEl.style.top = '38px';
+        entry.hasLiveOverlay = true;
+      } else if (!usable && entry.hasLiveOverlay) {
+        // Hand back to legacy: hide the React mount and let the existing
+        // visuals-sync effect repaint the legacy bubble on next tick.
+        entry.reactMount.style.display = 'none';
+        entry.countEl.style.opacity = '';
+        entry.bubbleEl.style.animation = '';
+        entry.labelEl.style.top = ''; // legacy painter recomputes on next tick
+        entry.hasLiveOverlay = false;
+        entry.currentStage = -1; // force the legacy visuals sync to repaint
+      }
+    });
+  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds, marketZoom, marketViewActive, spotlightVenueId, maxAbsDelta, topMoverIds, userLocation]);
+
+  // ── Venny plan route — orange polyline + glow + numbered markers ──
+  // Adds a dedicated 'venny-route' source/layer pair and a set of DOM
+  // markers at each stop's coordinates. The line gradient-animates
+  // from start to end on first render of a given plan signature; on
+  // re-render with the same plan we leave the static line alone. When
+  // activePlan becomes null we tear everything down cleanly.
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const teardown = () => {
+      // Cancel any in-flight draw-in animation.
+      if (planAnimRafRef.current != null) {
+        cancelAnimationFrame(planAnimRafRef.current);
+        planAnimRafRef.current = null;
+      }
+      // Remove DOM markers.
+      for (const m of planMarkersRef.current) {
+        try { m.remove(); } catch { /* already gone */ }
+      }
+      planMarkersRef.current = [];
+      // Remove layers/source if present.
+      for (const id of ['venny-route-line', 'venny-route-glow']) {
+        if (map.getLayer(id)) {
+          try { map.removeLayer(id); } catch { /* already gone */ }
+        }
+      }
+      if (map.getSource('venny-route')) {
+        try { map.removeSource('venny-route'); } catch { /* already gone */ }
+      }
+      planSignatureRef.current = null;
+    };
+
+    if (!activePlan || !Array.isArray(activePlan.stops) || activePlan.stops.length < 2) {
+      teardown();
+      return;
+    }
+
+    const stops = activePlan.stops.filter(s =>
+      typeof s?.lat === 'number' && typeof s?.lng === 'number'
+    );
+    if (stops.length < 2) {
+      teardown();
+      return;
+    }
+
+    // Derive the "current" stop — first one with no arrival/skip
+    // markers. Falls back to 0 if every stop is already done.
+    const currentIdx = (() => {
+      const idx = stops.findIndex(s =>
+        !s.arrived_at && !s.visited_at && !s.skipped_at,
+      );
+      return idx === -1 ? Math.max(0, stops.length - 1) : idx;
+    })();
+
+    // Signature includes arrived/skipped state per stop + the focused
+    // index so any state mutation triggers a marker rebuild.
+    const signature = stops
+      .map((s, i) => {
+        const flags = `${s.arrived_at || s.visited_at ? 'a' : ''}${s.skipped_at ? 's' : ''}`;
+        return `${s.venue_id}:${s.lng.toFixed(5)},${s.lat.toFixed(5)}:${flags}:${i === currentIdx ? 'c' : ''}`;
+      })
+      .join('|') + `::focus=${focusedStopIndex ?? -1}`;
+    const sameAsLast = signature === planSignatureRef.current;
+    if (sameAsLast) return;
+
+    teardown();
+    planSignatureRef.current = signature;
+
+    const coords: [number, number][] = stops.map(s => [s.lng, s.lat]);
+
+    // 1. Source — full LineString. We animate by overwriting `data` on
+    //    every RAF tick with a progressively-longer slice. Simple,
+    //    portable across Mapbox versions, no line-gradient needed.
+    map.addSource('venny-route', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: [coords[0]] },
+      },
+    });
+
+    // 2. Glow first so the main line paints above it.
+    map.addLayer({
+      id: 'venny-route-glow',
+      type: 'line',
+      source: 'venny-route',
+      paint: {
+        'line-color': '#FF8200',
+        'line-width': 12,
+        'line-opacity': 0.25,
+        'line-blur': 4,
+      },
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+    });
+
+    // 3. Main route line.
+    map.addLayer({
+      id: 'venny-route-line',
+      type: 'line',
+      source: 'venny-route',
+      paint: {
+        'line-color': '#FF8200',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 16, 5],
+        'line-opacity': 0.9,
+        'line-blur': 0.5,
+      },
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+    });
+
+    // 4. Plan stop markers — visual lives in .map-plan-marker* (CSS).
+    //    Variant is derived from each stop's arrived/skipped flags
+    //    plus the derived currentIdx. Focused stop (from the sheet's
+    //    progress strip) gets a one-shot scale pulse via the
+    //    --focused modifier class.
+    stops.forEach((stop, i) => {
+      const isVisited = !!(stop.arrived_at || stop.visited_at);
+      const isSkipped = !!stop.skipped_at && !isVisited;
+      const variant: 'arrived' | 'skipped' | 'current' | 'upcoming' = isVisited
+        ? 'arrived'
+        : isSkipped
+          ? 'skipped'
+          : i === currentIdx
+            ? 'current'
+            : 'upcoming';
+
+      const el = document.createElement('div');
+      el.className = `map-plan-marker map-plan-marker--${variant}`;
+      if (focusedStopIndex === i && variant !== 'current') {
+        el.classList.add('map-plan-marker--focused');
+      }
+      el.setAttribute('aria-label', `Stop ${i + 1}: ${stop.venue_name}`);
+      el.style.zIndex = '20';
+      el.style.setProperty('-webkit-tap-highlight-color', 'transparent');
+
+      if (variant === 'arrived') {
+        el.innerHTML =
+          '<svg width="16" height="16" viewBox="0 0 14 14" fill="none" aria-hidden="true">' +
+          '<path d="M2 7L5.5 10.5L12 4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '</svg>';
+      } else if (variant === 'skipped') {
+        const span = document.createElement('span');
+        span.textContent = '×';
+        span.style.lineHeight = '1';
+        span.style.fontSize = '18px';
+        el.appendChild(span);
+      } else {
+        const span = document.createElement('span');
+        span.textContent = String(i + 1);
+        el.appendChild(span);
+      }
+
+      const handler = (evt: Event) => {
+        evt.stopPropagation();
+        onPlanStopTapRef.current?.(i);
+      };
+      el.addEventListener('click', handler);
+      el.addEventListener('touchend', handler);
+
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([stop.lng, stop.lat])
+        .addTo(map);
+      planMarkersRef.current.push(marker);
+    });
+
+    // 5. fitBounds — show the whole route with breathing room. The
+    //    bottom padding adapts to the sheet state so the route stays
+    //    visible above the sheet (no plan stops hidden behind it).
+    try {
+      const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const bottomPad =
+        sheetState === 'full' ? Math.round(winH * 0.50) :
+        sheetState === 'card' ? Math.round(winH * 0.40) :
+        120;
+      const bounds = coords.reduce(
+        (b, c) => b.extend(c as [number, number]),
+        new mapboxgl.LngLatBounds(coords[0], coords[0]),
+      );
+      map.fitBounds(bounds, {
+        padding: { top: 100, bottom: bottomPad, left: 60, right: 60 },
+        duration: 1200,
+        essential: true,
+      });
+    } catch {
+      /* swallow — map sometimes refuses fitBounds during entrance anim */
+    }
+
+    // 6. Draw-in animation over ~1500 ms. Interpolate intermediate
+    //    points along each segment so the line grows smoothly.
+    const totalDuration = 1500;
+    const start = performance.now();
+    const animate = () => {
+      const elapsed = performance.now() - start;
+      const t = Math.min(1, elapsed / totalDuration);
+      const drawn = drawLineProgress(coords, t);
+      const src = map.getSource('venny-route') as mapboxgl.GeoJSONSource | undefined;
+      if (src) {
+        src.setData({
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: drawn },
+        });
+      }
+      if (t < 1) {
+        planAnimRafRef.current = requestAnimationFrame(animate);
+      } else {
+        planAnimRafRef.current = null;
+      }
+    };
+    planAnimRafRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      // Effect re-runs (or unmount) → tear it all down so subsequent
+      // renders start clean.
+      teardown();
+    };
+  }, [mapLoaded, activePlan, focusedStopIndex, sheetState]);
 
   // ── Filter pill visibility — show/hide markers via CSS, never delete them ──
   useEffect(() => {
@@ -1067,6 +1742,11 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     }
 
     markersRef.current.forEach((entry, venueId) => {
+      // Prediction-engine overlay owns the bubble visual for this venue —
+      // skip the legacy heat-map painter so it doesn't fight the React
+      // overlay back into existence each tick.
+      if (entry.hasLiveOverlay) return;
+
       const count = counts[venueId] ?? 0;
       const isLive = liveVenueIds.has(venueId);
       const isPulsed = pulsedVenueId === venueId;
@@ -1733,6 +2413,50 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     <div className="w-full h-full" style={{ position: 'relative' }}>
       <div ref={mapContainer} className="w-full h-full" />
 
+      {/* Phase 4 market UX overlays — flag-gated. Pulse line self-hides
+          when there's no confident data. MoversChip floats bottom-left
+          when there are movers; tapping it morphs into MarketPanel via
+          a shared layoutId, replacing the old bottom-sheet drawer. */}
+      {FEATURE_FLAGS.MARKET_UX && (
+        <>
+          <div className="map-pulse-line-wrapper">
+            <CityPulseLine city={city} />
+            <MarketTicker
+              city={city}
+              onVenueTap={(venue) => {
+                mapRef.current?.flyTo({
+                  center: [venue.lng, venue.lat],
+                  zoom: 16,
+                  duration: 1100,
+                  essential: true,
+                });
+                setSpotlightVenueId(venue.venue_id);
+              }}
+            />
+          </div>
+          <MoversChip
+            city={city}
+            onOpen={() => setMarketViewActive(true)}
+            hidden={marketViewActive}
+          />
+          <MarketPanel
+            city={city}
+            active={marketViewActive}
+            onClose={exitMarketView}
+            onVenueTap={(venueId, venue) => {
+              setSpotlightVenueId(venueId);
+              mapRef.current?.flyTo({
+                center: [venue.lng, venue.lat],
+                zoom: 16,
+                duration: 1100,
+                essential: true,
+              });
+            }}
+            spotlightVenueId={spotlightVenueId}
+          />
+        </>
+      )}
+
       {/* Walking navigation overlays */}
       {route && routeDuration != null && routeDistance != null && (
         <>
@@ -1800,11 +2524,133 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         </>
       )}
 
+      {/* Heat field — atmospheric Mapbox layers beneath the bubbles.
+          Renders nothing visible itself; just controls 2 Mapbox layers. */}
+      {mapRef.current && mapLoaded && (
+        <HeatFieldLayer
+          map={mapRef.current}
+          mapLoaded={mapLoaded}
+          geojson={heatGeojson}
+          mode={isNightHours() ? 'night' : 'day'}
+        />
+      )}
+
+      {/* Live events feed — toasts at top of map for surge / rapid-rise / social-pulse */}
+      <LiveEventsFeed
+        currentCity={city}
+        onEventTap={(venueId) => {
+          const v = venuesRef.current.find(x => x.id === venueId);
+          if (v && mapRef.current) {
+            mapRef.current.flyTo({
+              center: [v.lng, v.lat],
+              zoom: 16,
+              duration: 1200,
+              curve: 1.4,
+              essential: true,
+            });
+          }
+        }}
+      />
+
+      {/* Globe-view stats overlay — top center, only at low zoom */}
+      {isAtGlobe && (
+        <div className="globe-stats-overlay">
+          <div className="globe-stats-counter">
+            {(totalPeopleOut ?? 0).toLocaleString()} out tonight
+          </div>
+          <div className="globe-stats-subtitle">
+            across {cityAggregates?.length ?? 0} {(cityAggregates?.length ?? 0) === 1 ? 'city' : 'cities'}
+          </div>
+        </div>
+      )}
+
+      {/* Share-globe button — only visible at globe zoom; sits ABOVE the
+          globe icon. Animated entry uses share-btn-fade-in (in index.css). */}
+      {isAtGlobe && onShareGlobe && (
+        <button
+          type="button"
+          onClick={onShareGlobe}
+          disabled={sharingGlobe}
+          aria-label="Share globe view"
+          className="map-side-pill active:scale-[0.95] transition-transform"
+          style={{
+            position: 'absolute',
+            bottom: route ? '300px' : '240px',
+            right: '16px',
+            zIndex: 500,
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            background: 'rgba(28, 28, 46, 0.92)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: sharingGlobe ? 'wait' : 'pointer',
+            opacity: sharingGlobe ? 0.6 : 1,
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+            WebkitTapHighlightColor: 'transparent',
+            animation: 'share-btn-fade-in 400ms ease-out',
+            ...sidePillSheetStyle,
+          }}
+        >
+          {sharingGlobe ? (
+            <span className="share-spinner" aria-hidden />
+          ) : (
+            <Share2 size={22} strokeWidth={1.75} color="rgba(255, 255, 255, 0.85)" />
+          )}
+        </button>
+      )}
+
+      {/* Globe icon button — flies camera up to globe view */}
+      <button
+        type="button"
+        onClick={() => {
+          const m = mapRef.current;
+          if (!m) return;
+          m.flyTo({
+            center: m.getCenter(),
+            zoom: 0.8,
+            pitch: 0,
+            bearing: 0,
+            duration: 2400,
+            curve: 1.42,
+            essential: true,
+          });
+        }}
+        aria-label="View globe"
+        className="map-side-pill active:scale-[0.95] transition-transform"
+        style={{
+          position: 'absolute',
+          bottom: route ? '240px' : '180px',
+          right: '16px',
+          zIndex: 500,
+          width: '48px',
+          height: '48px',
+          borderRadius: '24px',
+          background: 'rgba(28, 28, 46, 0.92)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+          WebkitTapHighlightColor: 'transparent',
+          ...sidePillSheetStyle,
+        }}
+      >
+        <Globe
+          size={22}
+          strokeWidth={1.75}
+          color={isAtGlobe ? '#FF8200' : 'rgba(255, 255, 255, 0.85)'}
+        />
+      </button>
+
       {/* Follow-me button — always visible when location is available */}
       {userLocation && onToggleFollow && (
         <button
           onClick={onToggleFollow}
-          className="active:scale-[0.95] transition-transform"
+          className="map-side-pill active:scale-[0.95] transition-transform"
           style={{
             position: 'absolute',
             bottom: route ? '180px' : '120px',
@@ -1821,7 +2667,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
             cursor: 'pointer',
             boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
             WebkitTapHighlightColor: 'transparent',
-            transition: 'border-color 0.2s, bottom 0.3s',
+            ...sidePillSheetStyle,
           }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={followMode === 'free' ? '#8A8A95' : '#FF8200'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

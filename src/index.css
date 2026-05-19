@@ -1,5 +1,100 @@
-@import url('https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,700,900&display=swap');
 @import "tailwindcss";
+
+/* ============================================
+   venuu — Design Tokens
+   Consolidated brand/palette/spacing. New code consumes via var(...);
+   existing inline-hex usages continue working untouched.
+   ============================================ */
+:root {
+  /* Display font — used by plan-sheet surfaces via
+     var(--font-display). Keeps the choreographed weights honest. */
+  --font-display: 'Satoshi', -apple-system, sans-serif;
+
+  /* Brand */
+  --brand-orange: #FF8200;
+  --brand-orange-hover: #FF5E1A;
+  --brand-orange-glow: rgba(255, 130, 0, 0.45);
+  --brand-orange-tint: rgba(255, 130, 0, 0.18);
+  --brand-orange-tint-strong: rgba(255, 130, 0, 0.25);
+
+  /* Backgrounds */
+  --bg-page: #050507;
+  --bg-card: #111114;
+  --bg-elevated: #1C1C2E;
+  --bg-glass: rgba(15, 15, 22, 0.92);
+
+  /* Borders */
+  --border-hairline: #1A1A1E;
+  --border-card: #2A2A30;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-glass: rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --text-primary: #FFFFFF;
+  --text-secondary: #8A8A95;
+  --text-muted: #55555F;
+  --text-faded: #2A2A30;
+
+  /* State colors */
+  --state-surging: #00FFA3;
+  --state-busy: #FF4444;
+  --state-quiet: #C9B4E0;
+  --state-lively: #F2D58A;
+
+  /* Avatar palette */
+  --avatar-orange: #FF8200;
+  --avatar-cyan: #00D4FF;
+  --avatar-purple: #9B5EFF;
+  --avatar-green: #00CC66;
+  --avatar-pink: #FF5E9C;
+  --avatar-gold: #FFD700;
+  --avatar-sienna: #B8623A;
+  --avatar-wine: #8B2543;
+
+  /* Type ramp */
+  --fs-caption: 11px;
+  --fs-meta: 12px;
+  --fs-small: 13px;
+  --fs-body: 14px;
+  --fs-emphasis: 15px;
+  --fs-section: 16px;
+  --fs-title: 20px;
+  --fs-display: 28px;
+  --fs-hero: 36px;
+
+  /* Radius */
+  --r-chip: 8px;
+  --r-card: 12px;
+  --r-modal: 16px;
+  --r-pill: 999px;
+  --r-sheet: 24px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --d-fast: 180ms;
+  --d-base: 280ms;
+  --d-slow: 480ms;
+
+  /* ─────────────────────────────────────────
+     Z-INDEX SCALE — map screen surgery
+     Single canonical scale for every map-screen overlay so corners
+     never fight. Existing legacy z-index values (500, 600, etc.) on
+     Mapbox side-pills sit ABOVE this scale by design — they're map
+     controls, not overlays.
+     ───────────────────────────────────────── */
+  --z-map-base: 0;
+  --z-map-controls: 5;        /* Mapbox-rendered controls */
+  --z-map-pulse-bar: 40;      /* city pulse line strip (top) */
+  --z-map-fab: 45;            /* Venny FAB (bottom-left) */
+  --z-map-toggle: 45;         /* world/personal (bottom-right) */
+  --z-drawer-scrim: 100;      /* Movers drawer scrim */
+  --z-drawer-sheet: 101;      /* Movers drawer sheet */
+  --z-venny-scrim: 110;       /* Venny sheet scrim */
+  --z-venny-sheet: 111;       /* Venny sheet itself */
+  --z-modal: 200;             /* full-screen modal */
+  --z-toast: 300;             /* alerts, toasts, snackbars */
+}
 
 /* ============================================
    venuu — Global Styles
@@ -36,38 +131,39 @@ body {
 ::-webkit-scrollbar-thumb { background: #2A2A30; border-radius: 2px; }
 
 /* ============================================
-   Splash Screen
+   Globe View — Headline Counter Overlay
    ============================================ */
 
-.splash-screen {
-  position: fixed;
-  inset: 0;
-  background: #0A0A0F;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  transition: opacity 0.5s ease;
-}
-
-.splash-logo {
+.globe-stats-overlay {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 80px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  text-align: center;
+  color: white;
+  padding: 12px 20px;
+  background: rgba(10, 14, 28, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  pointer-events: none;
+  transition: opacity 400ms ease-out;
   font-family: 'Satoshi', sans-serif;
-  font-size: 48px;
-  font-weight: 800;
+}
+.globe-stats-counter {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: #FF8200;
-  letter-spacing: 0.06em;
-  margin: 0;
 }
-
-.splash-tagline {
-  font-family: 'Satoshi', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.4);
-  margin-top: 8px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+.globe-stats-subtitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
 }
 
 /* ============================================
@@ -1923,4 +2019,3086 @@ body {
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.85; transform: scale(0.98); }
+}
+
+/* ============================================
+   Cinematic Cold Open (Prompt 16B)
+   ============================================ */
+
+.cinematic-intro-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: auto;
+  overflow: hidden;
+  background: #000;
+  transition: background 600ms ease-out;
+}
+.cinematic-intro-root.phase-globe-emerge,
+.cinematic-intro-root.phase-constellation,
+.cinematic-intro-root.phase-identify {
+  background: transparent;
+}
+.cinematic-intro-root.phase-descent {
+  background: transparent;
+  transition: background 1200ms ease-out;
+}
+.cinematic-intro-root.phase-bubble-bloom {
+  background: transparent;
+  pointer-events: none;
+}
+
+/* Phase 1 — Logo */
+.intro-logo-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.intro-logo {
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 800;
+  font-size: 64px;
+  color: #FF8200;
+  letter-spacing: 0.08em;
+  animation: intro-logo-in 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+@keyframes intro-logo-in {
+  0%   { opacity: 0; letter-spacing: 0.12em; transform: translateY(8px); }
+  100% { opacity: 1; letter-spacing: 0.02em; transform: translateY(0); }
+}
+.intro-tagline {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  color: #999999;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  animation: intro-fade-in 300ms 400ms ease-out forwards;
+}
+@keyframes intro-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes intro-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* Phase 2 — Starfield drift */
+.intro-starfield {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.6) 50%, transparent),
+    radial-gradient(1px 1px at 60% 70%, rgba(255,255,255,0.8) 50%, transparent),
+    radial-gradient(1.5px 1.5px at 80% 20%, rgba(255,255,255,0.5) 50%, transparent),
+    radial-gradient(1px 1px at 40% 80%, rgba(255,255,255,0.7) 50%, transparent),
+    radial-gradient(2px 2px at 90% 60%, rgba(255,255,255,0.4) 50%, transparent),
+    radial-gradient(1px 1px at 15% 60%, rgba(255,255,255,0.6) 50%, transparent),
+    radial-gradient(1.5px 1.5px at 75% 85%, rgba(255,255,255,0.5) 50%, transparent),
+    radial-gradient(1px 1px at 50% 15%, rgba(255,255,255,0.7) 50%, transparent),
+    radial-gradient(2px 2px at 30% 90%, rgba(255,255,255,0.3) 50%, transparent),
+    radial-gradient(1px 1px at 95% 10%, rgba(255,255,255,0.8) 50%, transparent);
+  background-size: 200% 200%;
+  opacity: 0;
+  animation:
+    intro-fade-in 1400ms ease-out forwards,
+    star-drift 60s linear infinite;
+}
+@keyframes star-drift {
+  from { background-position: 0% 0%; }
+  to   { background-position: 100% 100%; }
+}
+.intro-starfield.fading {
+  animation:
+    intro-fade-out 1200ms ease-out forwards,
+    star-drift 60s linear infinite;
+}
+
+/* Phase 3 + 4 — counter overlay */
+.intro-counter-overlay {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 140px);
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-family: 'Satoshi', sans-serif;
+  opacity: 0;
+  animation: intro-fade-in 800ms ease-out forwards;
+  pointer-events: none;
+}
+.intro-counter-main {
+  font-size: 28px;
+  font-weight: 700;
+  color: #FF8200;
+  letter-spacing: -0.01em;
+}
+.intro-counter-sub {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+
+/* Phase 4 — identification text + ring */
+.intro-identify-text {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-family: 'Satoshi', sans-serif;
+  opacity: 0;
+  animation: intro-fade-in 400ms ease-out forwards;
+  pointer-events: none;
+}
+.intro-identify-city {
+  font-size: 22px;
+  font-weight: 700;
+  color: #FFFFFF;
+  text-shadow: 0 0 12px rgba(255, 130, 0, 0.5);
+}
+.intro-identify-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 4px;
+}
+.intro-identify-ring {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 18px rgba(255, 130, 0, 0.45);
+  animation: intro-identify-pulse 0.8s ease-in-out infinite;
+}
+@keyframes intro-identify-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);    opacity: 0.95; }
+  50%      { transform: translate(-50%, -50%) scale(1.18); opacity: 0.55; }
+}
+
+/* Phase 6 — tap hint pill */
+.intro-tap-hint {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.85);
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-family: 'Satoshi', sans-serif;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  animation:
+    intro-fade-in 400ms ease-out forwards,
+    intro-fade-out 400ms 3s ease-out forwards;
+  pointer-events: none;
+}
+
+/* ============================================
+   Globe-View Share Button (Prompt 16C)
+   ============================================ */
+
+@keyframes share-btn-fade-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1);   }
+}
+.share-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #FF8200;
+  border-radius: 50%;
+  animation: share-spin 800ms linear infinite;
+}
+@keyframes share-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Venny v1.1 — pill bar + highlighted bubble ring + chat anims
+   ───────────────────────────────────────────────────────────── */
+
+/* Pill-bar idle pulse — a subtle inner-orange shadow breath so the
+   bar feels alive without dominating the map underneath. Pill is now
+   small + centered, so the glow is correspondingly softer. */
+.venny-bar {
+  animation: venny-bar-ambient-pulse 4s ease-in-out infinite;
+}
+@keyframes venny-bar-ambient-pulse {
+  0%, 100% {
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.4),
+      inset 0 0 0 0 rgba(255, 130, 0, 0);
+  }
+  50% {
+    box-shadow:
+      0 4px 20px rgba(255, 130, 0, 0.15),
+      inset 0 0 12px 0 rgba(255, 130, 0, 0.08);
+  }
+}
+
+/* Venny-highlight ring — wraps the active LiveVenueBubble when the
+   agent has called highlight_on_map for that venue. 2px orange ring
+   + gentle scale lift + z-axis bump above its neighbours. */
+.lvb-highlighted {
+  position: relative;
+  z-index: 10;
+  animation: lvb-highlight-pulse 1.8s ease-in-out infinite;
+}
+.lvb-highlighted::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 2px solid #FF8200;
+  box-shadow:
+    0 0 18px rgba(255, 130, 0, 0.5),
+    inset 0 0 10px rgba(255, 130, 0, 0.18);
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes lvb-highlight-pulse {
+  0%, 100% { transform: scale(1.05); }
+  50%      { transform: scale(1.09); }
+}
+
+/* Streaming cursor inside an assistant text bubble. */
+@keyframes venny-cursor {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+/* "Venny is thinking" typing-dot row. */
+@keyframes venny-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.45; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+/* Composer send-button spinner while a stream is in flight. */
+@keyframes venny-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Phase 4.6 — map top-bar wrapper for the City Pulse Line.
+   pointer-events: none on the wrapper so map taps pass through
+   the dead space around the strip; auto on its children so the
+   pulse line + embedded chip stay interactive.
+   ───────────────────────────────────────────────────────────── */
+.map-pulse-line-wrapper {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0) + 14px);
+  left: 16px;
+  right: 16px;
+  z-index: var(--z-map-pulse-bar, 40);
+  pointer-events: none;
+}
+
+.map-pulse-line-wrapper > * {
+  pointer-events: auto;
+}
+
+/* Phase 4.5 — pulse dot rendered next to assistant messages that
+   cited live market data (city pulse, a delta_pct, or a mover venue
+   with "tonight/right now" framing). Green to match the Surging
+   state palette so the visual language stays coherent. */
+.venny-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.venny-live-indicator__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1FE89A;
+  box-shadow:
+    0 0 0 0 rgba(31, 232, 154, 0.6),
+    0 0 8px rgba(31, 232, 154, 0.55);
+  animation: venny-live-pulse 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes venny-live-pulse {
+  0% {
+    box-shadow:
+      0 0 0 0 rgba(31, 232, 154, 0.65),
+      0 0 8px rgba(31, 232, 154, 0.55);
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  70% {
+    box-shadow:
+      0 0 0 8px rgba(31, 232, 154, 0),
+      0 0 12px rgba(31, 232, 154, 0.4);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(31, 232, 154, 0),
+      0 0 6px rgba(31, 232, 154, 0.35);
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .venny-live-indicator__dot {
+    animation: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Venny v1.2 — plan route markers
+   ───────────────────────────────────────────────────────────── */
+
+/* Numbered route stop markers — subtle pulse so a user scanning the
+   map sees the plan stops without them feeling like notifications. */
+.venny-route-marker {
+  animation: venny-route-marker-pulse 2.4s ease-in-out infinite;
+}
+@keyframes venny-route-marker-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 14px rgba(255, 130, 0, 0.55),
+      0 0 0 0 rgba(255, 130, 0, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(255, 130, 0, 0.75),
+      0 0 0 6px rgba(255, 130, 0, 0.12);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Profile polish (Ship 1.1)
+   ───────────────────────────────────────────────────────────── */
+
+/* "make this yours" empty-state CTA — soft orange breath so a user
+   landing on a fresh profile understands it's tappable. */
+.profile-make-yours {
+  animation: profile-make-yours-pulse 2.6s ease-in-out infinite;
+}
+@keyframes profile-make-yours-pulse {
+  0%, 100% { opacity: 0.78; }
+  50%      { opacity: 1; }
+}
+
+/* Hero level pill — gentle ambient glow under the orange tint. */
+.profile-level-pill {
+  animation: profile-level-pill-pulse 4.2s ease-in-out infinite;
+}
+@keyframes profile-level-pill-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(255, 130, 0, 0.18); }
+  50%      { box-shadow: 0 0 18px rgba(255, 130, 0, 0.32); }
+}
+
+/* Primary Nights-Out stat number — subtle scale breath when > 0 so
+   it reads as an active trophy rather than a static figure. */
+.profile-stat-pulse {
+  animation: profile-stat-pulse 3.2s ease-in-out infinite;
+  display: inline-block;
+}
+@keyframes profile-stat-pulse {
+  0%, 100% { transform: scale(1);    text-shadow: 0 0 8px rgba(255, 130, 0, 0.0); }
+  50%      { transform: scale(1.03); text-shadow: 0 0 14px rgba(255, 130, 0, 0.45); }
+}
+
+/* Streak flame at 5+ weekends — ambient orange glow. */
+.profile-streak-glow {
+  animation: profile-streak-glow 2.4s ease-in-out infinite;
+}
+@keyframes profile-streak-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(255, 130, 0, 0.55)); }
+  50%      { filter: drop-shadow(0 0 10px rgba(255, 130, 0, 0.85)); }
+}
+
+/* Empty-state icon halo — orange breath. */
+.profile-empty-glow {
+  animation: profile-empty-glow 3.4s ease-in-out infinite;
+}
+@keyframes profile-empty-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 130, 0, 0); }
+  50%      { box-shadow: 0 0 18px rgba(255, 130, 0, 0.16); }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Nights Out milestone celebration (Ship 3)
+   ───────────────────────────────────────────────────────────── */
+
+/* One-shot 1.2× scale burst on the milestone number. Spring-feel
+   from a custom cubic-bezier; runs once then resets to scale 1. */
+.profile-stat-burst {
+  animation: profile-stat-burst 700ms cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}
+@keyframes profile-stat-burst {
+  0%   { transform: scale(1);    text-shadow: 0 0 0 rgba(255, 130, 0, 0); }
+  40%  { transform: scale(1.22); text-shadow: 0 0 22px rgba(255, 130, 0, 0.7); }
+  100% { transform: scale(1);    text-shadow: 0 0 0 rgba(255, 130, 0, 0); }
+}
+
+/* Confetti — 10 small dots fall from above the card, fade out
+   over 1.5s. Each dot is positioned via inline `left` + colored via
+   inline `background`; only the keyframe lives here. */
+.profile-confetti-dot {
+  position: absolute;
+  top: -8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  opacity: 0.92;
+  animation: profile-confetti-fall 1500ms ease-out forwards;
+}
+@keyframes profile-confetti-fall {
+  0%   { transform: translateY(0) rotate(0deg);     opacity: 1; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(110px) rotate(280deg); opacity: 0; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TasteFlow Step 7 celebration — confetti rain + summary-card
+   scale-burst + radial glow pulse. All animations are one-shot
+   forwards, so the screen settles into a stable state.
+   ───────────────────────────────────────────────────────────── */
+
+.taste-confetti-dot {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  opacity: 0;
+  animation: taste-confetti-fall 1700ms cubic-bezier(0.32, 0.7, 0.2, 1) forwards;
+}
+@keyframes taste-confetti-fall {
+  0%   { transform: translateY(0)   rotate(0deg);   opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: translateY(280px) rotate(360deg); opacity: 0; }
+}
+
+.taste-summary-burst {
+  animation: taste-summary-burst 720ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes taste-summary-burst {
+  0%   { transform: scale(0.92); opacity: 0; }
+  60%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+.taste-done-glow {
+  animation: taste-done-glow 1600ms ease-out forwards;
+  opacity: 0;
+}
+@keyframes taste-done-glow {
+  0%   { opacity: 0; }
+  30%  { opacity: 1; }
+  100% { opacity: 0.55; }
+}
+
+/* ───────────────────────────────────────────────────────────────
+   Plan Execution Mode — visual language v2
+
+   Three locked decisions drive everything below:
+     1. State-driven palette  — accent hue follows the current stop's
+        live state via the var(--plan-accent*) family.
+     2. Liquid arrival motif  — celebration uses radial fluid waves
+        keyed off the same accent, never confetti.
+     3. Variable typography   — hero text choreographs via
+        .weight-choreograph (Satoshi static-weight fallback).
+
+   The @property registrations let the accent vars *animate*, so when
+   the current stop shifts state the whole UI smoothly re-hues over
+   ~800ms instead of snapping.
+   ─────────────────────────────────────────────────────────────── */
+
+@property --plan-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #FF8200;
+}
+@property --plan-accent-glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 130, 0, 0.30);
+}
+@property --plan-accent-glow-dim {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 130, 0, 0.10);
+}
+@property --plan-accent-fluid {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 130, 0, 0.22);
+}
+@property --plan-accent-label {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #FFAA55;
+}
+@property --type-weight {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 420;
+}
+
+:root {
+  --plan-accent: #FF8200;
+  --plan-accent-glow: rgba(255, 130, 0, 0.30);
+  --plan-accent-glow-dim: rgba(255, 130, 0, 0.10);
+  --plan-accent-fluid: rgba(255, 130, 0, 0.22);
+  --plan-accent-label: #FFAA55;
+}
+
+/* Typography choreography — weight bumps from light → hero. */
+.weight-choreograph {
+  font-weight: var(--type-weight);
+  transition: --type-weight 720ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.weight-choreograph[data-state="loading"]  { --type-weight: 300; }
+.weight-choreograph[data-state="settling"] { --type-weight: 540; }
+.weight-choreograph[data-state="settled"]  { --type-weight: 880; }
+
+/* ────────────────────────────────────────────────────────────
+   Stop cards — five distinct states with real identity
+   ──────────────────────────────────────────────────────────── */
+
+.stop-card {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+  transition: all 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.stop-card__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.stop-card__content { flex: 1; min-width: 0; }
+
+.stop-card__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stop-card__time {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.40);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.stop-card__state-label {
+  margin-top: 4px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  color: rgba(255, 255, 255, 0.32);
+  text-transform: uppercase;
+}
+
+.stop-card__name {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* numbered circles — shared base */
+.stop-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* UPCOMING */
+.stop-card--upcoming {
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.stop-card--upcoming .stop-card__name { color: rgba(255, 255, 255, 0.62); }
+.stop-number--upcoming {
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* CURRENT — the hero */
+.stop-card--current {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1.5px solid var(--plan-accent-glow);
+  border-radius: 22px;
+  padding: 18px 18px 16px;
+  isolation: isolate;
+  overflow: visible;
+}
+.stop-card__ambient-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 26px;
+  background: radial-gradient(ellipse at center, var(--plan-accent-glow-dim) 0%, transparent 70%);
+  z-index: -1;
+  animation: stop-ambient-breath 4.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes stop-ambient-breath {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.018); }
+}
+.stop-card--current[data-pulsing="true"] {
+  animation: stop-card-pop 700ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes stop-card-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+.stop-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stop-card__name--current {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  color: #FFFFFF;
+  white-space: normal;
+}
+
+.stop-number--current {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  background: var(--plan-accent);
+  color: #0F0F16;
+  font-weight: 800;
+  font-size: 15px;
+  box-shadow:
+    0 4px 12px var(--plan-accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -2px 6px var(--plan-accent-glow-dim);
+}
+.stop-number__digit { position: relative; z-index: 2; }
+.stop-number__ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--plan-accent);
+  opacity: 0.55;
+  animation: stop-number-pulse 3.2s ease-in-out infinite;
+}
+@keyframes stop-number-pulse {
+  0%, 100% { transform: scale(1);    opacity: 0.55; }
+  50%      { transform: scale(1.12); opacity: 0; }
+}
+
+.stop-card__state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--plan-accent-glow-dim);
+  border: 1px solid var(--plan-accent-glow);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--plan-accent-label);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.stop-card__state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--plan-accent);
+  box-shadow: 0 0 8px var(--plan-accent-glow);
+  animation: state-dot-pulse 1.8s ease-in-out infinite;
+}
+@keyframes state-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+.stop-card__description {
+  margin-top: 10px;
+  position: relative;
+  max-height: 88px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 18px), transparent 100%);
+          mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 18px), transparent 100%);
+}
+.stop-card__description p {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.70);
+  letter-spacing: 0.001em;
+}
+
+.stop-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  font-variant-numeric: tabular-nums;
+}
+.stop-card__divider {
+  color: rgba(255, 255, 255, 0.28);
+  user-select: none;
+}
+
+/* Primary action — I'M HERE */
+.action-here {
+  position: relative;
+  width: 100%;
+  height: 54px;
+  margin-top: 14px;
+  border-radius: 16px;
+  border: 1.5px solid var(--plan-accent);
+  background: linear-gradient(180deg, var(--plan-accent) 0%, color-mix(in srgb, var(--plan-accent), #B85500 18%) 100%);
+  overflow: hidden;
+  isolation: isolate;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: #0F0F16;
+  text-transform: lowercase;
+  box-shadow:
+    0 6px 20px var(--plan-accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.action-here[data-proximate="true"] {
+  animation: here-breath 2.4s ease-in-out infinite;
+}
+@keyframes here-breath {
+  0%, 100% { box-shadow: 0 6px 20px var(--plan-accent-glow), 0 0 0 0 var(--plan-accent-glow); }
+  50%      { box-shadow: 0 6px 20px var(--plan-accent-glow), 0 0 0 8px transparent; }
+}
+.action-here:active {
+  transform: translateY(1px) scale(0.99);
+  box-shadow:
+    0 3px 10px var(--plan-accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 4px rgba(0, 0, 0, 0.20);
+}
+.action-here__fluid {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.4) 0%, transparent 60%);
+  opacity: 0;
+  transform: scale(0.3);
+  pointer-events: none;
+}
+.action-here:active .action-here__fluid {
+  animation: fluid-tap 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes fluid-tap {
+  0%   { opacity: 0; transform: scale(0.3); }
+  40%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(2.5); }
+}
+.action-here__label { position: relative; z-index: 2; }
+
+.action-secondary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.action-skip {
+  position: relative;
+  height: 44px;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+  isolation: isolate;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.70);
+  text-transform: lowercase;
+  transition: all 200ms;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.action-skip:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.action-skip__progress {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(255, 90, 90, 0.18) 0%, rgba(255, 90, 90, 0.32) 100%);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 700ms linear;
+  z-index: 1;
+  pointer-events: none;
+}
+.action-skip[data-holding="true"] .action-skip__progress { transform: scaleX(1); }
+.action-skip__label { position: relative; z-index: 2; }
+
+.action-directions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 44px;
+  border-radius: 13px;
+  border: 1px solid var(--plan-accent-glow);
+  background: rgba(255, 130, 0, 0.04);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--plan-accent-label);
+  text-transform: lowercase;
+  transition: all 200ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.action-directions:hover {
+  background: rgba(255, 130, 0, 0.08);
+  transform: translateY(-1px);
+}
+.action-directions:active { transform: translateY(0) scale(0.98); }
+
+/* ARRIVED */
+.stop-card--arrived {
+  background: rgba(0, 220, 130, 0.025);
+  border: 1px solid rgba(0, 220, 130, 0.18);
+  border-radius: 14px;
+  padding: 12px 16px;
+  align-items: center;
+}
+.stop-card--arrived .stop-card__name { color: rgba(255, 255, 255, 0.88); font-size: 15px; font-weight: 600; }
+.stop-card__memory {
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.50);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.stop-number--arrived {
+  background: #00DC82;
+  color: #0A1A0F;
+  box-shadow: 0 2px 6px rgba(0, 220, 130, 0.30);
+}
+
+/* SKIPPED */
+.stop-card--skipped {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  padding: 10px 16px;
+  align-items: center;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.stop-card--skipped .stop-card__name {
+  font-size: 14px;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.30);
+  color: rgba(255, 255, 255, 0.45);
+}
+.stop-number--skipped {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.30);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* COMPLETED — final-stop ceremony */
+.stop-card--completed {
+  background: linear-gradient(135deg, rgba(255, 130, 0, 0.04) 0%, rgba(255, 215, 0, 0.04) 100%);
+  border: 1px solid rgba(255, 175, 60, 0.30);
+  border-radius: 14px;
+  padding: 12px 16px;
+  align-items: center;
+  box-shadow: 0 0 18px rgba(255, 130, 0, 0.14);
+}
+.stop-number--completed {
+  background: linear-gradient(135deg, #FF8200 0%, #FFB350 100%);
+  color: #0F0F16;
+  box-shadow:
+    0 3px 10px rgba(255, 130, 0, 0.30),
+    0 0 0 2px rgba(255, 215, 0, 0.15);
+}
+
+/* ────────────────────────────────────────────────────────────
+   Liquid arrival — replaces the old confetti celebration
+   ──────────────────────────────────────────────────────────── */
+
+.liquid-arrival {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.liquid-arrival__backdrop {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, var(--liquid-color, var(--plan-accent-fluid)) 0%, transparent 70%);
+  animation: liquid-backdrop 2200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes liquid-backdrop {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.liquid-arrival__wave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  filter: blur(8px);
+}
+.liquid-arrival__wave--1 {
+  width: 280vw;
+  height: 280vw;
+  background: radial-gradient(
+    circle at center,
+    var(--liquid-color, var(--plan-accent-fluid)) 0%,
+    transparent 75%
+  );
+  animation: liquid-expand-1 1600ms cubic-bezier(0.22, 1, 0.36, 1) 80ms forwards;
+}
+.liquid-arrival__wave--2 {
+  width: 200vw;
+  height: 200vw;
+  background: radial-gradient(
+    circle at center,
+    var(--liquid-glow, var(--plan-accent-glow)) 0%,
+    transparent 60%
+  );
+  animation: liquid-expand-2 1400ms cubic-bezier(0.22, 1, 0.36, 1) 200ms forwards;
+}
+.liquid-arrival__wave--3 {
+  width: 120vw;
+  height: 120vw;
+  background: radial-gradient(
+    circle at center,
+    var(--liquid-primary, var(--plan-accent)) 0%,
+    transparent 50%
+  );
+  filter: blur(20px);
+  animation: liquid-expand-3 1200ms cubic-bezier(0.22, 1, 0.36, 1) 400ms forwards;
+}
+@keyframes liquid-expand-1 {
+  0%   { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  20%  { opacity: 0.6; }
+  60%  { opacity: 0.5; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+@keyframes liquid-expand-2 {
+  0%   { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  25%  { opacity: 0.4; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+@keyframes liquid-expand-3 {
+  0%   { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  30%  { opacity: 0.7; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+
+.liquid-arrival__content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 32px;
+  animation:
+    liquid-content-in 700ms cubic-bezier(0.16, 1, 0.3, 1) 560ms backwards,
+    liquid-content-out 400ms cubic-bezier(0.65, 0, 0.35, 1) 1800ms forwards;
+}
+@keyframes liquid-content-in {
+  0%   { opacity: 0; transform: translateY(12px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes liquid-content-out {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-8px) scale(1.02); }
+}
+.liquid-arrival__label {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.65);
+  text-transform: lowercase;
+  margin-bottom: 12px;
+}
+.liquid-arrival__name {
+  font-family: var(--font-display);
+  font-size: 38px;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  margin: 0;
+  text-shadow: 0 2px 24px var(--liquid-glow, var(--plan-accent-glow));
+}
+.liquid-arrival__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  margin-top: 18px;
+  border-radius: 14px;
+  background: var(--liquid-color, var(--plan-accent-fluid));
+  border: 1px solid var(--liquid-glow, var(--plan-accent-glow));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #FFFFFF;
+  text-transform: uppercase;
+  animation: liquid-badge-in 600ms cubic-bezier(0.34, 1.56, 0.64, 1) 1000ms backwards;
+}
+@keyframes liquid-badge-in {
+  0%   { opacity: 0; transform: scale(0.7); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* ────────────────────────────────────────────────────────────
+   Mini Venny pill — glassmorphic, state-driven
+   ──────────────────────────────────────────────────────────── */
+
+.mini-venny {
+  position: fixed;
+  bottom: 110px;
+  right: 16px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(15, 15, 22, 0.72);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1.5px solid var(--plan-accent-glow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  z-index: 100;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  animation: mini-venny-ambient 4.2s ease-in-out infinite;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  -webkit-tap-highlight-color: transparent;
+  font-family: var(--font-display);
+}
+.mini-venny:active { transform: scale(0.94); }
+.mini-venny[data-context-update="true"] {
+  animation:
+    mini-venny-ambient 4.2s ease-in-out infinite,
+    mini-venny-call 2.4s ease-in-out infinite;
+}
+@keyframes mini-venny-ambient {
+  0%, 100% {
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  }
+  50% {
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+      0 0 0 6px transparent;
+  }
+}
+@keyframes mini-venny-call {
+  0%, 100% { border-color: var(--plan-accent-glow); transform: scale(1); }
+  50%      { border-color: var(--plan-accent);      transform: scale(1.03); }
+}
+.mini-venny__icon {
+  color: var(--plan-accent-label);
+  filter: drop-shadow(0 0 8px var(--plan-accent-glow));
+  font-size: 22px;
+  line-height: 1;
+}
+.mini-venny__label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.75);
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+.mini-venny__dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--plan-accent);
+  box-shadow: 0 0 8px var(--plan-accent-glow);
+  opacity: 0;
+  transition: opacity 320ms;
+}
+.mini-venny[data-context-update="true"] .mini-venny__dot {
+  opacity: 1;
+  animation: mini-venny-dot 1.6s ease-in-out infinite;
+}
+@keyframes mini-venny-dot {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.3); }
+}
+
+/* ────────────────────────────────────────────────────────────
+   End the Night modal — hero typography + animated counters
+   ──────────────────────────────────────────────────────────── */
+
+.end-night-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgba(5, 5, 7, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-family: var(--font-display);
+}
+.end-night-modal__card {
+  position: relative;
+  isolation: isolate;
+  width: 360px;
+  max-width: calc(100% - 32px);
+  padding: 28px 24px 22px;
+  border-radius: 24px;
+  /* The bottom of the gradient mixes the visited stops' dominant
+     state colour into the card via --card-accent-fluid (injected
+     inline). Defaults stay brand-orange. */
+  background: linear-gradient(
+    180deg,
+    rgba(20, 20, 28, 0.96) 0%,
+    color-mix(in srgb, var(--card-accent-fluid, rgba(255, 130, 0, 0.22)), rgba(15, 15, 22, 0.98) 78%) 100%
+  );
+  border: 1px solid var(--card-accent-glow, rgba(255, 130, 0, 0.22));
+  animation: end-night-card-in 720ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background 800ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 800ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes end-night-card-in {
+  0%   { opacity: 0; transform: translateY(20px) scale(0.94); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.end-night-modal__title {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  color: #FFFFFF;
+  margin: 0 0 6px;
+  text-align: center;
+  /* Title catches a soft tint from the average-state accent. */
+  text-shadow: 0 2px 24px var(--card-accent-glow, transparent);
+}
+.end-night-modal__plan {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(255, 175, 60, 0.85);
+  text-align: center;
+  margin-bottom: 22px;
+  text-transform: uppercase;
+}
+.end-night-modal__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.end-night-stat {
+  text-align: center;
+  padding: 14px 6px;
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.animated-counter {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 26px;
+  color: #FF8200;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  display: block;
+  transition: filter 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* Brief scale-up + drop-shadow flare when the counter finishes
+   ticking. Fires once per counter via .animated-counter--settled. */
+.animated-counter--settled {
+  animation: counter-settle-pulse 620ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes counter-settle-pulse {
+  0%   { transform: scale(1);    filter: drop-shadow(0 0 0 transparent); }
+  35%  { transform: scale(1.08); filter: drop-shadow(0 0 16px rgba(255, 130, 0, 0.55)); }
+  100% { transform: scale(1);    filter: drop-shadow(0 0 8px rgba(255, 130, 0, 0.25)); }
+}
+
+.end-night-stat__label {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: lowercase;
+  margin-top: 6px;
+}
+
+/* ────────────────────────────────────────────────────────────
+   Constellation — SVG draw-in line + popped stop dots
+   ──────────────────────────────────────────────────────────── */
+
+.end-night-modal__constellation {
+  width: 100%;
+  margin: 18px 0 14px;
+  position: relative;
+}
+.constellation-svg {
+  width: 100%;
+  height: 40px;
+  display: block;
+  overflow: visible;
+}
+
+/* The orange gradient line draws left-to-right from
+   strokeDashoffset = lineLength to 0. */
+.constellation-draw-line {
+  animation: constellation-line-draw 1400ms cubic-bezier(0.16, 1, 0.3, 1) 400ms forwards;
+}
+@keyframes constellation-line-draw {
+  0%   { stroke-dashoffset: var(--line-length, 200); }
+  100% { stroke-dashoffset: 0; }
+}
+
+.constellation-dot {
+  opacity: 0;
+  transform: scale(0.5);
+  animation: constellation-dot-in 460ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes constellation-dot-in {
+  0%   { opacity: 0; transform: scale(0.5); }
+  60%  { opacity: 1; transform: scale(1.18); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.constellation-halo {
+  opacity: 0;
+  transform: scale(0.6);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: constellation-halo-in 600ms ease-out forwards;
+}
+@keyframes constellation-halo-in {
+  0%   { opacity: 0; transform: scale(0.6); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.constellation-names {
+  display: grid;
+  grid-template-columns: repeat(var(--stop-count, 3), 1fr);
+  gap: 0;
+  margin-top: 8px;
+}
+.constellation-name {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+  letter-spacing: 0.015em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+  opacity: 0;
+  animation: constellation-name-in 480ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes constellation-name-in {
+  0%   { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.constellation-name--skipped {
+  color: rgba(255, 255, 255, 0.35);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.20);
+}
+.end-night-modal__highlight {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 12.5px;
+  color: rgba(255, 175, 60, 0.85);
+  text-align: center;
+  margin-bottom: 18px;
+  padding: 0 12px;
+}
+.end-night-modal__rate { margin-bottom: 8px; }
+.end-night-modal__later {
+  width: 100%;
+  height: 42px;
+  background: transparent;
+  border: none;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  text-transform: lowercase;
+  transition: color 200ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.end-night-modal__later:hover { color: rgba(255, 255, 255, 0.85); }
+
+/* ═══════════════════════════════════════════════════════════════
+   PlanSheet — three-state bottom sheet (PILL / CARD / FULL)
+   Lives on top of the map. Active plan rendering hooks here.
+   ═══════════════════════════════════════════════════════════════ */
+
+.plan-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 180;
+  background: linear-gradient(180deg, rgba(15, 15, 22, 0.96) 0%, rgba(10, 10, 14, 0.99) 100%);
+  border-radius: 28px 28px 0 0;
+  border-top: 1.5px solid var(--plan-accent-glow, rgba(255, 130, 0, 0.30));
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(32px) saturate(140%);
+  -webkit-backdrop-filter: blur(32px) saturate(140%);
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  touch-action: none;
+  font-family: var(--font-display);
+  transition:
+    --plan-accent 800ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    --plan-accent-glow 800ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    --plan-accent-glow-dim 800ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    --plan-accent-fluid 800ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    --plan-accent-label 800ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.plan-sheet[data-state="pill"] {
+  bottom: auto;
+  top: calc(env(safe-area-inset-top, 0) + 64px);
+  height: 44px;
+  border-radius: 14px;
+  margin: 0 12px;
+  border: 1px solid var(--plan-accent-glow);
+  left: 0;
+  right: 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.30);
+}
+
+.plan-sheet__handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 8px auto 4px;
+  flex-shrink: 0;
+  cursor: grab;
+  transition: background 200ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.plan-sheet__handle:hover { background: rgba(255, 255, 255, 0.32); }
+
+.plan-sheet__pill-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 100%;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+}
+.plan-sheet__pill-dots { display: flex; gap: 5px; }
+.plan-sheet__pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  transition: all 320ms ease-out;
+}
+.plan-sheet__pill-dot--arrived {
+  background: var(--plan-accent);
+  box-shadow: 0 0 6px var(--plan-accent-glow);
+}
+.plan-sheet__pill-dot--current {
+  background: transparent;
+  border: 1.5px solid var(--plan-accent);
+  animation: plan-pill-dot-pulse 2.4s ease-in-out infinite;
+}
+.plan-sheet__pill-dot--skipped {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.30);
+}
+@keyframes plan-pill-dot-pulse {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%      { transform: scale(1.2); opacity: 0.7; }
+}
+.plan-sheet__pill-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-sheet__pill-meta {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.50);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-sheet__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 16px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+.plan-sheet__header-title { flex: 1; min-width: 0; }
+.plan-sheet__header-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-sheet__header-meta {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.50);
+  font-variant-numeric: tabular-nums;
+}
+.plan-sheet__close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.60);
+  -webkit-tap-highlight-color: transparent;
+  transition: all 200ms;
+}
+.plan-sheet__close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.plan-sheet__card-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.plan-sheet__progress {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.plan-sheet__progress-stop {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.plan-sheet__progress-stop--focused {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--plan-accent-glow);
+}
+.plan-sheet__progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+}
+.plan-sheet__progress-dot--arrived {
+  background: var(--plan-accent);
+  box-shadow: 0 0 6px var(--plan-accent-glow);
+}
+.plan-sheet__progress-dot--current {
+  background: transparent;
+  border: 1.5px solid var(--plan-accent);
+  animation: plan-pill-dot-pulse 2.4s ease-in-out infinite;
+}
+.plan-sheet__progress-dot--skipped {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.30);
+}
+.plan-sheet__progress-name {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.60);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-sheet__full-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-sheet__end-button-wrapper {
+  flex-shrink: 0;
+  padding: 8px 16px calc(env(safe-area-inset-bottom, 0) + 12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.plan-sheet__end-button {
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.020) 100%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 200ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.plan-sheet__end-button:hover {
+  border-color: var(--plan-accent);
+  color: #FFFFFF;
+}
+.plan-sheet__end-button:active { transform: scale(0.98); }
+
+/* Hero variant — fires when every stop has been arrived/skipped.
+   Pulses a wider glow halo to draw the eye to "end the night". */
+.plan-sheet__end-button--hero {
+  background: linear-gradient(
+    180deg,
+    var(--plan-accent) 0%,
+    color-mix(in srgb, var(--plan-accent), #B85500 18%) 100%
+  );
+  border-color: var(--plan-accent);
+  color: #0F0F16;
+  font-weight: 800;
+  box-shadow:
+    0 6px 20px var(--plan-accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30);
+  animation: end-button-ready 2.4s ease-in-out infinite;
+}
+@keyframes end-button-ready {
+  0%, 100% {
+    box-shadow:
+      0 6px 20px var(--plan-accent-glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.30),
+      0 0 0 0 var(--plan-accent-glow);
+  }
+  50% {
+    box-shadow:
+      0 6px 20px var(--plan-accent-glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.30),
+      0 0 0 8px transparent;
+  }
+}
+.plan-sheet__end-button--hero:hover { filter: brightness(1.05); }
+
+/* View-only "close summary" button (FULL state, completed plan). */
+.plan-sheet__close-summary-button {
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 175, 60, 0.30);
+  background: linear-gradient(180deg, rgba(255, 175, 60, 0.06) 0%, rgba(255, 175, 60, 0.02) 100%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: rgba(255, 175, 60, 0.95);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 200ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.plan-sheet__close-summary-button:hover {
+  background: rgba(255, 175, 60, 0.10);
+  border-color: rgba(255, 175, 60, 0.45);
+}
+
+/* View-only header pill — visible "close" affordance for the user
+   browsing a completed plan. */
+.plan-sheet__close-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: all 200ms;
+  flex-shrink: 0;
+  text-transform: lowercase;
+  -webkit-tap-highlight-color: transparent;
+}
+.plan-sheet__close-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.plan-sheet__viewing-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(255, 175, 60, 0.12);
+  border: 1px solid rgba(255, 175, 60, 0.30);
+  color: rgba(255, 175, 60, 0.95);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.10em;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Journey-complete banner — replaces the CARD hero stop card
+   when every stop is either arrived or skipped.
+   ────────────────────────────────────────────────────────────── */
+
+.plan-sheet__complete-banner {
+  position: relative;
+  padding: 28px 20px 22px;
+  border-radius: 22px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 130, 0, 0.04) 0%,
+    rgba(255, 175, 60, 0.02) 100%
+  );
+  border: 1.5px solid var(--plan-accent-glow);
+  text-align: center;
+  isolation: isolate;
+  overflow: hidden;
+}
+.plan-sheet__complete-glow {
+  position: absolute;
+  inset: -20px;
+  background: radial-gradient(
+    ellipse at center,
+    var(--plan-accent-glow-dim) 0%,
+    transparent 60%
+  );
+  z-index: -1;
+  animation: complete-glow-breath 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes complete-glow-breath {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.04); }
+}
+.plan-sheet__complete-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: -0.018em;
+  line-height: 1.05;
+  color: #FFFFFF;
+  margin: 0 0 10px;
+}
+.plan-sheet__complete-meta {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 18px;
+}
+.plan-sheet__complete-cta { width: 100%; }
+
+/* Map dim overlay — Block 2 toggles data-sheet-state on the element. */
+.map-dim-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  z-index: 170;
+  transition: background 400ms ease-out;
+}
+.map-dim-overlay[data-sheet-state="card"] { background: rgba(0, 0, 0, 0.18); }
+.map-dim-overlay[data-sheet-state="full"] { background: rgba(0, 0, 0, 0.42); }
+
+/* Re-run prompt — sits above the sheet at z-index 250. */
+.rerun-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-family: var(--font-display);
+}
+.rerun-prompt-card {
+  background: rgba(20, 20, 28, 0.96);
+  border: 1px solid rgba(255, 130, 0, 0.30);
+  border-radius: 20px;
+  padding: 24px;
+  max-width: 320px;
+  width: 100%;
+}
+.rerun-prompt__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  color: #FFFFFF;
+  margin-bottom: 4px;
+}
+.rerun-prompt__date {
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 20px;
+}
+.rerun-prompt__primary { width: 100%; margin-bottom: 8px; }
+.rerun-prompt__ghost {
+  width: 100%;
+  height: 44px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.rerun-prompt__ghost:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   End-Night Ceremony — full-screen typography moment
+   Replaces the EndNightModal card UI. Sits above sheet (z=300).
+   ═══════════════════════════════════════════════════════════════ */
+
+.end-night-ceremony {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+  background: radial-gradient(
+    ellipse at center,
+    var(--ceremony-tint, rgba(255, 130, 0, 0.18)) 0%,
+    rgba(8, 8, 12, 0.98) 70%
+  );
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  font-family: var(--font-display);
+  animation: ceremony-backdrop-in 720ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.end-night-ceremony--exiting {
+  animation: ceremony-backdrop-out 400ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@keyframes ceremony-backdrop-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes ceremony-backdrop-out {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.end-night-ceremony__hero {
+  font-family: var(--font-display);
+  font-size: 38px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  margin: 0;
+  text-shadow: 0 4px 32px var(--ceremony-glow, rgba(255, 130, 0, 0.45));
+}
+.end-night-ceremony__plan-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: var(--ceremony-label, rgba(255, 175, 60, 0.85));
+  margin-top: 10px;
+  text-transform: uppercase;
+}
+
+.end-night-ceremony__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  margin-top: 36px;
+  width: 100%;
+  max-width: 360px;
+}
+.end-night-ceremony__stat {
+  text-align: center;
+  padding: 16px 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  opacity: 0;
+  animation: stat-fade-in 600ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.end-night-ceremony__stat:nth-child(1) { animation-delay: 1000ms; }
+.end-night-ceremony__stat:nth-child(2) { animation-delay: 1300ms; }
+.end-night-ceremony__stat:nth-child(3) { animation-delay: 1600ms; }
+@keyframes stat-fade-in {
+  0%   { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.end-night-ceremony__constellation {
+  width: 100%;
+  max-width: 320px;
+  margin-top: 36px;
+  opacity: 0;
+  animation: stat-fade-in 600ms cubic-bezier(0.16, 1, 0.3, 1) 2200ms forwards;
+}
+
+.end-night-ceremony__ctas {
+  margin-top: auto;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 0;
+  animation: stat-fade-in 600ms cubic-bezier(0.16, 1, 0.3, 1) 4500ms forwards;
+}
+.end-night-ceremony__rate { width: 100%; }
+.end-night-ceremony__later {
+  background: transparent;
+  border: none;
+  height: 44px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.50);
+  cursor: pointer;
+  text-transform: lowercase;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 200ms;
+}
+.end-night-ceremony__later:hover { color: rgba(255, 255, 255, 0.85); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Main-map plan markers
+   Rendered by MapView's plan-rendering effect when activePlan is
+   non-null. Sole plan-marker visual in the app — drives both the
+   main map and any future in-sheet preview.
+   ═══════════════════════════════════════════════════════════════ */
+
+.map-plan-marker {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+}
+.map-plan-marker:hover { transform: scale(1.08); }
+
+.map-plan-marker--upcoming {
+  background: rgba(15, 15, 22, 0.92);
+  border: 2px solid #FF8200;
+  color: #FF8200;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.40);
+}
+
+.map-plan-marker--current {
+  background: #FF8200;
+  border: 2px solid #FF8200;
+  color: #0F0F16;
+  box-shadow:
+    0 4px 16px rgba(255, 130, 0, 0.45),
+    0 0 0 4px rgba(255, 130, 0, 0.18);
+  animation: map-plan-marker-breath 2.4s ease-in-out infinite;
+}
+@keyframes map-plan-marker-breath {
+  0%, 100% {
+    box-shadow:
+      0 4px 16px rgba(255, 130, 0, 0.45),
+      0 0 0 4px rgba(255, 130, 0, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 4px 20px rgba(255, 130, 0, 0.55),
+      0 0 0 8px rgba(255, 130, 0, 0.10);
+  }
+}
+
+.map-plan-marker--arrived {
+  background: #00DC82;
+  border: 2px solid #00DC82;
+  color: #0A1A0F;
+  box-shadow: 0 3px 10px rgba(0, 220, 130, 0.35);
+}
+
+.map-plan-marker--skipped {
+  background: rgba(80, 80, 90, 0.85);
+  border: 1.5px dashed rgba(255, 255, 255, 0.30);
+  color: rgba(255, 255, 255, 0.50);
+  opacity: 0.7;
+}
+
+/* One-shot scale pulse when the user taps a stop in the sheet's
+   progress strip — draws the eye to the matching map marker. */
+.map-plan-marker--focused {
+  animation:
+    map-plan-marker-breath 2.4s ease-in-out infinite,
+    map-plan-marker-focused-pulse 1.2s ease-out 1;
+}
+@keyframes map-plan-marker-focused-pulse {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Ceremony UI isolation
+   EndNightCeremony.tsx sets `data-ceremony-active="true"` on the
+   body while it's mounted. Every floating surface that would
+   compete with the ceremony fades out and stops accepting events.
+   !important is intentional — some targets carry inline styles
+   (the map side-pills compute opacity from sheetState).
+   ═══════════════════════════════════════════════════════════════ */
+
+body[data-ceremony-active="true"] .venny-bar,
+body[data-ceremony-active="true"] .drop-pill-wrapper,
+body[data-ceremony-active="true"] .plan-sheet,
+body[data-ceremony-active="true"] .mini-venny,
+body[data-ceremony-active="true"] .map-side-pill,
+body[data-ceremony-active="true"] .map-dim-overlay {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 200ms ease-out !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   "You've run the table" landing moment
+   Fires when the LAST stop's resolution flips allStopsResolved
+   from false → true. Slide-up + overshoot + weight choreography
+   give the banner the gravitas the moment deserves.
+   ═══════════════════════════════════════════════════════════════ */
+
+.plan-sheet__complete-banner--landing {
+  animation: complete-banner-land 920ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes complete-banner-land {
+  0%   { opacity: 0;   transform: translateY(32px) scale(0.92); }
+  50%  { opacity: 1;   transform: translateY(-4px) scale(1.02); }
+  75%  {               transform: translateY(2px)  scale(1.00); }
+  100% { opacity: 1;   transform: translateY(0)    scale(1); }
+}
+
+.plan-sheet__complete-banner--landing::before {
+  content: '';
+  position: absolute;
+  inset: -100px;
+  background: radial-gradient(
+    ellipse at center,
+    var(--plan-accent-fluid) 0%,
+    transparent 60%
+  );
+  z-index: -2;
+  animation: complete-backdrop-flash 920ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+@keyframes complete-backdrop-flash {
+  0%   { opacity: 0; }
+  40%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Title weight choreography for the landing moment. Satoshi ships
+   static weights 300/400/500/700/900; font-variation-settings on a
+   static face is a no-op, so the cleaner cue is opacity + spacing
+   over the same duration. The visual reads as weight-up. */
+.plan-sheet__complete-banner--landing .plan-sheet__complete-title {
+  animation: complete-title-flare 920ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes complete-title-flare {
+  0%   {
+    opacity: 0.4;
+    letter-spacing: 0.04em;
+    font-variation-settings: 'wght' 280;
+    text-shadow: 0 4px 32px transparent;
+  }
+  60%  {
+    opacity: 1;
+    letter-spacing: -0.025em;
+    font-variation-settings: 'wght' 920;
+    text-shadow: 0 4px 32px var(--plan-accent-glow);
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: -0.018em;
+    font-variation-settings: 'wght' 880;
+    text-shadow: 0 4px 32px var(--plan-accent-glow);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Streak burst — fires on venuu-plan-completed-celebrate so the
+   weekend-streak chip flares orange briefly as the user lands on
+   the profile after closing the ceremony.
+   ═══════════════════════════════════════════════════════════════ */
+
+.profile-streak {
+  position: relative;
+  isolation: isolate;
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.profile-streak--bursting {
+  animation: streak-burst 1600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes streak-burst {
+  0%   { transform: scale(1);    filter: drop-shadow(0 0 0 transparent); }
+  20%  { transform: scale(1.06); filter: drop-shadow(0 0 24px rgba(255, 130, 0, 0.85)); }
+  50%  { transform: scale(1.02); filter: drop-shadow(0 0 18px rgba(255, 130, 0, 0.55)); }
+  100% { transform: scale(1);    filter: drop-shadow(0 0 8px rgba(255, 130, 0, 0.25)); }
+}
+.profile-streak--bursting::after {
+  content: '';
+  position: absolute;
+  inset: -16px;
+  border-radius: 18px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 130, 0, 0.45) 0%,
+    transparent 60%
+  );
+  z-index: -1;
+  animation: streak-halo 1600ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+@keyframes streak-halo {
+  0%   { opacity: 0; transform: scale(0.6); }
+  30%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.4); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Rate Your Night flow — 5-step rating UI
+   z-index 320 sits above the End-Night Ceremony (z=300) so the
+   flow mounts seamlessly on top when the user taps "rate this
+   night" from the ceremony or from the PlanSheet's view-only
+   "make Venny smarter" prompt on an unrated completed plan.
+   ═══════════════════════════════════════════════════════════════ */
+
+.rate-night-flow {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 130, 0, 0.10) 0%,
+    rgba(8, 8, 12, 0.98) 70%
+  );
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(env(safe-area-inset-top, 0) + 16px) 20px
+    calc(env(safe-area-inset-bottom, 0) + 20px);
+  font-family: var(--font-display);
+  animation: rate-flow-in 480ms cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+@keyframes rate-flow-in {
+  0%   { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Top row — close X + progress strip. Sits below safe-area inset
+   so it clears notch / status bar. */
+.rate-night-flow__top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-shrink: 0;
+}
+.rate-night-flow__close {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.rate-night-flow__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.95);
+}
+.rate-night-flow__close:active { transform: scale(0.94); }
+
+.rate-night-flow__progress {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.rate-night-flow__progress-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.10);
+  transition: background 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.rate-night-flow__progress-dot--active {
+  background: #FF8200;
+  box-shadow: 0 0 10px rgba(255, 130, 0, 0.55);
+}
+.rate-night-flow__progress-dot--complete {
+  background: rgba(255, 130, 0, 0.45);
+}
+
+/* Body — vertically centred between header and footer. Step
+   content lives inside; max-width 440px keeps line-lengths sane
+   on tablets while still letting cards fill phone widths. */
+.rate-night-flow__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 440px;
+  width: 100%;
+  margin: 0 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 0;
+}
+
+.rate-night-flow__step-header {
+  text-align: center;
+  margin-bottom: 28px;
+  flex-shrink: 0;
+}
+.rate-night-flow__step-meta {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  color: rgba(255, 175, 60, 0.85);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.rate-night-flow__step-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 24px;
+  letter-spacing: -0.018em;
+  color: #FFFFFF;
+  text-transform: lowercase;
+  line-height: 1.1;
+}
+
+/* Stop rating card (swipable) */
+.rate-stop-card {
+  flex: 1;
+  max-height: 420px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 130, 0, 0.06) 0%,
+    rgba(20, 20, 28, 0.96) 100%
+  );
+  border: 1.5px solid rgba(255, 130, 0, 0.30);
+  border-radius: 24px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 24px;
+  position: relative;
+  isolation: isolate;
+  user-select: none;
+  touch-action: none;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+}
+.rate-stop-card__name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  margin-bottom: 8px;
+  line-height: 1.05;
+}
+.rate-stop-card__meta {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 16px;
+}
+.rate-stop-card__duration {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  color: rgba(255, 175, 60, 0.85);
+  background: rgba(255, 130, 0, 0.10);
+  border: 1px solid rgba(255, 130, 0, 0.25);
+  border-radius: 12px;
+  padding: 6px 12px;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+}
+
+/* 3-column action buttons */
+.rate-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.rate-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 8px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  transition: all 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  font-family: var(--font-display);
+  -webkit-tap-highlight-color: transparent;
+}
+.rate-action:active { transform: scale(0.96); }
+.rate-action__icon { font-size: 28px; line-height: 1; }
+.rate-action__label {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+.rate-action--meh { color: rgba(255, 100, 100, 0.85); }
+.rate-action--meh:hover {
+  background: rgba(255, 100, 100, 0.06);
+  border-color: rgba(255, 100, 100, 0.30);
+}
+.rate-action--fine { color: rgba(255, 200, 100, 0.85); }
+.rate-action--fine:hover {
+  background: rgba(255, 200, 100, 0.06);
+  border-color: rgba(255, 200, 100, 0.30);
+}
+.rate-action--loved { color: rgba(255, 130, 0, 1); }
+.rate-action--loved:hover {
+  background: rgba(255, 130, 0, 0.08);
+  border-color: rgba(255, 130, 0, 0.50);
+}
+
+/* Overall rating buttons (step 2) */
+.rate-overall-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+}
+.rate-overall-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  transition: all 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  font-family: var(--font-display);
+  width: 100%;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.rate-overall-option:hover {
+  background: rgba(255, 130, 0, 0.06);
+  border-color: rgba(255, 130, 0, 0.30);
+}
+.rate-overall-option--selecting {
+  animation: overall-select-burst 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes overall-select-burst {
+  0%   { transform: scale(1);    background: rgba(255, 255, 255, 0.025); }
+  30%  {
+    transform: scale(1.04);
+    background: rgba(255, 130, 0, 0.18);
+    box-shadow: 0 0 32px rgba(255, 130, 0, 0.55);
+    border-color: #FF8200;
+  }
+  100% {
+    transform: scale(1);
+    background: rgba(255, 130, 0, 0.06);
+    border-color: rgba(255, 130, 0, 0.30);
+  }
+}
+.rate-overall-option__emoji {
+  font-size: 28px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.rate-overall-option__text { flex: 1; }
+.rate-overall-option__label {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: #FFFFFF;
+  text-transform: uppercase;
+}
+.rate-overall-option__desc {
+  font-weight: 500;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 2px;
+  text-transform: lowercase;
+}
+
+/* Mood tags grid (step 3) */
+.rate-mood-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+.rate-mood-tag {
+  padding: 10px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.025);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  text-transform: lowercase;
+  cursor: pointer;
+  transition: all 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.rate-mood-tag--selected {
+  background: var(--plan-accent, #FF8200);
+  border-color: var(--plan-accent, #FF8200);
+  color: #0F0F16;
+  font-weight: 800;
+  box-shadow: 0 4px 12px var(--plan-accent-glow, rgba(255, 130, 0, 0.45));
+  transform: scale(1.02);
+}
+
+/* Repeat buttons (step 4) */
+.rate-repeat-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.rate-repeat-option {
+  padding: 22px 24px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.10em;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 220ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.rate-repeat-option--yes:hover {
+  background: rgba(255, 130, 0, 0.08);
+  border-color: rgba(255, 130, 0, 0.50);
+  color: #FF8200;
+}
+.rate-repeat-option--no:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.20);
+}
+
+/* Footer with skip / continue */
+.rate-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.rate-skip-button {
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.50);
+  cursor: pointer;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  -webkit-tap-highlight-color: transparent;
+}
+.rate-skip-button:hover { color: rgba(255, 255, 255, 0.85); }
+
+.rate-continue-button {
+  padding: 14px 28px;
+  border-radius: 14px;
+  border: 1px solid var(--plan-accent, #FF8200);
+  background: var(--plan-accent, #FF8200);
+  color: #0F0F16;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 220ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.rate-continue-button:active { transform: scale(0.97); }
+.rate-continue-button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Done step */
+.rate-done {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+}
+.rate-done__check {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FF8200 0%, #FFB350 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+  box-shadow: 0 12px 40px rgba(255, 130, 0, 0.45);
+  animation: rate-done-check-in 720ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes rate-done-check-in {
+  0%   { opacity: 0; transform: scale(0.5); }
+  60%  { opacity: 1; transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.rate-done__check svg {
+  color: #0F0F16;
+  width: 36px;
+  height: 36px;
+}
+.rate-done__title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  margin-bottom: 8px;
+  text-transform: lowercase;
+  opacity: 0;
+  animation: rate-done-fade 600ms cubic-bezier(0.16, 1, 0.3, 1) 400ms forwards;
+}
+.rate-done__subtitle {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 14px;
+  color: rgba(255, 175, 60, 0.85);
+  margin-bottom: 36px;
+  opacity: 0;
+  animation: rate-done-fade 600ms cubic-bezier(0.16, 1, 0.3, 1) 600ms forwards;
+}
+@keyframes rate-done-fade {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.rate-done__cta {
+  opacity: 0;
+  animation: rate-done-fade 600ms cubic-bezier(0.16, 1, 0.3, 1) 1000ms forwards;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   "Rate this night" affordance — shown in PlanSheet view-only
+   mode when the plan is completed but rating_status != 'rated'.
+   Subtle breathing halo invites the tap.
+   ═══════════════════════════════════════════════════════════════ */
+
+.rate-prompt-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255, 130, 0, 0.30);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 130, 0, 0.10) 0%,
+    rgba(255, 130, 0, 0.04) 100%
+  );
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 175, 60, 1);
+  cursor: pointer;
+  margin-bottom: 12px;
+  text-transform: lowercase;
+  animation: rate-prompt-breath 3.6s ease-in-out infinite;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.rate-prompt-button:active { transform: scale(0.98); }
+@keyframes rate-prompt-breath {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 130, 0, 0.0); }
+  50%      { box-shadow: 0 0 0 6px rgba(255, 130, 0, 0.08); }
+}
+
+/* Profile stats grid — flexible column count driven by --cols. */
+.profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), 1fr);
+  gap: 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Body-level UI hide rules driven by body[data-sheet-state].
+   Pills (Drop / Venny bar) stay visible while the sheet is at
+   PILL; fade + slide up at CARD or FULL; restore on dismiss.
+   The map-side-pill rule covers location/floor/globe controls.
+   These are separate from the ceremony hide rules above — the
+   ceremony uses !important to override inline opacity, the sheet
+   hide is a softer transition so the user feels the dim shift
+   rather than a hard pop.
+   ═══════════════════════════════════════════════════════════════ */
+
+body[data-sheet-state="card"] .drop-pill-wrapper,
+body[data-sheet-state="full"] .drop-pill-wrapper,
+body[data-sheet-state="card"] .venny-bar,
+body[data-sheet-state="full"] .venny-bar,
+body[data-sheet-state="card"] .map-side-pill,
+body[data-sheet-state="full"] .map-side-pill {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity 320ms cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+body[data-sheet-state="pill"] .drop-pill-wrapper,
+body[data-sheet-state="pill"] .venny-bar,
+body[data-sheet-state="pill"] .map-side-pill {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition: opacity 320ms cubic-bezier(0.2, 0.7, 0.2, 1),
+              transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polish — drag handle + sheet snap pulse
+   ═══════════════════════════════════════════════════════════════ */
+
+.plan-sheet__handle {
+  position: relative;
+  transition: all 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* Generous invisible tap target around the handle so users don't
+   have to hit a 4px-tall bar. */
+.plan-sheet__handle::before {
+  content: '';
+  position: absolute;
+  inset: -8px -16px;
+  border-radius: 16px;
+  cursor: grab;
+}
+.plan-sheet:hover .plan-sheet__handle {
+  background: rgba(255, 255, 255, 0.28);
+  width: 42px;
+}
+.plan-sheet[data-dragging="true"] .plan-sheet__handle,
+.plan-sheet__handle:active {
+  background: var(--plan-accent, #FF8200);
+  width: 48px;
+  cursor: grabbing;
+  box-shadow: 0 0 10px var(--plan-accent-glow, rgba(255, 130, 0, 0.30));
+}
+
+/* Brief horizontal pulse along the top of the sheet whenever the
+   state snaps. Driven by data-just-snapped which the React layer
+   flips for 600ms on every sheetState transition. */
+.plan-sheet[data-just-snapped="true"]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 80px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--plan-accent, #FF8200) 50%,
+    transparent 100%
+  );
+  filter: blur(2px);
+  animation: sheet-snap-pulse 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  pointer-events: none;
+}
+@keyframes sheet-snap-pulse {
+  0%   { opacity: 0; transform: translateX(-50%) scaleX(0.4); }
+  40%  { opacity: 1; transform: translateX(-50%) scaleX(1.2); }
+  100% { opacity: 0; transform: translateX(-50%) scaleX(1); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polish — progress strip in CARD body
+   Connecting line behind the dots + bigger sizing + focus halo
+   on the currently-displayed stop.
+   ═══════════════════════════════════════════════════════════════ */
+
+.plan-sheet__progress {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.025) 0%,
+    rgba(255, 255, 255, 0.015) 100%
+  );
+}
+.plan-sheet__progress::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--plan-accent-glow-dim, rgba(255, 130, 0, 0.10)) 0%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  transform: translateY(-50%);
+  z-index: 0;
+  pointer-events: none;
+}
+.plan-sheet__progress-stop {
+  position: relative;
+  z-index: 1;
+}
+.plan-sheet__progress-stop--focused {
+  background: linear-gradient(
+    180deg,
+    var(--plan-accent-glow-dim, rgba(255, 130, 0, 0.08)) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  border: 1px solid var(--plan-accent-glow);
+  box-shadow: 0 0 12px var(--plan-accent-glow-dim);
+}
+.plan-sheet__progress-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+.plan-sheet__progress-dot--arrived {
+  background: var(--plan-accent);
+  border-color: var(--plan-accent);
+  box-shadow: 0 0 8px var(--plan-accent-glow);
+  transform: scale(1.05);
+}
+.plan-sheet__progress-dot--current {
+  background: transparent;
+  border: 2px solid var(--plan-accent);
+  animation: plan-pill-dot-pulse 2.4s ease-in-out infinite;
+  transform: scale(1.15);
+}
+.plan-sheet__progress-dot--skipped {
+  background: transparent;
+  border: 1.5px dashed rgba(255, 255, 255, 0.25);
+  opacity: 0.55;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polish — stop card "just arrived" green celebratory glow
+   Fires for ~1.2s right after a stop transitions to ARRIVED via
+   the user tapping I'M HERE. The card briefly inherits a richer
+   green halo before settling into the standard arrived treatment.
+   ═══════════════════════════════════════════════════════════════ */
+
+.stop-card {
+  transition:
+    border-color 520ms cubic-bezier(0.16, 1, 0.3, 1),
+    background 520ms cubic-bezier(0.16, 1, 0.3, 1),
+    padding 380ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stop-card--arrived[data-just-arrived="true"] {
+  animation: stop-card-arrived-pulse 1200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes stop-card-arrived-pulse {
+  0% {
+    background: linear-gradient(180deg, rgba(0, 220, 130, 0.20) 0%, rgba(0, 220, 130, 0.06) 100%);
+    border-color: rgba(0, 220, 130, 0.60);
+    box-shadow:
+      0 8px 28px rgba(0, 220, 130, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.20);
+  }
+  60% {
+    background: linear-gradient(180deg, rgba(0, 220, 130, 0.10) 0%, rgba(0, 220, 130, 0.03) 100%);
+  }
+  100% {
+    background: rgba(0, 220, 130, 0.025);
+    border-color: rgba(0, 220, 130, 0.18);
+    box-shadow: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polish — End-Night ceremony hero stagger
+   Each word fades in from blur+light-weight to a sharp heavy
+   weight, with a small delay between words for a "reads in"
+   feel. Replaces the parent weight-choreograph on .end-night-
+   ceremony__hero.
+   ═══════════════════════════════════════════════════════════════ */
+
+.end-night-ceremony__hero {
+  display: inline-block;
+}
+.end-night-ceremony__hero-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(16px);
+  filter: blur(8px);
+  font-variation-settings: 'wght' 200;
+  animation: hero-word-in 920ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes hero-word-in {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(8px);
+    font-variation-settings: 'wght' 200;
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px);
+    filter: blur(0);
+    font-variation-settings: 'wght' 920;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+    font-variation-settings: 'wght' 880;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polish — Rate swipe card depth + drag-direction tinting
+   Adds a layered gradient backdrop + bigger shadow + radial glow.
+   data-direction is set live by the React drag handler.
+   ═══════════════════════════════════════════════════════════════ */
+
+.rate-stop-card {
+  background:
+    radial-gradient(
+      ellipse at top right,
+      rgba(255, 175, 60, 0.12) 0%,
+      transparent 50%
+    ),
+    linear-gradient(180deg,
+      rgba(20, 20, 28, 0.96) 0%,
+      rgba(15, 15, 22, 0.99) 100%
+    );
+  border: 1.5px solid rgba(255, 130, 0, 0.30);
+  border-radius: 28px;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.55),
+    0 4px 16px rgba(255, 130, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transform: perspective(800px);
+  position: relative;
+  isolation: isolate;
+  transition: border-color 220ms cubic-bezier(0.2, 0.7, 0.2, 1),
+              box-shadow 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.rate-stop-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background: radial-gradient(
+    ellipse at center bottom,
+    rgba(255, 130, 0, 0.06) 0%,
+    transparent 60%
+  );
+  z-index: -1;
+  pointer-events: none;
+}
+.rate-stop-card[data-direction="right"] {
+  border-color: #FF8200;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.55),
+    0 0 32px rgba(255, 130, 0, 0.45);
+}
+.rate-stop-card[data-direction="left"] {
+  border-color: rgba(255, 100, 100, 0.75);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.55),
+    0 0 32px rgba(255, 100, 100, 0.45);
+}
+.rate-stop-card[data-direction="down"] {
+  border-color: rgba(255, 200, 100, 0.75);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.55),
+    0 0 32px rgba(255, 200, 100, 0.45);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polish — Overall rating per-option hover tints
+   Each rating's hover state gets a distinct color radial gradient
+   so the 5 options read as a spectrum, not 5 identical buttons.
+   ═══════════════════════════════════════════════════════════════ */
+
+.rate-overall-option {
+  position: relative;
+  overflow: hidden;
+}
+.rate-overall-option::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  opacity: 0;
+  transition: opacity 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.rate-overall-option[data-rating="best_in_weeks"]:hover::before {
+  opacity: 0.85;
+  background: radial-gradient(ellipse at left center, rgba(255, 80, 0, 0.18) 0%, transparent 60%);
+}
+.rate-overall-option[data-rating="best_in_weeks"]:hover {
+  border-color: rgba(255, 80, 0, 0.45);
+}
+
+.rate-overall-option[data-rating="great"]:hover::before {
+  opacity: 0.85;
+  background: radial-gradient(ellipse at left center, rgba(255, 130, 0, 0.16) 0%, transparent 60%);
+}
+.rate-overall-option[data-rating="great"]:hover {
+  border-color: rgba(255, 130, 0, 0.45);
+}
+
+.rate-overall-option[data-rating="good"]:hover::before {
+  opacity: 0.85;
+  background: radial-gradient(ellipse at left center, rgba(255, 200, 80, 0.16) 0%, transparent 60%);
+}
+.rate-overall-option[data-rating="good"]:hover {
+  border-color: rgba(255, 200, 80, 0.45);
+}
+
+.rate-overall-option[data-rating="meh"]:hover::before {
+  opacity: 0.85;
+  background: radial-gradient(ellipse at left center, rgba(160, 160, 180, 0.14) 0%, transparent 60%);
+}
+.rate-overall-option[data-rating="meh"]:hover {
+  border-color: rgba(160, 160, 180, 0.35);
+}
+
+.rate-overall-option[data-rating="bad"]:hover::before {
+  opacity: 0.85;
+  background: radial-gradient(ellipse at left center, rgba(120, 80, 200, 0.14) 0%, transparent 60%);
+}
+.rate-overall-option[data-rating="bad"]:hover {
+  border-color: rgba(120, 80, 200, 0.35);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Polish — Done step "venny just got smarter" shimmer
+   Replaces the static gold subtitle with a slow shimmer gradient
+   that sweeps across the text. Subtle enough to read as ambient
+   not animation noise.
+   ═══════════════════════════════════════════════════════════════ */
+
+.rate-done__subtitle {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 175, 60, 0.85) 0%,
+    rgba(255, 220, 120, 1) 50%,
+    rgba(255, 175, 60, 0.85) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation:
+    rate-done-fade 600ms cubic-bezier(0.16, 1, 0.3, 1) 600ms forwards,
+    rate-subtitle-shimmer 2400ms ease-in-out 1400ms infinite;
+}
+@keyframes rate-subtitle-shimmer {
+  0%, 100% { background-position: 200% 0; }
+  50%      { background-position: -200% 0; }
 }

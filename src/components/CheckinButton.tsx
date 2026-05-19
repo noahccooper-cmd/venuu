@@ -15,6 +15,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   already_checked_in_tonight: 'Already checked in tonight — come back tomorrow!',
   rate_limited: 'Slow down! Try again in a minute.',
   wrong_venue_tag: 'That tag is for a different venue',
+  wrong_password: 'Tag not recognized. Try again or ask staff for help.',
   tag_not_registered: 'Tag not registered yet',
   tag_lookup_failed: 'Could not verify tag',
   tag_disabled: 'This tag is disabled',

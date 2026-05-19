@@ -1,3 +1,7 @@
+export type AvatarColor =
+  | 'orange' | 'cyan' | 'purple' | 'green'
+  | 'pink'   | 'gold' | 'sienna' | 'wine';
+
 export interface Profile {
   id: string;
   created_at: string;
@@ -11,6 +15,13 @@ export interface Profile {
   avatar_url: string | null;
   total_checkins: number;
   is_active: boolean;
+  // ── 00029 identity-v2 additions ──
+  bio: string | null;
+  tagline: string | null;
+  avatar_color: AvatarColor;
+  profile_share_token: string | null;
+  show_recaps_publicly: boolean;
+  show_visits_publicly: boolean;
 }
 
 export interface Venue {

@@ -1,0 +1,130 @@
+.city-pulse-line {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg,
+    rgba(20, 20, 28, 0.92) 0%,
+    rgba(15, 15, 22, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.city-pulse-line::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 200%;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--pulse-accent, rgba(255, 130, 0, 0.6)) 50%,
+    transparent 100%);
+  animation: city-pulse-sweep 3.2s ease-in-out infinite;
+}
+
+@keyframes city-pulse-sweep {
+  0%, 100% { transform: translateX(-25%); opacity: 0.4; }
+  50% { transform: translateX(25%); opacity: 1; }
+}
+
+.city-pulse-line--hot { --pulse-accent: rgba(31, 232, 154, 0.65); }
+.city-pulse-line--warm { --pulse-accent: rgba(255, 130, 0, 0.65); }
+.city-pulse-line--neutral { --pulse-accent: rgba(255, 213, 107, 0.5); }
+.city-pulse-line--mild-cool { --pulse-accent: rgba(160, 140, 180, 0.5); }
+.city-pulse-line--cool { --pulse-accent: rgba(91, 107, 140, 0.65); }
+
+.city-pulse-line__primary {
+  display: flex;
+  align-items: center;       /* plays nicer than baseline when a chip sits on the right */
+  gap: 10px;
+  font-family: var(--font-display);
+}
+
+.city-pulse-line__city {
+  font-weight: 800;
+  font-size: 18px;
+  color: #FFFFFF;
+  letter-spacing: -0.02em;
+}
+
+.city-pulse-line__day {
+  font-weight: 540;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.city-pulse-line__delta {
+  font-weight: 800;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--pulse-accent, #FF8200);
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 16px var(--pulse-accent);
+  margin-left: auto;
+}
+
+.city-pulse-line--cool .city-pulse-line__delta,
+.city-pulse-line--mild-cool .city-pulse-line__delta {
+  color: #B8A8D0;
+  text-shadow: 0 0 12px rgba(184, 168, 208, 0.4);
+}
+
+.city-pulse-line__verdict {
+  font-weight: 540;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  text-transform: lowercase;
+  font-style: italic;
+  margin-left: 4px;          /* gentle separation from delta */
+}
+
+.city-pulse-line__meta {
+  display: flex;
+  gap: 12px;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--font-display);
+}
+
+.city-pulse-line__surging {
+  color: #1FE89A;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.city-pulse-line__busy {
+  color: rgba(255, 130, 0, 0.85);
+}
+
+/* Phase 5.1 — clock string + watching variant. The bar now always
+   renders something: when there's no confident data, it falls into
+   the watching state which uses a calm grey accent so the bar doesn't
+   shout at the user during off-hours. */
+.city-pulse-line__time {
+  font-weight: 540;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.city-pulse-line--watching {
+  --pulse-accent: rgba(160, 160, 180, 0.35);
+  opacity: 0.85;
+}
+
+.city-pulse-line--watching .city-pulse-line__verdict {
+  margin-left: auto;
+}
+

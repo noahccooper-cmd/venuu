@@ -1,6 +1,6 @@
-import { MapPin, Compass, Radio } from 'lucide-react';
+import { MapPin, Radio, User } from 'lucide-react';
 
-export type Tab = 'tonight' | 'precap' | 'portal';
+export type Tab = 'tonight' | 'portal' | 'you';
 
 interface BottomNavProps {
   active: Tab;
@@ -9,8 +9,8 @@ interface BottomNavProps {
 
 const tabs: { key: Tab; label: string; icon: typeof MapPin }[] = [
   { key: 'tonight', label: 'Tonight', icon: MapPin },
-  { key: 'precap', label: 'Precap', icon: Compass },
-  { key: 'portal', label: 'Portal', icon: Radio },
+  { key: 'portal',  label: 'Portal',  icon: Radio },
+  { key: 'you',     label: 'You',     icon: User },
 ];
 
 export function BottomNav({ active, onChange }: BottomNavProps) {

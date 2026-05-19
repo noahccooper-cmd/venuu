@@ -10,8 +10,12 @@ import { getWalkingRoute, sliceRouteAhead, haversineMeters, distanceToRoute } fr
 import { mapboxToken } from '../lib/supabase';
 import { CITIES } from '../lib/constants';
 import { CoverPurchaseSheet } from '../components/Map/CoverPurchaseSheet';
+import { useCityAggregates } from '../hooks/useCityAggregates';
+import type { ColdOpenPhase } from '../hooks/useColdOpen';
+import type { Map as MapboxMap } from 'mapbox-gl';
 import type { Venue, Headcount, VenueEvent } from '../lib/types';
 import type { CityKey } from '../lib/constants';
+import type { Plan as VennyPlan } from '../components/Venny/PlanCard';
 import type { CoverPriceInfo } from '../hooks/useCoverPricing';
 import type { PurchaseResult } from '../hooks/useCoverPurchase';
 
@@ -50,6 +54,29 @@ interface TonightPageProps {
   myPurchases?: Map<string, { qr_code: string }>;
   onBuyCover?: (configId: string, venueId: string) => Promise<PurchaseResult>;
   onAskVenny?: (venue: Venue, headcount: Headcount | null) => void;
+  /** Cold-open intro is currently playing — forwarded to MapView. */
+  introActive?: boolean;
+  /** Active intro phase, drives bubble-bloom staggering. */
+  introPhase?: ColdOpenPhase;
+  /** Captures the underlying mapboxgl.Map instance for the intro overlay. */
+  onMapReady?: (map: MapboxMap) => void;
+  /** Globe-view share button click handler (driven by useShareGlobe). */
+  onShareGlobe?: () => void;
+  /** True while a share is mid-flight. */
+  sharingGlobe?: boolean;
+  /** Venue IDs Venny has highlighted via highlight_on_map. Forwarded to MapView. */
+  highlightedVenueIds?: string[];
+  /** Active multi-stop plan composed by Venny — forwarded to MapView
+   *  so the route line + numbered markers render. */
+  activePlan?: VennyPlan | null;
+  /** Called when a numbered route marker is tapped. */
+  onPlanStopTap?: (stopIndex: number) => void;
+  /** Index of the stop the PlanSheet currently has focused. Forwarded
+   *  to MapView so the matching marker gets a one-shot pulse. */
+  focusedStopIndex?: number | null;
+  /** Plan sheet state — drives map camera padding so the focused
+   *  stop stays visible above the sheet. */
+  sheetState?: 'pill' | 'card' | 'full' | null;
 }
 
 export function TonightPage({
@@ -70,11 +97,63 @@ export function TonightPage({
   myPurchases,
   onBuyCover,
   onAskVenny,
+  introActive,
+  introPhase,
+  onMapReady,
+  onShareGlobe,
+  sharingGlobe,
+  highlightedVenueIds,
+  activePlan,
+  onPlanStopTap,
+  focusedStopIndex,
+  sheetState,
 }: TonightPageProps) {
+  // City rollups for the globe-view dot layer + headline counter.
+  const { aggregates: cityAggregates, totalPeopleOut } = useCityAggregates();
+
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [coverVenue, setCoverVenue] = useState<{ id: string; name: string } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<VenueEvent | null>(null);
-  const [venueFilter, setVenueFilter] = useState<'all' | 'bars' | 'greek'>('all');
+  // `venueFilter` is kept locked to 'all' now that the filter row is
+  // gone — left in place so MapView's filter logic keeps a stable
+  // contract; future Venny tools can drive this if we re-introduce
+  // server-side narrowing.
+  const [venueFilter] = useState<'all' | 'bars' | 'greek'>('all');
+
+  // Hide TheDrop + the venue-filter pill row at globe zoom — we're in
+  // the universe view, the metro UI doesn't belong there. Mirrors the
+  // isAtGlobe state inside MapView (kept local rather than lifted, to
+  // avoid plumbing through another callback). The map instance attaches
+  // to `mapInstanceRef.current` asynchronously inside MapView's load
+  // handler, so we poll with rAF until it's available, then bind.
+  const [isAtGlobe, setIsAtGlobe] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    let rafId = 0;
+    type ZoomMap = { getZoom: () => number; on: (e: string, fn: () => void) => void; off: (e: string, fn: () => void) => void };
+    let attached: ZoomMap | null = null;
+    let handler: (() => void) | null = null;
+
+    const tryAttach = () => {
+      if (cancelled) return;
+      const map = mapInstanceRef.current as ZoomMap | null;
+      if (!map) {
+        rafId = requestAnimationFrame(tryAttach);
+        return;
+      }
+      attached = map;
+      handler = () => setIsAtGlobe(map.getZoom() < 5);
+      handler();
+      map.on('zoom', handler);
+    };
+    tryAttach();
+
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (attached && handler) attached.off('zoom', handler);
+    };
+  }, []);
   const [activeRoute, setActiveRoute] = useState<ActiveRoute | null>(null);
   const [getThereLoading, setGetThereLoading] = useState(false);
   type FollowMode = 'free' | 'center' | 'bearing';
@@ -195,7 +274,7 @@ export function TonightPage({
       // 2. Fetch walking route
       const to: [number, number] = [venue.lng, venue.lat];
       console.debug('[nav] Fetching route from', from, 'to', to);
-      const result = await getWalkingRoute(from, to, mapboxToken);
+      const result = await getWalkingRoute(from, to, mapboxToken, venue.id);
       if (!result) {
         console.warn('[nav] Mapbox Directions returned no route');
         setGetThereLoading(false);
@@ -324,41 +403,21 @@ export function TonightPage({
   return (
     <div className="absolute inset-0" style={{ top: 'calc(80px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
       {!activeRoute && (
-        <TheDrop venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
+        <div
+          style={{
+            opacity: isAtGlobe ? 0 : 1,
+            pointerEvents: isAtGlobe ? 'none' : 'auto',
+            transition: 'opacity 320ms ease-out',
+          }}
+        >
+          <TheDrop venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
+        </div>
       )}
 
-      {/* Venue type filter pills */}
-      <div style={{
-        position: 'absolute', top: '64px', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 399, display: 'flex', gap: 6, pointerEvents: 'auto',
-        background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)', borderRadius: 20, padding: '6px 8px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-      }}>
-        {([['all', 'All', '#FF8200'], ['bars', 'Bars', '#FF8200'], ['greek', 'Greek Life', '#C9A96E']] as const).map(([key, label, accent]) => {
-          const isSelected = venueFilter === key;
-          const isGold = key === 'greek';
-          return (
-            <button
-              key={key}
-              onClick={() => { hapticLight(); setVenueFilter(key as 'all' | 'bars' | 'greek'); }}
-              style={{
-                padding: '5px 13px', borderRadius: 14,
-                background: isSelected ? accent : 'transparent',
-                border: isSelected ? 'none' : `1px solid rgba(255,255,255,0.25)`,
-                color: isSelected ? (isGold ? '#1a1a2e' : 'white') : 'rgba(255,255,255,0.55)',
-                fontFamily: 'Satoshi, sans-serif', fontSize: 12, fontWeight: 700,
-                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
-                transform: isSelected ? 'scale(1.05)' : 'scale(1)',
-                transition: 'transform 0.2s ease, background 0.2s ease, color 0.2s ease',
-                boxShadow: isSelected ? `0 0 14px ${accent}60` : 'none',
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Venue-type filter row removed — replaced by VennyBar (rendered
+       *  one level up in App.tsx). The `venueFilter` state below stays
+       *  on 'all' for now but remains in place in case a future Venny
+       *  tool needs to narrow the visible markers programmatically. */}
 
       <MapView
         city={city}
@@ -380,11 +439,24 @@ export function TonightPage({
         onEventClick={handleEventClick}
         onMapTap={handleMapTap}
         onCityChange={onCityChange}
+        onCityTapFromGlobe={onCityChange}
+        cityAggregates={cityAggregates}
+        totalPeopleOut={totalPeopleOut}
+        introActive={introActive}
+        introPhase={introPhase}
+        onMapReady={onMapReady}
+        onShareGlobe={onShareGlobe}
+        sharingGlobe={sharingGlobe}
         onCancelRoute={handleCancelRoute}
         onPriceTap={(id, name) => { console.debug('[covers] Price tap:', name); setSelectedVenue(null); setSelectedEvent(null); setCoverVenue({ id, name }); }}
         onToggleFollow={handleToggleFollow}
         onUserDragMap={() => setFollowMode('free')}
         mapInstanceRef={mapInstanceRef}
+        highlightedVenueIds={highlightedVenueIds}
+        activePlan={activePlan}
+        onPlanStopTap={onPlanStopTap}
+        focusedStopIndex={focusedStopIndex ?? null}
+        sheetState={sheetState ?? null}
       />
 
       {currentVenue && (
