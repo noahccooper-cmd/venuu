@@ -109,13 +109,18 @@ export default function PaintCeremony({
             className="fixed inset-0 z-[8500] bg-black pointer-events-none"
           />
 
-          {/* The STATEMENT — radial bloom at venue screen position. */}
-          <VenueBloomOverlay
-            map={map}
-            venue={venue}
-            hueCSS={hueCSS}
-            hueCSSAlpha={hueCSSAlpha}
-          />
+          {/* The STATEMENT — radial bloom at venue screen position.
+              Only renders when map is available; the black-fade overlay
+              and the 2.4s timer still run without it (handles null map
+              gracefully). */}
+          {map && (
+            <VenueBloomOverlay
+              map={map}
+              venue={venue}
+              hueCSS={hueCSS}
+              hueCSSAlpha={hueCSSAlpha}
+            />
+          )}
         </>
       )}
     </AnimatePresence>

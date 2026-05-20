@@ -19,6 +19,9 @@ import { PortalPage } from './pages/PortalPage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
 import { VennyBar } from './components/Venny/VennyBar';
 import { VennySheet } from './components/Venny/VennySheet';
+import PaintScreen from './components/Paint/PaintScreen';
+import PaintCeremony from './components/Paint/PaintCeremony';
+import type { VibeHueId } from './lib/hueMath';
 import type { Plan as VennyPlan } from './components/Venny/PlanCard';
 import { SignInSheet } from './components/Auth/SignInSheet';
 import { NicknameScreen } from './components/Auth/NicknameScreen';
@@ -109,6 +112,19 @@ export default function App() {
     focusStopIndex?: number;
   } | null>(null);
   const [endNightCeremony, setEndNightCeremony] = useState<{ planId: string } | null>(null);
+
+  // PHASE D: paint flow state
+  const [paintScreenOpen, setPaintScreenOpen] = useState(false);
+  const [paintCeremonyOpen, setPaintCeremonyOpen] = useState(false);
+  const [activePaintVenue, setActivePaintVenue] = useState<{
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [paintedHueId, setPaintedHueId] = useState<VibeHueId | null>(null);
+  const [paintPromptId, setPaintPromptId] = useState<string | null>(null);
+  const [paintVisitLabel, setPaintVisitLabel] = useState<string>('');
   // PlanSheet expects a live-state lookup per venue. v1 ships with an
   // empty Map (everything falls back to the `unknown` accent); a
   // follow-up can populate from headcount_estimates when activePlan
@@ -665,6 +681,53 @@ export default function App() {
     return () => window.removeEventListener('venuu-plan-sheet-stops-updated', handler as EventListener);
   }, [activePlanSheet]);
 
+  // PHASE D: listen for push-notification CustomEvents with paint_prompt type
+  useEffect(() => {
+    const handler = async (ev: Event) => {
+      const detail = (ev as CustomEvent).detail;
+      if (!detail || detail?.data?.type !== 'paint_prompt') return;
+
+      const venueId = detail.data.venue_id as string;
+      const promptId = detail.data.paint_prompt_id as string;
+
+      if (!venueId || !promptId) {
+        console.warn('[App] paint_prompt push missing venue_id or paint_prompt_id', detail);
+        return;
+      }
+
+      // Fetch venue coords + prompt visit range for the PaintScreen header
+      const [{ data: venueRow }, { data: promptRow }] = await Promise.all([
+        supabase.from('venues').select('id, name, lat, lng').eq('id', venueId).single(),
+        supabase.from('paint_prompts')
+          .select('visit_first_seen_at, visit_last_seen_at')
+          .eq('id', promptId)
+          .single(),
+      ]);
+
+      if (!venueRow) {
+        console.warn('[App] paint_prompt venue not found', venueId);
+        return;
+      }
+
+      const label = promptRow
+        ? formatVisitLabel(promptRow.visit_first_seen_at, promptRow.visit_last_seen_at)
+        : '';
+
+      setActivePaintVenue({
+        id: venueRow.id,
+        name: venueRow.name,
+        lat: venueRow.lat,
+        lng: venueRow.lng,
+      });
+      setPaintPromptId(promptId);
+      setPaintVisitLabel(label);
+      setPaintScreenOpen(true);
+    };
+
+    window.addEventListener('push-notification', handler);
+    return () => window.removeEventListener('push-notification', handler);
+  }, []);
+
   // ── activePlan lifecycle bound to activePlanSheet. When the
   //    sheet dismisses (close X, swipe-down past PILL, end-night
   //    completion sequence, etc.) we clear activePlan + the saved-
@@ -1002,6 +1065,37 @@ export default function App() {
         onPlanSaved={(planId) => setActivePlanId(planId)}
       />
 
+      <PaintScreen
+        open={paintScreenOpen}
+        onClose={() => {
+          setPaintScreenOpen(false);
+          setActivePaintVenue(null);
+          setPaintPromptId(null);
+        }}
+        paintPromptId={paintPromptId}
+        venueId={activePaintVenue?.id ?? ''}
+        venueName={activePaintVenue?.name ?? ''}
+        visitTimeRangeLabel={paintVisitLabel}
+        onPainted={(hueId) => {
+          setPaintedHueId(hueId);
+          setPaintScreenOpen(false);
+          setPaintCeremonyOpen(true);
+        }}
+      />
+
+      <PaintCeremony
+        open={paintCeremonyOpen}
+        hueId={paintedHueId}
+        venue={activePaintVenue}
+        map={tonightMapRef.current}
+        onComplete={() => {
+          setPaintCeremonyOpen(false);
+          setPaintedHueId(null);
+          setActivePaintVenue(null);
+          setPaintPromptId(null);
+        }}
+      />
+
       {/* Profile Overlay — sign-in prompt for guests */}
       <ProfileOverlay
         open={showProfile && !user}
@@ -1032,4 +1126,16 @@ export default function App() {
 
     </div>
   );
+}
+
+function formatVisitLabel(firstSeen: string, lastSeen: string): string {
+  const a = new Date(firstSeen);
+  const b = new Date(lastSeen);
+  const day = a.toLocaleDateString('en-US', { weekday: 'short' });
+  const fmt = (d: Date) => d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).toLowerCase().replace(' ', '');
+  return `${day} · ${fmt(a)}–${fmt(b)}`;
 }
