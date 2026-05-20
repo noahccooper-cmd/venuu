@@ -246,7 +246,7 @@ export function useProximityDetection({
         // last_seen_at + recompute duration_min. We re-issue an upsert
         // rather than UPDATE-OR-INSERT manually so RLS only sees one
         // statement.
-        const { error } = await supabase
+        const { data: visitRow, error } = await supabase
           .from('user_visits')
           .upsert(
             {
@@ -260,11 +260,29 @@ export function useProximityDetection({
               confidence,
             },
             { onConflict: 'user_id,venue_id,night_of', ignoreDuplicates: false },
-          );
+          )
+          .select()
+          .single();
         if (error) {
           console.warn('[proximity] user_visits upsert failed:', error.message);
         } else {
           promoted.push(venueId);
+
+          // PHASE D: queue a paint prompt for this visit.
+          // The edge function checks eligibility (20+ min, not already painted)
+          // and sets fire_not_before to last_seen_at + 5 min. The minute-cron
+          // 'paint-prompt-sweep' then fires the actual push when fire_not_before
+          // is reached. Non-blocking — if this fails, the user_visit is still
+          // recorded and all other engine signals still fire normally.
+          if (visitRow?.id) {
+            try {
+              await supabase.functions.invoke('paint-exit-prompt', {
+                body: { user_visit_id: visitRow.id },
+              });
+            } catch (paintErr) {
+              console.warn('[useProximityDetection] paint-exit-prompt queue failed', paintErr);
+            }
+          }
         }
       } catch (err) {
         console.warn('[proximity] sweep threw:', err);
