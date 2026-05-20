@@ -68,7 +68,7 @@ export default function PaintScreen({
   // Full 14-hue gradient as CSS for the track
   const trackGradient = `linear-gradient(to right, ${
     VIBE_HUES.map((h, i) =>
-      `hsl(${h.degrees}, ${Math.round(h.defaultSat * 100)}%, 50%) ${(i / 13) * 100}%`
+      `hsl(${h.degrees}, ${h.defaultSat}%, 50%) ${(i / 13) * 100}%`
     ).join(', ')
   })`;
 
@@ -229,7 +229,7 @@ export default function PaintScreen({
                 animate={{
                   left: sliderPct === null ? '50%' : `${sliderPct}%`,
                   backgroundColor: hasLanded && landedHue
-                    ? `hsl(${landedHue.degrees}, ${Math.round(landedHue.defaultSat * 100)}%, 50%)`
+                    ? `hsl(${landedHue.degrees}, ${landedHue.defaultSat}%, 50%)`
                     : 'rgb(180, 180, 180)',
                   scale: hasLanded ? 1.0 : 0.88,
                 }}
@@ -251,10 +251,10 @@ export default function PaintScreen({
             className="w-full max-w-md py-5 rounded-full text-white text-lg font-semibold tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               backgroundColor: hasLanded && landedHue
-                ? `hsl(${landedHue.degrees}, ${Math.round(landedHue.defaultSat * 100)}%, 50%)`
+                ? `hsl(${landedHue.degrees}, ${landedHue.defaultSat}%, 50%)`
                 : 'rgb(60, 60, 60)',
               boxShadow: hasLanded && landedHue
-                ? `0 0 40px hsla(${landedHue.degrees}, ${Math.round(landedHue.defaultSat * 100)}%, 50%, 0.6)`
+                ? `0 0 40px hsla(${landedHue.degrees}, ${landedHue.defaultSat}%, 50%, 0.6)`
                 : 'none',
             }}
           >
