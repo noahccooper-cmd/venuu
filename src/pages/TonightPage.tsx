@@ -457,6 +457,7 @@ export function TonightPage({
         onPlanStopTap={onPlanStopTap}
         focusedStopIndex={focusedStopIndex ?? null}
         sheetState={sheetState ?? null}
+        selectedVenueId={selectedVenue?.id ?? null}
       />
 
       {currentVenue && (

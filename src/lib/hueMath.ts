@@ -54,14 +54,14 @@ export function stateToSaturation(state: StateLabel | string | null, vibeBaseSat
   const multiplier = (() => {
     switch (state) {
       case 'Surging': return 1.0;
-      case 'Packed':  return 0.92;
-      case 'Busy':    return 0.85;
-      case 'Lively':  return 0.70;
-      case 'Quiet':   return 0.55;
+      case 'Packed':  return 0.95;
+      case 'Busy':    return 0.88;
+      case 'Lively':  return 0.80;
+      case 'Quiet':   return 0.72;
       case 'Unknown':
       case null:
-      case undefined: return 0.30;
-      default:        return 0.55;
+      case undefined: return 0.70;
+      default:        return 0.72;
     }
   })();
   return Math.round(vibeBaseSat * multiplier);

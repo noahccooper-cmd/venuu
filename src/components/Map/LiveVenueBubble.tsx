@@ -4,6 +4,8 @@ import type { HeadcountEstimate } from '../../hooks/useVenuesInBounds';
 import { getCoverLabel } from '../../lib/utils';
 import { FEATURE_FLAGS } from '../../lib/featureFlags';
 import { CapacityRing } from './CapacityRing';
+import { vibeToHsl, vibeToGlow, type VibeHueId } from '../../lib/hueMath';
+import { useCurrentTimeBand } from '../../hooks/useCurrentTimeBand';
 
 /**
  * LiveVenueBubble — luxury nightlife visual language.
@@ -59,6 +61,15 @@ interface LiveVenueBubbleProps {
    *  mover, near-user, spotlit, or zoom ≥ 16), the bubble renders
    *  the full venue name just below it. */
   showName?: boolean;
+  /** Phase 6 (Vibe) — founder-authored hue per time band. Drives the
+   *  bubble's HUE channel via hueMath. Saturation = state, lightness
+   *  = capacity. Optional/null → bubble falls back to neutral grey. */
+  vibeHueBaseline?: {
+    wk_early?: number;
+    wk_peak?: number;
+    wknd_early?: number;
+    wknd_peak?: number;
+  } | null;
 }
 
 interface StateVisuals {
@@ -805,7 +816,7 @@ function getVenueInitial(name?: string): string {
 
 function MarketLiveVenueBubbleInner({
   estimate, isSelected, onTap, highlighted, mapZoom, venueName,
-  marketView, isSpotlight, movementMagnitude, showName,
+  marketView, isSpotlight, movementMagnitude, showName, vibeHueBaseline,
 }: LiveVenueBubbleProps) {
   const stateLabel = normalizeState(estimate?.state_label);
   const confidence = estimate?.confidence_pct ?? 0;
@@ -813,6 +824,20 @@ function MarketLiveVenueBubbleInner({
   const trendRate = estimate?.trend_rate ?? null;
   const pulseClass = getPulseClass(trendRate);
   const initial = getVenueInitial(venueName);
+
+  // Phase 6 (Vibe) — hue identity comes from the founder-authored
+  // baseline for the current time band. Saturation reads from
+  // stateLabel; lightness reads from capacity_pct. The result is one
+  // HSL value the rest of the bubble consumes via --vibe-color.
+  const timeBand = useCurrentTimeBand();
+  const vibeHueId = (vibeHueBaseline?.[timeBand] ?? null) as VibeHueId | null;
+  const vibeColor = vibeToHsl(
+    vibeHueId,
+    stateLabel,
+    estimate?.capacity_pct ?? null,
+  );
+  const vibeGlow = vibeToGlow(vibeHueId, stateLabel, 0.55);
+  const vibeGlowStrong = vibeToGlow(vibeHueId, stateLabel, 0.75);
 
   // ─── State-change ring — fires once per transition into a new state.
   const prevStateRef = useRef<StateLabel>(stateLabel);
@@ -903,6 +928,13 @@ function MarketLiveVenueBubbleInner({
     ['--state-bg' as string]:          visuals.bg,
     ['--pulse-rate' as string]:        pulseRate,
     ['--mv-delay' as string]:          `${mvDelayMs}ms`,
+    // Phase 6 (Vibe) — vibe-driven tokens. Bubble color identity now
+    // routes through these. The --state-* tokens above remain for the
+    // surfaces (state ring, mv overrides, market dot) that still key
+    // off engine state rather than founder vibe.
+    ['--vibe-color' as string]:        vibeColor,
+    ['--vibe-glow' as string]:         vibeGlow,
+    ['--vibe-glow-strong' as string]:  vibeGlowStrong,
   };
 
   // Tier-gated render flags.
@@ -950,8 +982,8 @@ function MarketLiveVenueBubbleInner({
           as capacity climbs. */}
       <CapacityRing
         capacityPct={capacityPct}
-        color={visuals.primary}
-        glow={visuals.glow}
+        color={vibeColor}
+        glow={vibeGlow}
         size={getBubbleRingSize(mapZoom)}
         stroke={3}
         threshold={0.30}
@@ -1016,7 +1048,9 @@ function MarketLiveVenueBubbleInner({
               strokeWidth="2.5"
             />
             {/* fill — animated capacity arc. -90° rotation puts the
-                start at the top of the capsule so it fills clockwise. */}
+                start at the top of the capsule so it fills clockwise.
+                Phase 6 — stroke and over-capacity drop-shadow read
+                vibe tokens so the gauge color matches the bubble. */}
             <rect
               x="1.25" y="1.25"
               width={CAPSULE_W - 2.5}
@@ -1024,14 +1058,14 @@ function MarketLiveVenueBubbleInner({
               rx={CAPSULE_R - 1.25}
               ry={CAPSULE_R - 1.25}
               fill="none"
-              stroke="var(--state-primary)"
+              stroke="var(--vibe-color)"
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeDasharray={CAPSULE_PERIMETER}
               strokeDashoffset={capsuleDashOffset}
               style={{
                 filter: isOverCapacity
-                  ? `drop-shadow(0 0 6px var(--state-glow))`
+                  ? `drop-shadow(0 0 6px var(--vibe-glow))`
                   : 'none',
                 transition: 'stroke-dashoffset 600ms cubic-bezier(0.4,0,0.2,1)',
               }}
@@ -1281,13 +1315,14 @@ const LVB_MARKET_KEYFRAMES = `
   position: absolute;
   /* Phase 6 — halo extends 22px BELOW the bubble so at tight zoom
      (capsule only 4px away) the breath glow bleeds into the capsule
-     glow area. Pair reads as one luminous organism. */
+     glow area. Pair reads as one luminous organism. Vibe tokens own
+     the halo color so the breath itself carries founder identity. */
   inset: -10px -10px -22px -10px;
   border-radius: 50%;
   background: radial-gradient(
     ellipse 60% 75% at 50% 40%,
-    var(--state-glow-strong) 0%,
-    var(--state-glow) 35%,
+    var(--vibe-glow-strong) 0%,
+    var(--vibe-glow) 35%,
     transparent 70%
   );
   pointer-events: none;
@@ -1411,13 +1446,20 @@ const LVB_MARKET_KEYFRAMES = `
   gap: 2px;
   padding: 9px 14px 10px;
   border-radius: 22px;
-  background: var(--state-bg);
+  /* Phase 6 — deep-tinted glass. The dark gradient sits on top of the
+     vibe color with multiply blend, so the hue shows through faintly
+     while the surface stays dark enough for white text to land. Safe
+     across Safari/Chrome/Firefox (no relative-color syntax). */
+  background:
+    linear-gradient(180deg, rgba(8, 8, 14, 0.92) 0%, rgba(4, 4, 8, 0.96) 100%),
+    var(--vibe-color);
+  background-blend-mode: multiply;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow:
     0 8px 22px rgba(0, 0, 0, 0.55),
-    0 -4px 18px var(--state-glow),
-    0 0 22px var(--state-glow-strong),
+    0 -4px 18px var(--vibe-glow),
+    0 0 22px var(--vibe-glow-strong),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 2;
   font-family: var(--font-display);
@@ -1444,8 +1486,8 @@ const LVB_MARKET_KEYFRAMES = `
   font-variant-numeric: tabular-nums;
   color: #FFFFFF;
   text-shadow:
-    0 0 14px var(--state-glow),
-    0 0 4px var(--state-glow-strong);
+    0 0 14px var(--vibe-glow),
+    0 0 4px var(--vibe-glow-strong);
   line-height: 1.0;
   display: inline-flex;
   align-items: baseline;
@@ -1454,9 +1496,9 @@ const LVB_MARKET_KEYFRAMES = `
 
 .lvb-capsule__bullet {
   font-size: 13px;
-  color: var(--state-primary);
+  color: var(--vibe-color);
   font-weight: 800;
-  text-shadow: 0 0 10px var(--state-glow-strong);
+  text-shadow: 0 0 10px var(--vibe-glow-strong);
   position: relative;
   top: -2px;
 }
@@ -1470,12 +1512,13 @@ const LVB_MARKET_KEYFRAMES = `
 }
 
 /* Market view boost — saturated, glowing harder. The whole inner
-   block lifts in saturation by ~18% and the glow shadow extends. */
+   block lifts in saturation by ~18% and the glow shadow extends.
+   Phase 6 — glow routes vibe so the lift carries founder color. */
 .lvb-bubble--mv .lvb-capsule__inner {
   filter: saturate(1.18);
   box-shadow:
     0 8px 26px rgba(0, 0, 0, 0.6),
-    0 0 28px var(--state-glow),
+    0 0 28px var(--vibe-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 

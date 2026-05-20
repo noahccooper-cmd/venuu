@@ -16,13 +16,26 @@ export interface HeatPointProps {
   capacity_pct: number;
   state_label: string;
   heat_weight: number;
+  // Phase D (Dual heat) — signal-gated weight for the wide-zoom snap
+  // heatmap. 0 when confidence < 15 (truth floor preserved); the vibe
+  // canvas keeps reading the always-on `heat_weight` above.
+  heat_weight_signal: number;
   computed_at: string | null;
+  // Phase C (Vibe canvas) — per-venue hue identity. Mapbox circle
+  // layers read these via ['get', 'hue_degrees'] / ['get',
+  // 'hue_default_saturation'] to paint each point in its own color.
+  hue_id: number;
+  hue_degrees: number;
+  hue_default_saturation: number;
 }
 
-interface HeatPointRow extends HeatPointProps {
+interface HeatPointRow extends Omit<HeatPointProps, 'computed_at'> {
   lat: number;
   lng: number;
-  capacity: number | null;
+  venue_capacity: number | null;
+  // The repointed heat_points view (00054) renames computed_at →
+  // last_calculated_at to align with headcount_estimates' own column.
+  last_calculated_at: string | null;
 }
 
 const EMPTY_FC: FeatureCollection<Point, HeatPointProps> = {
@@ -68,7 +81,7 @@ export function useHeatField(_currentCity: string) {
 
     const { data, error } = await supabase
       .from('heat_points')
-      .select('venue_id, name, city, lat, lng, capacity, estimate, confidence_pct, capacity_pct, state_label, heat_weight, computed_at')
+      .select('venue_id, name, city, lat, lng, venue_capacity, estimate, confidence_pct, capacity_pct, state_label, heat_weight, heat_weight_signal, last_calculated_at, hue_id, hue_degrees, hue_default_saturation')
       .in('city', LAUNCH_MARKETS as unknown as string[]);
 
     if (!aliveRef.current) return;
@@ -95,7 +108,11 @@ export function useHeatField(_currentCity: string) {
           capacity_pct: r.capacity_pct,
           state_label: r.state_label,
           heat_weight: r.heat_weight,
-          computed_at: r.computed_at,
+          heat_weight_signal: r.heat_weight_signal,
+          computed_at: r.last_calculated_at,
+          hue_id: r.hue_id,
+          hue_degrees: r.hue_degrees,
+          hue_default_saturation: r.hue_default_saturation,
         },
       })),
     };

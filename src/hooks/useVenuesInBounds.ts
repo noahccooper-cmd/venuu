@@ -33,7 +33,7 @@ export type VenueWithEstimate = Venue & {
   headcount_estimates: HeadcountEstimate[];
 };
 
-const VENUE_COLUMNS = 'id, created_at, name, slug, city, category, address, lat, lng, image_url, deals, hours, instagram, vibe, has_live_cam, live_cam_url, cam_coming_soon, is_active, sort_order, capacity, is_clicker_live, staff_code, phone, website, description, rating, review_count, tonight_special, special_updated_at, cover_charge, featured, featured_label, loyalty_active, nfc_tag_id, nfc_required';
+const VENUE_COLUMNS = 'id, created_at, name, slug, city, category, address, lat, lng, image_url, deals, hours, instagram, vibe_tagline, has_live_cam, live_cam_url, cam_coming_soon, is_active, sort_order, capacity, is_clicker_live, staff_code, phone, website, description, rating, review_count, tonight_special, special_updated_at, cover_charge, featured, featured_label, loyalty_active, nfc_tag_id, nfc_required, vibe_hue_baseline';
 const ESTIMATE_COLUMNS = 'estimate, estimate_low, estimate_high, confidence_pct, capacity_pct, state_label, trend, trend_rate, computed_at, source_breakdown, delta_pct, expected_pct';
 const LAUNCH_MARKETS = ['knoxville', 'tampa', 'st_petersburg'] as const;
 

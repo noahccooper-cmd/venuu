@@ -38,7 +38,13 @@ export interface Venue {
   deals: string | null;
   hours: string | null;
   instagram: string | null;
-  vibe: string | null;
+  vibe_tagline: string | null;
+  vibe_hue_baseline?: {
+    wk_early?: number;
+    wk_peak?: number;
+    wknd_early?: number;
+    wknd_peak?: number;
+  } | null;
   has_live_cam: boolean;
   live_cam_url: string | null;
   cam_coming_soon: boolean;

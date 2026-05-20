@@ -255,6 +255,10 @@ interface MapViewProps {
   /** Plan sheet state — drives camera ease padding so the focused
    *  stop stays visible above the sheet. */
   sheetState?: 'pill' | 'card' | 'full' | null;
+  /** Phase C (Vibe canvas) — currently selected venue id (e.g. when the
+   *  VenueSheet is open). Threaded to HeatFieldLayer to drive the
+   *  tap-bleed expansion in the halos layer. Null → no bleed. */
+  selectedVenueId?: string | null;
 }
 
 /* ── Events GeoJSON builder ──────────── */
@@ -332,7 +336,7 @@ function drawLineProgress(coords: [number, number][], t: number): [number, numbe
 
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState }: MapViewProps) {
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, selectedVenueId }: MapViewProps) {
   // Side pills (share-globe / globe / follow-me) fade out and slide
   // down while the plan sheet covers the bottom of the map. They
   // remain visible at PILL state (sheet is at the top) and when no
@@ -1401,6 +1405,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           isSpotlight={isVenueSpotlight}
           movementMagnitude={movementMagnitude}
           showName={showName}
+          vibeHueBaseline={v.vibe_hue_baseline ?? null}
         />
       );
 
@@ -2532,6 +2537,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           mapLoaded={mapLoaded}
           geojson={heatGeojson}
           mode={isNightHours() ? 'night' : 'day'}
+          selectedVenueId={selectedVenueId ?? null}
         />
       )}
 
