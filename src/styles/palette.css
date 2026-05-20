@@ -1,0 +1,61 @@
+/* ════════════════════════════════════════════════════════
+   VENUU STATE PALETTE — single source of truth
+   Consumed by LiveVenueBubble, HeatFieldLayer, MarketTicker,
+   CityPulseLine, and any other component that needs state colors.
+   ════════════════════════════════════════════════════════ */
+
+:root {
+  /* QUIET — restful purple-slate */
+  --quiet-primary:    #6B5B8C;
+  --quiet-border:     rgba(140, 120, 175, 0.55);
+  --quiet-text:       #E6DEF5;
+  --quiet-glow:       rgba(140, 120, 175, 0.48);
+  --quiet-glow-strong:rgba(140, 120, 175, 0.7);
+  --quiet-bg:         linear-gradient(180deg, rgba(35,28,52,0.92) 0%, rgba(20,16,32,0.96) 100%);
+  --quiet-heat:       rgba(120, 100, 160, 0.4);
+
+  /* LIVELY — warming yellow-gold */
+  --lively-primary:    #FFC940;
+  --lively-border:     rgba(255, 201, 64, 0.62);
+  --lively-text:       #FFF1C8;
+  --lively-glow:       rgba(255, 201, 64, 0.56);
+  --lively-glow-strong:rgba(255, 201, 64, 0.78);
+  --lively-bg:         linear-gradient(180deg, rgba(58,42,12,0.92) 0%, rgba(32,22,6,0.96) 100%);
+  --lively-heat:       rgba(255, 180, 60, 0.45);
+
+  /* BUSY — brand orange, hot */
+  --busy-primary:    #FF8200;
+  --busy-border:     rgba(255, 130, 0, 0.65);
+  --busy-text:       #FFC76E;
+  --busy-glow:       rgba(255, 130, 0, 0.6);
+  --busy-glow-strong:rgba(255, 130, 0, 0.82);
+  --busy-bg:         linear-gradient(180deg, rgba(58,28,4,0.92) 0%, rgba(32,16,4,0.96) 100%);
+  --busy-heat:       rgba(255, 120, 0, 0.5);
+
+  /* PACKED — deep wine-magenta, peak */
+  --packed-primary:    #E63956;
+  --packed-border:     rgba(255, 80, 110, 0.65);
+  --packed-text:       #FFC2CF;
+  --packed-glow:       rgba(255, 80, 110, 0.6);
+  --packed-glow-strong:rgba(255, 80, 110, 0.82);
+  --packed-bg:         linear-gradient(180deg, rgba(58,12,22,0.94) 0%, rgba(32,6,12,0.97) 100%);
+  --packed-heat:       rgba(230, 60, 90, 0.5);
+
+  /* SURGING — mint breakout */
+  --surging-primary:    #1FE89A;
+  --surging-border:     rgba(0, 255, 176, 0.72);
+  --surging-text:       #A8FFD8;
+  --surging-glow:       rgba(0, 255, 176, 0.65);
+  --surging-glow-strong:rgba(0, 255, 176, 0.88);
+  --surging-bg:         linear-gradient(180deg, rgba(4,38,24,0.94) 0%, rgba(2,20,12,0.97) 100%);
+  --surging-heat:       rgba(0, 240, 160, 0.55);
+
+  /* UNKNOWN — neutral */
+  --unknown-primary:    #9098A8;
+  --unknown-border:     rgba(160, 168, 188, 0.3);
+  --unknown-text:       rgba(255, 255, 255, 0.5);
+  --unknown-glow:       transparent;
+  --unknown-glow-strong:transparent;
+  --unknown-bg:         linear-gradient(180deg, rgba(20,20,28,0.85) 0%, rgba(15,15,22,0.9) 100%);
+  --unknown-heat:       rgba(120, 120, 140, 0.2);
+}

@@ -122,32 +122,23 @@ function getCountText(estimate: number | null, tier: ConfTier): string | null {
   return null;
 }
 
-function getCapacityText(
-  capacityPct: number | null,
-  tier: ConfTier,
-  state: StateLabel,
-): string | null {
+/**
+ * Phase 1 (Recon→Restore) — single-arg capacity narrator.
+ * Pure capacity-percentage ladder. The phrase vocabulary is the
+ * Legacy capsule's locked language — "barely there", "filling fast",
+ * "almost full", "at capacity", "over capacity 🔥" — extended with
+ * "dead inside" at the floor and a numeric mid-band so values that
+ * fall in the 30-60% range get a concrete number rather than a vibe.
+ */
+function getCapacityText(capacityPct: number | null | undefined): string | null {
   if (capacityPct == null) return null;
-
-  // Quiet venues at near-empty capacity skip the line entirely —
-  // "0% full" reads as shaming. "Quiet" already says it.
-  if (state === 'Quiet' && capacityPct < 0.10) return null;
-
-  const pct = Math.round(capacityPct * 100);
-
-  // Over-capacity is special regardless of confidence.
-  if (pct >= 110) return 'over capacity 🔥';
-  if (pct >= 100) return 'at capacity';
-
-  if (tier === 'sharp')     return `${pct}% full`;
-  if (tier === 'soft')      return `${pct}% full`;
-  if (tier === 'tentative') {
-    if (pct < 15) return 'barely there';
-    if (pct < 35) return 'thinning';
-    if (pct < 55) return 'about half';
-    if (pct < 75) return 'filling fast';
-    return 'almost full';
-  }
+  if (capacityPct >= 1.10) return 'over capacity 🔥';
+  if (capacityPct >= 1.00) return 'at capacity';
+  if (capacityPct >= 0.85) return 'almost full';
+  if (capacityPct >= 0.70) return 'filling fast';
+  if (capacityPct >= 0.20) return `${Math.round(capacityPct * 100)}% full`;
+  if (capacityPct >= 0.15) return 'barely there';
+  if (capacityPct >= 0.01) return 'dead inside';
   return null;
 }
 
@@ -331,7 +322,7 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   // Signature-display content
   const tier = getConfTier(confidence);
   const countText = getCountText(animatedCount, tier);
-  const capacityText = getCapacityText(capacityPct, tier, stateLabel);
+  const capacityText = getCapacityText(capacityPct);
   const countPrefix = getCountPrefix(estimate?.source_breakdown);
   const isBouncerVerified = countPrefix.length > 0;
   const isSurging = stateLabel === 'Surging';
@@ -713,51 +704,60 @@ const LVB_KEYFRAMES = `
    zoom-aware sizing, state-change ring, and trend-rate-synced pulse.
    ────────────────────────────────────────────────────────────────── */
 
-// Phase 5.2 — two-mode thermometer palette. Default `explore` is the
-// calm "browsing" register (lower saturation, gentler glow). Market
-// View Mode swaps to `market` (higher saturation, stronger glow) so
-// the whole map visibly intensifies when the user taps the chip.
-// The transition between the two is driven by CSS transition durations
-// on the bubble root + breath halo (480ms ease).
-const STATE_COLORS: Record<StateLabel, {
-  explore: { primary: string; glow: string; text: string };
-  market:  { primary: string; glow: string; text: string };
-}> = {
-  Quiet: {
-    explore: { primary: '#5B6B8C', glow: 'rgba(91, 107, 140, 0.28)',  text: '#B3BFD8' },
-    market:  { primary: '#6E80AC', glow: 'rgba(110, 128, 172, 0.55)', text: '#D6E0F0' },
-  },
-  Lively: {
-    explore: { primary: '#FFD56B', glow: 'rgba(255, 213, 107, 0.35)', text: '#FFE9B0' },
-    market:  { primary: '#FFC940', glow: 'rgba(255, 201, 64, 0.65)',  text: '#FFF1C8' },
-  },
-  Busy: {
-    explore: { primary: '#FF8200', glow: 'rgba(255, 130, 0, 0.40)',   text: '#FFB347' },
-    market:  { primary: '#FF6F00', glow: 'rgba(255, 111, 0, 0.65)',   text: '#FFC76E' },
-  },
-  Packed: {
-    explore: { primary: '#E63956', glow: 'rgba(230, 57, 86, 0.40)',   text: '#FFADBE' },
-    market:  { primary: '#FF2D58', glow: 'rgba(255, 45, 88, 0.65)',   text: '#FFC2CF' },
-  },
-  Surging: {
-    explore: { primary: '#1FE89A', glow: 'rgba(31, 232, 154, 0.42)',  text: '#80FFC8' },
-    market:  { primary: '#00FFB0', glow: 'rgba(0, 255, 176, 0.70)',   text: '#A8FFD8' },
-  },
-  Unknown: {
-    explore: { primary: '#9098A8', glow: 'transparent',               text: 'rgba(255,255,255,0.5)' },
-    market:  { primary: '#9098A8', glow: 'transparent',               text: 'rgba(255,255,255,0.5)' },
-  },
-};
+// Phase 6 (Unify) — STATE_VISUALS is gone. Components resolve state
+// tokens to var() references pointing at :root tokens declared in
+// src/styles/palette.css. Update the palette globally → every
+// consumer updates. HeatField, Ticker, and CityPulse route through
+// the same vars in subsequent phases.
+type StateKey = 'quiet' | 'lively' | 'busy' | 'packed' | 'surging' | 'unknown';
+
+function stateKey(label: string): StateKey {
+  const k = label.toLowerCase();
+  if (k === 'quiet' || k === 'lively' || k === 'busy' ||
+      k === 'packed' || k === 'surging') return k;
+  return 'unknown';
+}
+
+function stateVars(label: string): {
+  primary: string; border: string; text: string;
+  glow: string; glowStrong: string; bg: string;
+} {
+  const k = stateKey(label);
+  return {
+    primary:    `var(--${k}-primary)`,
+    border:     `var(--${k}-border)`,
+    text:       `var(--${k}-text)`,
+    glow:       `var(--${k}-glow)`,
+    glowStrong: `var(--${k}-glow-strong)`,
+    bg:         `var(--${k}-bg)`,
+  };
+}
+
+// Phase 1 (Recon→Restore v2) — capsule geometry. The SVG border that
+// doubles as the capacity gauge needs these exact dimensions for the
+// dasharray perimeter math to align with the visible rounded-rect
+// border. Width raised to 84 so the three stacked lines breathe.
+const CAPSULE_W = 84;
+const CAPSULE_H = 64;
+const CAPSULE_R = 22;
+
+// Rounded-rect perimeter, used as strokeDasharray for the capacity arc.
+// Standard form: 2*(W − 2R) + 2*(H − 2R) straight sides + 2πR for the
+// four quarter-circle corners combined.
+const CAPSULE_PERIMETER =
+  2 * (CAPSULE_W - 2 * CAPSULE_R)
+  + 2 * (CAPSULE_H - 2 * CAPSULE_R)
+  + 2 * Math.PI * CAPSULE_R;
 
 /** Map zoom → display tier. Three buckets keep re-renders cheap —
  *  bubbles only repaint when crossing a threshold, not on every
- *  zoom tick. Phase 5.2: tightened boundaries so wide (heatmap) ends
- *  earlier (< 12) and the mid identity band runs 12–14. */
+ *  zoom tick. Phase 6 (Unify) lowered all thresholds by one step so
+ *  pills appear sooner: wide < 11, mid 11–13, tight ≥ 14. */
 type ZoomTier = 'wide' | 'mid' | 'tight';
-function getZoomTier(z: number | undefined): ZoomTier {
-  if (z == null) return 'mid';
-  if (z < 12) return 'wide';
-  if (z < 15) return 'mid';
+function getZoomTier(zoom: number | undefined): ZoomTier {
+  if (zoom == null) return 'mid';
+  if (zoom < 11) return 'wide';
+  if (zoom < 14) return 'mid';
   return 'tight';
 }
 
@@ -773,12 +773,13 @@ function pulseRateFor(trendRate: number | null | undefined): string {
 /** Capacity-ring outer diameter, sized to comfortably surround the
  *  bubble's visible shell at each zoom tier. Wide tier is a small ring
  *  around the 10 px dot; mid is a snug ring around the mid pill; tight
- *  is the full hero treatment. */
+ *  is the full hero treatment. Phase 6 raised tight to 68 so the ring
+ *  has more presence next to the capsule (and ungated its render). */
 function getBubbleRingSize(zoom?: number): number {
   if (zoom == null) return 64;
-  if (zoom < 12) return 38;
-  if (zoom < 15) return 56;
-  return 62;   // tight — slightly smaller so the stacked pill is the anchor
+  if (zoom < 11) return 38;
+  if (zoom < 14) return 56;
+  return 68;  // tight — ring stays prominent, complements capsule
 }
 
 /** Pulse-class keyed off |trend_rate|. Drives the breath halo's
@@ -823,19 +824,37 @@ function MarketLiveVenueBubbleInner({
     }
   }, [stateLabel]);
 
+  // Phase 6 — louder, second-layer state-change pulse. The 920ms
+  // radial broadcast from bubble center, skipping Unknown ↔ anything
+  // (those are first-mount artifacts). Pairs with the existing ring
+  // above so real flips get a two-layered visible event.
+  const prevPulseRef = useRef<StateLabel | null>(null);
+  const [statePulse, setStatePulse] = useState(false);
+  useEffect(() => {
+    const prev = prevPulseRef.current;
+    const curr = stateLabel;
+    if (prev !== null && prev !== curr && curr !== 'Unknown' && prev !== 'Unknown') {
+      setStatePulse(true);
+      const t = setTimeout(() => setStatePulse(false), 920);
+      prevPulseRef.current = curr;
+      return () => clearTimeout(t);
+    }
+    prevPulseRef.current = curr;
+  }, [stateLabel]);
+
   // No render when engine has nothing — same algorithm-run gate as legacy.
   if (!hasAlgorithmData(estimate)) return null;
 
   const tier = getZoomTier(mapZoom);
-  // Phase 5.2 — palette mode switches with marketView. Smoothness lives
-  // in CSS transitions on the bubble root + halo (480ms ease).
-  const colorMode: 'explore' | 'market' = marketView ? 'market' : 'explore';
-  const colors = (STATE_COLORS[stateLabel] ?? STATE_COLORS.Unknown)[colorMode];
+  // Phase 6 (Unify) — stateVars() returns var() references resolving
+  // against :root tokens in src/styles/palette.css. The bubble's local
+  // --state-* custom props point at those global tokens.
+  const visuals = stateVars(stateLabel);
   const isSurging = stateLabel === 'Surging';
   const pulseRate = pulseRateFor(trendRate);
-  // Trend is read for the breath-rate calc above and (currently) for nothing
-  // else in this render path. Phase 5.2 moved delta/state out of the shell
-  // and into the pill below; no trend arrow there per spec.
+  // Trend is read for the breath-rate calc above and (currently) for
+  // nothing else in this render path. Phase 1 moved all data into the
+  // capsule; the bullet on the count line is the orientation cue.
   void trend;
 
   // Stagger BOLD entry by movement magnitude — biggest movers light
@@ -845,16 +864,25 @@ function MarketLiveVenueBubbleInner({
     ? Math.round((1 - Math.min(1, Math.max(0, movementMagnitude ?? 0))) * 600)
     : 0;
 
-  // Phase 5.2 — initial scales smoothly across the mid band so leaning
+  // Phase 6 — initial scales smoothly across the mid band so leaning
   // into the city feels like the letter is growing toward you. Linear
-  // 0.9× at zoom 12 → 1.15× at zoom 14. Outside the mid band the value
+  // 0.9× at zoom 11 → 1.15× at zoom 13. Outside the mid band the value
   // is unused — React unmounts the initial via the conditional render.
   const initialScale = useMemo(() => {
     if (tier !== 'mid') return 1;
-    const z = mapZoom ?? 13;
-    const t = Math.max(0, Math.min(1, (z - 12) / 2));
+    const z = mapZoom ?? 12;
+    const t = Math.max(0, Math.min(1, (z - 11) / 2));
     return 0.9 + t * 0.25;
   }, [tier, mapZoom]);
+
+  // Capacity gauge — Phase 1 collapses the separate concentric arc
+  // into the capsule's own border at tight zoom. Clamped 0–1 for
+  // display; over-capacity (≥1.0) gets a drop-shadow on the stroke.
+  const capacityPct = estimate?.capacity_pct ?? null;
+  const capacityClamped = Math.min(1, Math.max(0, capacityPct ?? 0));
+  const capsuleDashOffset = CAPSULE_PERIMETER * (1 - capacityClamped);
+  const capacityText = getCapacityText(capacityPct);
+  const isOverCapacity = capacityPct != null && capacityPct >= 1.0;
 
   const rootStyle: React.CSSProperties = {
     background: 'transparent',
@@ -865,28 +893,32 @@ function MarketLiveVenueBubbleInner({
     display: 'inline-block',
     lineHeight: 0,
     position: 'relative',
-    // CSS custom props consumed by the new keyframes / classes
-    ['--state-primary' as string]: colors.primary,
-    ['--state-glow' as string]: colors.glow,
-    ['--state-text' as string]: colors.text,
-    ['--pulse-rate' as string]: pulseRate,
-    ['--mv-delay' as string]: `${mvDelayMs}ms`,
+    // CSS custom props consumed by the inline keyframes / classes.
+    // These resolve against the :root tokens in palette.css via var().
+    ['--state-primary' as string]:     visuals.primary,
+    ['--state-border' as string]:      visuals.border,
+    ['--state-text' as string]:        visuals.text,
+    ['--state-glow' as string]:        visuals.glow,
+    ['--state-glow-strong' as string]: visuals.glowStrong,
+    ['--state-bg' as string]:          visuals.bg,
+    ['--pulse-rate' as string]:        pulseRate,
+    ['--mv-delay' as string]:          `${mvDelayMs}ms`,
   };
 
-  // Bubble shell — pill in mid/tight, just a halo dot in wide.
-  // Phase 5.2: shell is now a clean visible marker. Mid tier carries
-  // the venue initial INSIDE the shell. Tight tier moves all data
-  // (delta + state + capacity) into a separate .lvb-pill rendered
-  // below the bubble — the shell at tight is just a colored anchor.
-  const showShell = tier !== 'wide';
+  // Tier-gated render flags.
+  // - wide: just the breath halo + small core dot
+  // - mid:  breath halo + initial in core (no capsule)
+  // - tight: breath halo + Legacy-language capsule (with SVG border gauge)
   const showInitial = tier === 'mid' && initial.length > 0 && stateLabel !== 'Unknown';
-  const showPill = tier === 'tight' && stateLabel !== 'Unknown' && confidence >= 35;
+  const showCapsule = tier === 'tight' && stateLabel !== 'Unknown' && confidence >= 35;
+  const showWideDot = tier === 'wide';
 
   return (
     <motion.button
       type="button"
       onClick={onTap}
       className={[
+        'lvb-bubble',
         'lvb-bubble--market',
         'lvb-bubble--breathing',
         pulseClass,
@@ -905,20 +937,21 @@ function MarketLiveVenueBubbleInner({
         : { duration: 0.22, ease: 'easeOut' }}
       whileTap={{ scale: 0.95 }}
       style={rootStyle}
+      aria-label={`${venueName ?? 'Venue'}: ${stateLabel}`}
     >
-      {/* Phase 5.1 — breath halo. Sits behind everything else and
-          oscillates opacity by the trend_rate-keyed --pulse-cycle.
-          Implemented as a child element rather than a ::before pseudo
-          so it coexists with Phase 4.7's surging-ring ::before/::after. */}
+      {/* Breath halo — radial-gradient child element sitting behind
+          everything. Its --pulse-cycle CSS variable comes from
+          pulseClass (fast/med/slow), keyed off |trend_rate|. */}
       <span className="lvb-breath-halo" aria-hidden />
 
-      {/* Phase 5.0 — capacity ring overlay. Threshold-gated inside
-          CapacityRing (renders null when capacity_pct < 0.30) so
-          Quiet venues stay clean. */}
+      {/* Phase 6 (Unify) — CapacityRing renders at ALL tiers. At tight
+          zoom it complements the capsule's own SVG border gauge —
+          two channels showing the same truth, both filling clockwise
+          as capacity climbs. */}
       <CapacityRing
-        capacityPct={estimate?.capacity_pct ?? null}
-        color={colors.primary}
-        glow={colors.glow}
+        capacityPct={capacityPct}
+        color={visuals.primary}
+        glow={visuals.glow}
         size={getBubbleRingSize(mapZoom)}
         stroke={3}
         threshold={0.30}
@@ -934,51 +967,98 @@ function MarketLiveVenueBubbleInner({
         />
       )}
 
-      {tier === 'wide' && (
+      {/* Phase 6 — louder one-shot state-change pulse. Skips first
+          mounts (Unknown ↔ anything). Across the city, every real
+          state shift becomes a visible event. */}
+      {statePulse && (
+        <span className="lvb-state-pulse" aria-hidden />
+      )}
+
+      {showWideDot && (
         <span className="lvb-market-dot" aria-hidden />
       )}
 
-      {showShell && (
-        <div className={`lvb-market-shell lvb-market-shell--${tier}`}>
-          {/* Phase 5.2.1 — INITIAL in core at mid tier only. Plain
-              conditional render. CSS keyframe `lvb-fade-in` handles
-              the entry. React unmounts cleanly when tier leaves mid;
-              the pill won't co-exist because it's gated on tight. */}
-          {showInitial && (
-            <span
-              className="lvb-initial lvb-initial--mid"
-              style={{ fontSize: `calc(14px * ${initialScale})` }}
-              aria-hidden
-            >
-              {initial}
-            </span>
-          )}
+      {showInitial && (
+        <span
+          className="lvb-initial lvb-initial--mid"
+          style={{ fontSize: `calc(13px * ${initialScale})` }}
+          aria-hidden
+        >
+          {initial}
+        </span>
+      )}
+
+      {/* Phase 1 (Recon→Restore) — Legacy-language capsule. The pill is
+          ONE element with an SVG border that doubles as the capacity
+          gauge. STATUS caps on top, "• count" middle, language qualifier
+          at the bottom. No separate concentric ring at tight tier. */}
+      {showCapsule && (
+        <div className="lvb-capsule">
+          {/* SVG border that doubles as capacity gauge */}
+          <svg
+            className="lvb-capsule__gauge"
+            width="100%"
+            height="100%"
+            viewBox={`0 0 ${CAPSULE_W} ${CAPSULE_H}`}
+            preserveAspectRatio="none"
+            aria-hidden
+          >
+            {/* track — faint base outline */}
+            <rect
+              x="1.25" y="1.25"
+              width={CAPSULE_W - 2.5}
+              height={CAPSULE_H - 2.5}
+              rx={CAPSULE_R - 1.25}
+              ry={CAPSULE_R - 1.25}
+              fill="none"
+              stroke="var(--state-border)"
+              strokeOpacity="0.22"
+              strokeWidth="2.5"
+            />
+            {/* fill — animated capacity arc. -90° rotation puts the
+                start at the top of the capsule so it fills clockwise. */}
+            <rect
+              x="1.25" y="1.25"
+              width={CAPSULE_W - 2.5}
+              height={CAPSULE_H - 2.5}
+              rx={CAPSULE_R - 1.25}
+              ry={CAPSULE_R - 1.25}
+              fill="none"
+              stroke="var(--state-primary)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={CAPSULE_PERIMETER}
+              strokeDashoffset={capsuleDashOffset}
+              style={{
+                filter: isOverCapacity
+                  ? `drop-shadow(0 0 6px var(--state-glow))`
+                  : 'none',
+                transition: 'stroke-dashoffset 600ms cubic-bezier(0.4,0,0.2,1)',
+              }}
+              transform={`rotate(-90 ${CAPSULE_W / 2} ${CAPSULE_H / 2})`}
+            />
+          </svg>
+
+          {/* Capsule contents — three stacked lines */}
+          <div className="lvb-capsule__inner">
+            <span className="lvb-capsule__state">{stateLabel}</span>
+            {estimate?.estimate != null && estimate.estimate >= 0 && (
+              <span className="lvb-capsule__count">
+                <span className="lvb-capsule__bullet" aria-hidden>•</span>
+                {estimate.estimate}
+              </span>
+            )}
+            {capacityText && (
+              <span className="lvb-capsule__qualifier">{capacityText}</span>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Phase 5.2.2 — stacked vertical PILL below the bubble at tight
-          zoom. Three lines, no separators: STATE caps top, hero COUNT
-          middle, muted CAPACITY% bottom. Pure typographic hierarchy.
-          Plain conditional render keeps the pill in one mount — no
-          AnimatePresence overlap. */}
-      {showPill && (
-        <div className={`lvb-pill lvb-pill--${stateLabel.toLowerCase()}`}>
-          <span className="lvb-pill__state">{stateLabel}</span>
-          {estimate?.estimate != null && estimate.estimate >= 0 && (
-            <span className="lvb-pill__count">{estimate.estimate}</span>
-          )}
-          {estimate?.capacity_pct != null && estimate.capacity_pct >= 0.05 && (
-            <span className="lvb-pill__capacity">
-              {Math.round(estimate.capacity_pct * 100)}%
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Smart-density name label. Anchored just below the bubble at
-          mid/wide (6px) or below the pill at tight (32px). Parent
-          decides when to set showName via top-mover / proximity /
-          spotlight / tight-zoom heuristics. */}
+      {/* Smart-density name label. Anchored below the bubble at
+          mid/wide, or below the capsule at tight. Parent decides
+          when to set showName via top-mover / proximity / spotlight
+          / tight-zoom heuristics. */}
       {showName && venueName && (
         <span className={`lvb-name-label lvb-name-label--${tier}`}>{venueName}</span>
       )}
@@ -995,35 +1075,10 @@ const LVB_MARKET_KEYFRAMES = `
   font-family: var(--font-display);
 }
 
-.lvb-market-shell {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 6px 14px;
-  border-radius: 22px;
-  background: linear-gradient(180deg,
-    rgba(20, 20, 28, 0.94) 0%,
-    rgba(15, 15, 22, 0.96) 100%);
-  border: 1px solid var(--state-primary);
-  box-shadow: 0 0 14px var(--state-glow), 0 2px 10px rgba(0, 0, 0, 0.35);
-  white-space: nowrap;
-  line-height: 1.0;
-  animation: lvb-market-breath 3.5s ease-in-out infinite;
-}
-
-.lvb-market-shell--mid {
-  padding: 4px 10px;
-  border-radius: 18px;
-  gap: 0;
-}
-
-@keyframes lvb-market-breath {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.02); }
-}
-
+/* Phase 1 — the kettlebell shell is gone. The mid-tier initial now
+   floats on its own behind/over the breath halo; the tight-tier
+   capsule lives in .lvb-capsule below. Only the wide-tier core dot
+   stays from this section. */
 .lvb-market-dot {
   display: inline-block;
   width: 10px;
@@ -1039,9 +1094,8 @@ const LVB_MARKET_KEYFRAMES = `
   50%      { opacity: 1; transform: scale(1.18); }
 }
 
-.lvb-market-surging .lvb-market-shell,
 .lvb-market-surging .lvb-market-dot {
-  animation: lvb-market-breath 3.5s ease-in-out infinite,
+  animation: lvb-market-dot-pulse 2.4s ease-in-out infinite,
              lvb-market-surge-halo 2.6s ease-in-out infinite;
 }
 
@@ -1078,6 +1132,29 @@ const LVB_MARKET_KEYFRAMES = `
   0%   { opacity: 0.85; transform: scale(1);    }
   60%  { opacity: 0.5;  transform: scale(1.35); }
   100% { opacity: 0;    transform: scale(1.7);  }
+}
+
+/* Phase 6 — louder, secondary state-change pulse layer. Radial
+   expansion from bubble center. Fires only on real state flips
+   (Unknown ↔ anything is skipped as a first-mount artifact). */
+.lvb-state-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--state-primary);
+  pointer-events: none;
+  z-index: 4;
+  animation: lvb-state-pulse-anim 920ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes lvb-state-pulse-anim {
+  0%   { opacity: 0; transform: scale(1);    border-width: 2px;   }
+  25%  { opacity: 1; transform: scale(1.05);                       }
+  100% { opacity: 0; transform: scale(2.6);  border-width: 0.5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lvb-state-pulse { animation: none; opacity: 0; }
 }
 
 .lvb-delta {
@@ -1202,13 +1279,19 @@ const LVB_MARKET_KEYFRAMES = `
 .lvb-breath-halo {
   content: '';
   position: absolute;
-  inset: -8px;
+  /* Phase 6 — halo extends 22px BELOW the bubble so at tight zoom
+     (capsule only 4px away) the breath glow bleeds into the capsule
+     glow area. Pair reads as one luminous organism. */
+  inset: -10px -10px -22px -10px;
   border-radius: 50%;
-  /* Phase 5.2.2 — gradient tightened to 50% so the halo no longer
-     bleeds into the stacked pill area below the bubble at tight zoom. */
-  background: radial-gradient(circle, var(--state-glow) 0%, transparent 50%);
+  background: radial-gradient(
+    ellipse 60% 75% at 50% 40%,
+    var(--state-glow-strong) 0%,
+    var(--state-glow) 35%,
+    transparent 70%
+  );
   pointer-events: none;
-  z-index: -1;
+  z-index: 0;
   animation: lvb-breath var(--pulse-cycle, 3.5s) ease-in-out infinite;
   opacity: 0.6;
   transition: background 480ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -1220,7 +1303,7 @@ const LVB_MARKET_KEYFRAMES = `
 
 @keyframes lvb-breath {
   0%, 100% { opacity: 0.5;  transform: scale(1);    }
-  50%      { opacity: 0.95; transform: scale(1.08); }
+  50%      { opacity: 0.95; transform: scale(1.06); }
 }
 
 /* Unknown state — honest dead-air. Halo holds steady at low opacity. */
@@ -1285,112 +1368,143 @@ const LVB_MARKET_KEYFRAMES = `
   transition: top 280ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Tight zoom: pill is ~52px tall + 8px top gap → label sits 68px down. */
-.lvb-name-label--tight { top: calc(100% + 68px); }
+/* Tight zoom — capsule is 64px tall + 4px top gap + 10px buffer.
+   Phase 6 lowered this from 84px → 78px to match the closed gap. */
+.lvb-name-label--tight { top: calc(100% + 78px); }
 .lvb-name-label--mid,
 .lvb-name-label--wide  { top: calc(100% + 6px); }
 
 /* ──────────────────────────────────────────────────────────────
-   Phase 5.2.1 — clean oval PILL below the bubble at tight zoom.
-   Plain conditional render (no AnimatePresence — the double-pill
-   bug was AnimatePresence's exit + enter overlapping). On mount,
-   the lvb-pill-rise keyframe handles the entry. React unmounts
-   when zoom leaves tight; no exit overlap possible.
-   Phase 5.2.2 — stacked vertical layout. STATE caps on top (8px),
-   hero COUNT in the middle (17px white with glow), CAPACITY% on
-   the bottom (9px muted). Pure typographic hierarchy — no dot
-   separators. The pill reads as ONE element with three lines.
+   Phase 1 (Recon→Restore) — Legacy-language capsule.
+   The pill is ONE element with an SVG border that doubles as the
+   capacity gauge. Dimensions are LOCKED to match CAPSULE_W /
+   CAPSULE_H / CAPSULE_R constants so the dasharray perimeter math
+   in the render aligns to the visible rounded-rect border.
    ────────────────────────────────────────────────────────────── */
-.lvb-pill {
+.lvb-capsule {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 4px);
   left: 50%;
   transform: translateX(-50%);
+  width: 84px;
+  height: 64px;
+  pointer-events: none;
+  z-index: 3;
+  animation: lvb-capsule-rise 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.lvb-capsule__gauge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.lvb-capsule__inner {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 64px;
-  padding: 6px 12px;
-  border-radius: 18px;
-  background: linear-gradient(180deg,
-    rgba(15, 15, 22, 0.94) 0%,
-    rgba(10, 10, 16, 0.97) 100%);
-  border: 1px solid var(--state-primary, rgba(255, 255, 255, 0.18));
+  gap: 2px;
+  padding: 9px 14px 10px;
+  border-radius: 22px;
+  background: var(--state-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  pointer-events: none;
-  z-index: 3;
   box-shadow:
-    0 6px 16px rgba(0, 0, 0, 0.45),
-    0 0 12px var(--state-glow, transparent);
+    0 8px 22px rgba(0, 0, 0, 0.55),
+    0 -4px 18px var(--state-glow),
+    0 0 22px var(--state-glow-strong),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  z-index: 2;
   font-family: var(--font-display);
   white-space: nowrap;
-  animation: lvb-pill-rise 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
   transition:
-    background 320ms ease,
-    border-color 320ms ease,
+    background 480ms cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 480ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes lvb-pill-rise {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.9); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1);   }
-}
-
-.lvb-pill__state {
+.lvb-capsule__state {
   font-weight: 700;
-  font-size: 8px;
-  letter-spacing: 0.18em;
+  font-size: 8.5px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--state-text, rgba(255, 255, 255, 0.92));
-  line-height: 1.1;
-  margin-bottom: 1px;
+  color: var(--state-text);
+  line-height: 1.0;
+  opacity: 0.95;
 }
 
-.lvb-pill__count {
+.lvb-capsule__count {
   font-weight: 800;
-  font-size: 17px;
-  letter-spacing: -0.02em;
+  font-size: 20px;
+  letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;
   color: #FFFFFF;
-  text-shadow: 0 0 10px var(--state-glow);
+  text-shadow:
+    0 0 14px var(--state-glow),
+    0 0 4px var(--state-glow-strong);
+  line-height: 1.0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.lvb-capsule__bullet {
+  font-size: 13px;
+  color: var(--state-primary);
+  font-weight: 800;
+  text-shadow: 0 0 10px var(--state-glow-strong);
+  position: relative;
+  top: -2px;
+}
+
+.lvb-capsule__qualifier {
+  font-weight: 600;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.68);
+  letter-spacing: 0.03em;
   line-height: 1.0;
 }
 
-.lvb-pill__capacity {
-  font-weight: 600;
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.55);
-  letter-spacing: 0.02em;
-  line-height: 1.1;
-  margin-top: 1px;
+/* Market view boost — saturated, glowing harder. The whole inner
+   block lifts in saturation by ~18% and the glow shadow extends. */
+.lvb-bubble--mv .lvb-capsule__inner {
+  filter: saturate(1.18);
+  box-shadow:
+    0 8px 26px rgba(0, 0, 0, 0.6),
+    0 0 28px var(--state-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* Market view — pill glow intensifies. */
-.lvb-bubble--mv .lvb-pill {
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.55),
-    0 0 22px var(--state-glow);
+@keyframes lvb-capsule-rise {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-4px) scale(0.94); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lvb-initial,
-  .lvb-pill { animation: none; }
+  .lvb-capsule { animation: none; }
 }
 
 /* ──────────────────────────────────────────────────────────────
-   Phase 5.2 — smooth explore ↔ market mode transitions. When the
-   user taps the MoversChip, marketView flips and STATE_COLORS swaps
-   variants — these transitions make the colors ease rather than snap.
+   Phase 6 — intensified explore-mode color grading. The map looks
+   vivid even before Market View activates. Market View still feels
+   like a step-up, but the baseline is alive.
    ────────────────────────────────────────────────────────────── */
 .lvb-bubble--market {
+  filter: saturate(1.08);
   transition:
+    filter 480ms cubic-bezier(0.4, 0, 0.2, 1),
     background-color 480ms cubic-bezier(0.4, 0, 0.2, 1),
     border-color 480ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 480ms cubic-bezier(0.4, 0, 0.2, 1),
-    filter 320ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lvb-bubble--market.lvb-bubble--mv {
+  filter: saturate(1.22);
 }
 `;
 
