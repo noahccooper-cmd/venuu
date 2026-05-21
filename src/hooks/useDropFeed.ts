@@ -10,6 +10,7 @@ export interface DropMessage {
   type: DropMessageType;
   venue_id: string;
   venue_name: string;
+  venue_featured?: boolean;  // featured venue → thicker stripe + ⭐ prefix
   hue_degrees: number;       // 0-360, drives left-stripe color
   body: string;              // main text
   subline?: string;          // optional context (time ago, capacity, etc.)
@@ -48,6 +49,7 @@ const SURGE_TTL_MS = 15 * 60 * 1000;  // surges age out after 15 min
 
 interface UseDropFeedProps {
   venueIds: string[];
+  featuredVenueIds?: Set<string>;
   events?: VenueEvent[];
 }
 
@@ -60,7 +62,7 @@ interface UseDropFeedProps {
  * Path A — pure client-side. No DB migration. Surges are ephemeral
  * (15-min lifetime in the feed).
  */
-export function useDropFeed({ venueIds, events }: UseDropFeedProps) {
+export function useDropFeed({ venueIds, featuredVenueIds, events }: UseDropFeedProps) {
   const [updates, setUpdates] = useState<VenueUpdateRow[]>([]);
   const [surges, setSurges] = useState<DropMessage[]>([]);
   const [venueHues, setVenueHues] = useState<Map<string, number>>(new Map());
@@ -194,6 +196,7 @@ export function useDropFeed({ venueIds, events }: UseDropFeedProps) {
       type: 'message',
       venue_id: u.venue_id,
       venue_name: u.venue_name,
+      venue_featured: featuredVenueIds?.has(u.venue_id) ?? false,
       hue_degrees: venueHues.get(u.venue_id) ?? 45,  // default yellow-gold
       body: u.message,
       icon: '\u{1F4AC}',  // 💬
@@ -212,6 +215,7 @@ export function useDropFeed({ venueIds, events }: UseDropFeedProps) {
         type: 'event' as const,
         venue_id: e.venue_id ?? '',
         venue_name: e.host_name || 'Event',
+        venue_featured: e.venue_id ? (featuredVenueIds?.has(e.venue_id) ?? false) : false,
         hue_degrees: (e.venue_id ? venueHues.get(e.venue_id) : undefined) ?? 45,
         body: e.title || 'Event tonight',
         subline: tl?.text,
@@ -224,6 +228,7 @@ export function useDropFeed({ venueIds, events }: UseDropFeedProps) {
 
     const surgeItems: DropMessage[] = surges.map(s => ({
       ...s,
+      venue_featured: featuredVenueIds?.has(s.venue_id) ?? false,
       hue_degrees: venueHues.get(s.venue_id) ?? s.hue_degrees,
     }));
 
@@ -232,7 +237,7 @@ export function useDropFeed({ venueIds, events }: UseDropFeedProps) {
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     return merged;
-  }, [updates, events, surges, venueHues]);
+  }, [updates, events, surges, venueHues, featuredVenueIds]);
 
   return { feed, totalCount: feed.length };
 }

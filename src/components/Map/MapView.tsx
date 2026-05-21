@@ -5,6 +5,7 @@ import { Globe, Share2 } from 'lucide-react';
 import type { CityAggregate } from '../../hooks/useCityAggregates';
 import type { ColdOpenPhase } from '../../hooks/useColdOpen';
 import { CITIES, MAPBOX_STYLE, type CityKey } from '../../lib/constants';
+import { HUE_BY_ID, type VibeHueId } from '../../lib/hueMath';
 import { mapboxToken, mapboxReady } from '../../lib/supabase';
 import { getShortName, formatCount, getCoverLabel } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
@@ -116,6 +117,18 @@ function getCountFontSize(count: number): string {
   if (count <= 100) return '15px';
   if (count <= 150) return '17px';
   return '19px';
+}
+
+/** Featured bubbles glow in the venue's signature vibe hue. Maps the
+ *  peak-band hue id (1-14, from vibe_hue_baseline JSONB) → HSL degrees
+ *  via the hue lookup. Falls back to a violet 290° when no baseline. */
+function featuredHueDegrees(
+  baseline: { wk_early?: number; wk_peak?: number; wknd_early?: number; wknd_peak?: number } | null | undefined,
+): number {
+  if (!baseline) return 290;
+  const hueId = baseline.wknd_peak ?? baseline.wk_peak ?? baseline.wknd_early ?? baseline.wk_early;
+  const hue = hueId != null ? HUE_BY_ID[hueId as VibeHueId] : undefined;
+  return hue ? hue.degrees : 290;
 }
 
 function getVenueVisuals(headcount: number): BubbleVisuals {
@@ -1263,12 +1276,22 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           featuredLabelEl.textContent = venue.featured_label;
           featuredLabelEl.style.display = 'block';
         }
-        // Apply featured base visuals
-        bubbleEl.style.background = 'linear-gradient(135deg, #7C3AED, #A855F7)';
-        bubbleEl.style.width = '44px';
-        bubbleEl.style.height = '44px';
-        bubbleEl.style.boxShadow = '0 0 20px rgba(168, 85, 247, 0.6)';
-        setAnim(bubbleEl, 'featured-breathe 3s ease-in-out infinite');
+        // Featured bubbles glow in the venue's OWN vibe hue (signature
+        // peak-band hue → HSL degrees), not a hardcoded purple. Bigger,
+        // dual-glow halo, hue stashed for the live-sync path + halo anim.
+        const featuredHue = featuredHueDegrees(venue.vibe_hue_baseline);
+        bubbleEl.style.background = `linear-gradient(135deg, hsl(${featuredHue}, 75%, 55%), hsl(${(featuredHue + 30) % 360}, 80%, 65%))`;
+        bubbleEl.style.width = '52px';
+        bubbleEl.style.height = '52px';
+        bubbleEl.style.border = `2px solid hsla(${featuredHue}, 100%, 80%, 0.7)`;
+        bubbleEl.style.boxShadow = [
+          `0 0 28px hsla(${featuredHue}, 85%, 60%, 0.65)`,   // outer hue halo
+          `0 0 10px hsla(${featuredHue}, 100%, 75%, 0.9)`,   // inner sharp glow
+          `0 4px 16px rgba(0, 0, 0, 0.5)`,                   // ground shadow
+        ].join(', ');
+        bubbleEl.dataset.featuredHue = String(featuredHue);
+        bubbleEl.style.setProperty('--featured-hue', String(featuredHue));
+        setAnim(bubbleEl, 'featured-breathe 3s ease-in-out infinite, featured-halo-pulse 5s ease-in-out infinite');
       }
 
       // Initialize fraternity styling
@@ -1788,15 +1811,19 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       // Update bubble visuals when stage changes
       if (visuals.stage !== entry.currentStage) {
         if (entry.isFeatured) {
-          // Featured: always purple gradient, min 44px, special glow
-          const featuredSize = Math.max(44, visuals.size);
+          // Featured: hue-tinted glow (read the hue stashed at init),
+          // min 52px, brighter halo when occupied.
+          const featuredHue = Number(entry.bubbleEl.dataset.featuredHue) || 290;
+          const featuredSize = Math.max(52, visuals.size);
           entry.bubbleEl.style.width = `${featuredSize}px`;
           entry.bubbleEl.style.height = `${featuredSize}px`;
-          entry.bubbleEl.style.background = 'linear-gradient(135deg, #7C3AED, #A855F7)';
-          entry.bubbleEl.style.boxShadow = count > 0
-            ? '0 0 30px rgba(168, 85, 247, 0.8)'
-            : '0 0 20px rgba(168, 85, 247, 0.6)';
-          setAnim(entry.bubbleEl, 'featured-breathe 3s ease-in-out infinite');
+          entry.bubbleEl.style.background = `linear-gradient(135deg, hsl(${featuredHue}, 75%, 55%), hsl(${(featuredHue + 30) % 360}, 80%, 65%))`;
+          entry.bubbleEl.style.boxShadow = [
+            `0 0 ${count > 0 ? 40 : 28}px hsla(${featuredHue}, 85%, 60%, ${count > 0 ? 0.8 : 0.65})`,
+            `0 0 12px hsla(${featuredHue}, 100%, 75%, 0.9)`,
+            `0 4px 16px rgba(0, 0, 0, 0.5)`,
+          ].join(', ');
+          setAnim(entry.bubbleEl, 'featured-breathe 3s ease-in-out infinite, featured-halo-pulse 5s ease-in-out infinite');
           entry.bubbleEl.style.fontSize = visuals.fontSize;
           // Adjust label for featured size
           entry.labelEl.style.top = `${featuredSize / 2 + 6}px`;

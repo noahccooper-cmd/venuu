@@ -9,7 +9,7 @@ const ORANGE = '#FF8200';
 
 
 interface TheDropProps {
-  venues: { id: string; lat: number; lng: number; category?: string }[];
+  venues: { id: string; lat: number; lng: number; category?: string; featured?: boolean }[];
   events?: VenueEvent[];
   onFlyTo: (lng: number, lat: number) => void;
   onEventTap?: (event: VenueEvent) => void;
@@ -33,6 +33,11 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
 
   // Stable set of venue IDs for the current city
   const venueIds = useMemo(() => venues.map(v => v.id), [venues]);
+  // Featured venue ids → drive the thicker stripe + ⭐ prefix in the feed.
+  const featuredVenueIds = useMemo(
+    () => new Set(venues.filter(v => v.featured).map(v => v.id)),
+    [venues]
+  );
 
   // Active (non-expired) events
   const activeEvents = useMemo(() => {
@@ -43,7 +48,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
 
   // Unified feed: bar messages + events + live surges, each carrying the
   // venue's current hue (heat_points.hue_degrees) for the colored stripe.
-  const { feed, totalCount } = useDropFeed({ venueIds, events: activeEvents });
+  const { feed, totalCount } = useDropFeed({ venueIds, featuredVenueIds, events: activeEvents });
   const hasContent = totalCount > 0;
 
   // Flash pill + urgency pulse when the feed grows (new content arrives)
@@ -260,7 +265,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
                     style={{
                       background: 'rgba(255,255,255,0.03)',
                       border: '1px solid rgba(255,255,255,0.08)',
-                      borderLeftWidth: '4px',
+                      borderLeftWidth: item.venue_featured ? '6px' : '4px',
                       borderLeftColor: `hsl(${item.hue_degrees}, 70%, 55%)`,
                       borderRadius: '10px',
                       padding: '10px 12px',
@@ -275,6 +280,14 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 700 }}>
+                      {item.venue_featured && (
+                        <span style={{
+                          fontSize: '14px',
+                          filter: `drop-shadow(0 0 4px hsla(${item.hue_degrees}, 90%, 60%, 0.9))`,
+                        }}>
+                          {'⭐'}
+                        </span>
+                      )}
                       <span style={{ fontSize: '16px' }}>{item.icon}</span>
                       <span>{item.venue_name}</span>
                       {item.type === 'surge' && (
