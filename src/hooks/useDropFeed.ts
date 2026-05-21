@@ -47,7 +47,6 @@ function getTonightCutoff(): string {
 const SURGE_TTL_MS = 15 * 60 * 1000;  // surges age out after 15 min
 
 interface UseDropFeedProps {
-  city: string;
   venueIds: string[];
   events?: VenueEvent[];
 }
@@ -61,16 +60,13 @@ interface UseDropFeedProps {
  * Path A — pure client-side. No DB migration. Surges are ephemeral
  * (15-min lifetime in the feed).
  */
-export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
+export function useDropFeed({ venueIds, events }: UseDropFeedProps) {
   const [updates, setUpdates] = useState<VenueUpdateRow[]>([]);
   const [surges, setSurges] = useState<DropMessage[]>([]);
   const [venueHues, setVenueHues] = useState<Map<string, number>>(new Map());
 
   // Track previous surging set so we only emit on TRANSITION into surge.
   const prevSurgingRef = useRef<Set<string>>(new Set());
-  // Silent on the first poll — only emit surges on real transitions, not
-  // for venues already surging when the hook mounts. Reset on city switch.
-  const hasSeededRef = useRef(false);
 
   const venueIdKey = venueIds.join(',');
 
@@ -98,7 +94,7 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
     const interval = window.setInterval(fetchHues, 60_000);
     return () => { cancelled = true; window.clearInterval(interval); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city, venueIdKey]);
+  }, [venueIdKey]);
 
   // 2. Bar messages (venue_updates) + realtime INSERT subscription.
   useEffect(() => {
@@ -134,7 +130,7 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city, venueIdKey]);
+  }, [venueIdKey]);
 
   // 3. Surge detection: poll heat_points, emit a DropMessage when a venue
   //    transitions INTO state_label='Surging'. Aged out after SURGE_TTL_MS.
@@ -143,12 +139,6 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
       setSurges([]);
       return;
     }
-
-    // City switch — reset surge state so we don't carry surges from the
-    // previous city into the new one, and silently re-seed the baseline.
-    hasSeededRef.current = false;
-    prevSurgingRef.current = new Set();
-    setSurges([]);
 
     const pollHeatPoints = async () => {
       const { data } = await supabase
@@ -164,10 +154,7 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
       for (const row of rows) {
         if (row.state_label === 'Surging') {
           currentSurging.add(row.venue_id);
-          // Silent baseline on the first poll (hasSeededRef). After that,
-          // only emit on real non-Surging → Surging transitions so opening
-          // the app doesn't spam-fill the feed with already-surging venues.
-          if (hasSeededRef.current && !prevSurgingRef.current.has(row.venue_id)) {
+          if (!prevSurgingRef.current.has(row.venue_id)) {
             newSurgeMessages.push({
               id: `surge-${row.venue_id}-${Date.now()}`,
               type: 'surge',
@@ -176,7 +163,7 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
               hue_degrees: 0,  // filled by the merge step from venueHues
               body: `${row.name} is surging`,
               subline: row.estimate
-                ? `${row.estimate} inside · ${Math.round((row.capacity_pct || 0) * 100)}% full`
+                ? `${row.estimate} inside · ${Math.round(row.capacity_pct * 100)}% full`
                 : 'lots of activity',
               icon: '\u{1F525}',  // 🔥
               created_at: row.last_calculated_at || new Date().toISOString(),
@@ -184,9 +171,6 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
           }
         }
       }
-
-      // Flip the flag so subsequent polls emit on actual transitions.
-      if (!hasSeededRef.current) hasSeededRef.current = true;
 
       prevSurgingRef.current = currentSurging;
 
@@ -201,7 +185,7 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
     const interval = window.setInterval(pollHeatPoints, 30_000);
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city, venueIdKey]);
+  }, [venueIdKey]);
 
   // 4. Merge all three sources into one chronological feed.
   const feed: DropMessage[] = useMemo(() => {

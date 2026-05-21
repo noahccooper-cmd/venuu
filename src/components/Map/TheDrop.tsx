@@ -9,14 +9,13 @@ const ORANGE = '#FF8200';
 
 
 interface TheDropProps {
-  city: string;
-  venues: { id: string; lat: number; lng: number; city?: string; category?: string }[];
+  venues: { id: string; lat: number; lng: number; category?: string }[];
   events?: VenueEvent[];
   onFlyTo: (lng: number, lat: number) => void;
   onEventTap?: (event: VenueEvent) => void;
 }
 
-export function TheDrop({ city, venues, events, onFlyTo, onEventTap }: TheDropProps) {
+export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [flash, setFlash] = useState(false);
@@ -32,16 +31,8 @@ export function TheDrop({ city, venues, events, onFlyTo, onEventTap }: TheDropPr
   const pillRef = useRef<HTMLButtonElement>(null);
   const urgencyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Scope venues to the active city. The `venues` prop comes from
-  // useVenuesInBounds in global mode (all venues across all 3 cities),
-  // so filter by city client-side. This also makes .eq('city',...) on
-  // heat_points unnecessary — that filter silently returned 0 rows on the
-  // view, which is why surges/hues disappeared entirely.
-  const cityVenues = useMemo(
-    () => venues.filter(v => v.city === city),
-    [venues, city]
-  );
-  const venueIds = useMemo(() => cityVenues.map(v => v.id), [cityVenues]);
+  // Stable set of venue IDs for the current city
+  const venueIds = useMemo(() => venues.map(v => v.id), [venues]);
 
   // Active (non-expired) events
   const activeEvents = useMemo(() => {
@@ -52,7 +43,7 @@ export function TheDrop({ city, venues, events, onFlyTo, onEventTap }: TheDropPr
 
   // Unified feed: bar messages + events + live surges, each carrying the
   // venue's current hue (heat_points.hue_degrees) for the colored stripe.
-  const { feed, totalCount } = useDropFeed({ city, venueIds, events: activeEvents });
+  const { feed, totalCount } = useDropFeed({ venueIds, events: activeEvents });
   const hasContent = totalCount > 0;
 
   // Flash pill + urgency pulse when the feed grows (new content arrives)
