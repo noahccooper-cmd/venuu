@@ -249,7 +249,13 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
             transition: 'all 0.2s',
           }}
         >
-          {'\uD83D\uDCE3'} {hasContent ? `${totalCount} update${totalCount === 1 ? '' : 's'} tonight` : 'No updates tonight'}
+          {!open ? (
+            <>
+              {'\uD83D\uDCE3'} {hasContent ? `${totalCount} update${totalCount === 1 ? '' : 's'} tonight` : 'No updates tonight'}
+            </>
+          ) : (
+            <span style={{ opacity: 0.6 }}>{'\u2715'}</span>
+          )}
         </button>
       </div>
 
@@ -415,7 +421,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
                   padding: '20px 0',
                   fontFamily: FONT,
                 }}>
-                  No updates tonight yet
+                  No updates tonight
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: activeEvents.length > 0 && updates.length > 0 ? '0px' : '4px' }}>
