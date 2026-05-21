@@ -31,7 +31,10 @@ export function Header({ city, onCityChange, totalCount, activeTab }: HeaderProp
     window.addEventListener('venuu:globe-state', handler as EventListener);
     return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
   }, []);
-  const hideCitySelector = isAtGlobe && activeTab === 'tonight';
+  // At globe zoom on the tonight tab, conceal both the city selector and
+  // the city-specific "people out" subtitle — the centered globe card shows
+  // the all-cities count, so per-city chrome would contradict it.
+  const concealAtGlobe = isAtGlobe && activeTab === 'tonight';
 
   // Animated total count
   const [displayCount, setDisplayCount] = useState(totalCount);
@@ -103,6 +106,8 @@ export function Header({ city, onCityChange, totalCount, activeTab }: HeaderProp
               fontSize: '15px',
               marginTop: '4px',
               lineHeight: 1,
+              opacity: concealAtGlobe ? 0 : 1,
+              transition: 'opacity 0.3s ease',
             }}
           >
             {displayCount > 0 ? (
@@ -141,8 +146,8 @@ export function Header({ city, onCityChange, totalCount, activeTab }: HeaderProp
           </span>
         ) : (
           <div style={{
-            opacity: hideCitySelector ? 0 : 1,
-            pointerEvents: hideCitySelector ? 'none' : 'auto',
+            opacity: concealAtGlobe ? 0 : 1,
+            pointerEvents: concealAtGlobe ? 'none' : 'auto',
             transition: 'opacity 0.3s ease',
           }}>
             <CityToggle city={city} onChange={onCityChange} />

@@ -54,7 +54,7 @@ function VennyBarInner({ onExpand, sheetOpen, hasUnreadResponse, hidden }: Venny
         // a stable screen-relative anchor independent of any ancestor
         // layout. Pinned just below The Drop pill on the tonight tab.
         position: 'fixed',
-        top: 'calc(env(safe-area-inset-top) + 110px)',
+        top: 'calc(env(safe-area-inset-top) + 175px)',
         left: '50%',
         transform: concealed
           ? 'translate(-50%, -8px)'

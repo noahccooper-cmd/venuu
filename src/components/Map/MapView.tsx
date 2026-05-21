@@ -2443,9 +2443,9 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           a shared layoutId, replacing the old bottom-sheet drawer. */}
       {FEATURE_FLAGS.MARKET_UX && (
         <>
+          {/* City pulse stats card — single-line, top row. Hides at globe
+              zoom (Knoxville-specific narration doesn't belong there). */}
           <div className="map-pulse-line-wrapper">
-            {/* City pulse stats card — hides at globe zoom (Knoxville-
-                specific narration doesn't belong at the universe view). */}
             <div style={{
               opacity: globalIsAtGlobe ? 0 : 1,
               pointerEvents: globalIsAtGlobe ? 'none' : 'auto',
@@ -2453,6 +2453,10 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
             }}>
               <CityPulseLine city={city} />
             </div>
+          </div>
+          {/* Ticker — second row, positioned independently below the stats
+              card. Self-hides at globe zoom via its own listener. */}
+          <div className="map-pulse-line-wrapper" style={{ top: 'calc(env(safe-area-inset-top) + 80px)' }}>
             <MarketTicker
               city={city}
               onVenueTap={(venue) => {

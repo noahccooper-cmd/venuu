@@ -89,26 +89,18 @@ export function CityPulseLine({ city }: CityPulseLineProps) {
       <div className={`city-pulse-line city-pulse-line--${tone.tone}`}>
         <div className="city-pulse-line__primary">
           <span className="city-pulse-line__city">{cityName}</span>
+          <span className="city-pulse-line__separator" aria-hidden>·</span>
           <span className="city-pulse-line__day">{dayShort}</span>
           <span className="city-pulse-line__time">{timeStr}</span>
-          <span className="city-pulse-line__delta">
-            {sign}{delta.toFixed(0)}%
-          </span>
+          <span className="city-pulse-line__separator" aria-hidden>·</span>
+          <span className="city-pulse-line__delta">{sign}{delta.toFixed(0)}%</span>
           <span className="city-pulse-line__verdict">{tone.label}</span>
-        </div>
-        <div className="city-pulse-line__meta">
-          <span className="city-pulse-line__count">
-            {pulse.surging_count > 0 && (
-              <span className="city-pulse-line__surging">
-                {pulse.surging_count}↑ surging
-              </span>
-            )}
-            {pulse.busy_count > 0 && (
-              <span className="city-pulse-line__busy">
-                {pulse.busy_count} busy
-              </span>
-            )}
-          </span>
+          {pulse.surging_count > 0 && (
+            <>
+              <span className="city-pulse-line__separator" aria-hidden>·</span>
+              <span className="city-pulse-line__surging">{pulse.surging_count}↑ surging</span>
+            </>
+          )}
         </div>
       </div>
     );
@@ -120,8 +112,10 @@ export function CityPulseLine({ city }: CityPulseLineProps) {
     <div className="city-pulse-line city-pulse-line--watching">
       <div className="city-pulse-line__primary">
         <span className="city-pulse-line__city">{cityName}</span>
+        <span className="city-pulse-line__separator" aria-hidden>·</span>
         <span className="city-pulse-line__day">{dayShort}</span>
         <span className="city-pulse-line__time">{timeStr}</span>
+        <span className="city-pulse-line__separator" aria-hidden>·</span>
         <span className="city-pulse-line__verdict">
           {isNightlifeHour ? 'reading the city…' : 'bars open at 5p · watching'}
         </span>

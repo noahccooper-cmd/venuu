@@ -44,14 +44,23 @@
 
 .city-pulse-line__primary {
   display: flex;
-  align-items: center;       /* plays nicer than baseline when a chip sits on the right */
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
   font-family: var(--font-display);
+}
+
+.city-pulse-line__separator {
+  opacity: 0.4;
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .city-pulse-line__city {
   font-weight: 800;
-  font-size: 18px;
+  font-size: 15px;
   color: #FFFFFF;
   letter-spacing: -0.02em;
 }
@@ -66,12 +75,11 @@
 
 .city-pulse-line__delta {
   font-weight: 800;
-  font-size: 22px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
   color: var(--pulse-accent, #FF8200);
   letter-spacing: -0.02em;
   text-shadow: 0 0 16px var(--pulse-accent);
-  margin-left: auto;
 }
 
 .city-pulse-line--cool .city-pulse-line__delta,
@@ -124,7 +132,6 @@
   opacity: 0.85;
 }
 
-.city-pulse-line--watching .city-pulse-line__verdict {
-  margin-left: auto;
-}
+/* Single-line layout: verdict flows inline after the bullet separators
+   (no margin-left:auto push now that everything sits on one row). */
 
