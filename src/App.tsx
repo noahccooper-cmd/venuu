@@ -35,7 +35,7 @@ import { hapticLight } from './lib/haptics';
 import { OnboardingScreen } from './components/Onboarding/OnboardingScreen';
 import { TasteFlow } from './components/Onboarding/TasteFlow';
 import { PushBanner } from './components/Notifications/PushBanner';
-import { usePushNotifications } from './hooks/usePushNotifications';
+import { usePushNotifications, markPushListenerReady } from './hooks/usePushNotifications';
 import { useEvents } from './hooks/useEvents';
 import { useUserLocation } from './hooks/useUserLocation';
 import { useProximityDetection } from './hooks/useProximityDetection';
@@ -725,6 +725,7 @@ export default function App() {
     };
 
     window.addEventListener('push-notification', handler);
+    markPushListenerReady();
     return () => window.removeEventListener('push-notification', handler);
   }, []);
 

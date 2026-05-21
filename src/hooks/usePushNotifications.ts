@@ -3,6 +3,29 @@ import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase, envReady } from '../lib/supabase';
 
+// Cold-launch race buffer.
+// pushNotificationActionPerformed can fire before App.tsx's
+// 'push-notification' window-event listener registers, especially
+// on cold launches. We buffer events here and replay them on demand.
+const pendingPushEvents: any[] = [];
+let listenerReady = false;
+
+function dispatchOrBuffer(detail: any) {
+  if (listenerReady) {
+    window.dispatchEvent(new CustomEvent('push-notification', { detail }));
+  } else {
+    pendingPushEvents.push(detail);
+  }
+}
+
+export function markPushListenerReady() {
+  listenerReady = true;
+  while (pendingPushEvents.length > 0) {
+    const detail = pendingPushEvents.shift();
+    window.dispatchEvent(new CustomEvent('push-notification', { detail }));
+  }
+}
+
 export type PushStatus =
   | { stage: 'checking-platform' }
   | { stage: 'not-native'; reason: string }
@@ -89,18 +112,19 @@ export function usePushNotifications(
 
         // Foreground notification — dispatch event for PushBanner
         PushNotifications.addListener('pushNotificationReceived', (notification) => {
-          window.dispatchEvent(new CustomEvent('push-notification', {
-            detail: {
-              title: notification.title ?? '',
-              body: notification.body ?? '',
-              data: notification.data,
-            },
-          }));
+          dispatchOrBuffer({
+            title: notification.title ?? '',
+            body: notification.body ?? '',
+            data: notification.data,
+          });
         });
 
-        // Notification tapped (background/killed) — could navigate in future
-        PushNotifications.addListener('pushNotificationActionPerformed', (_action) => {
-          // Future: navigate based on action.notification.data
+        // Notification tapped (background/killed) — deliver deep link to App.
+        // On cold launch this can fire before App.tsx's listener registers,
+        // so we route through dispatchOrBuffer which holds the event until
+        // markPushListenerReady() is called.
+        PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+          dispatchOrBuffer(action.notification ?? action);
         });
 
         // 2. Check current permission status.
