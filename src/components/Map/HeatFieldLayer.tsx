@@ -82,14 +82,13 @@ const BASE_LAYER_SPEC: any = {
       1.0,  1.2,
     ],
     'heatmap-intensity': [
-      'interpolate', ['exponential', 1.6], ['zoom'],
-      6,  1.5,    // continental view — heat is THE map
-      8,  2.5,    // regional view — venuu cities glow as constellation
-      10, 2.8,    // metro view — neighborhood-level pulse
-      12, 2.0,    // city view — heat strong but bubbles emerging
-      13, 1.4,    // bubble layer takes over
-      15, 0.8,    // bubbles dominate
-      16, 0.3,    // heat fades to background haze
+      'interpolate', ['linear'], ['zoom'],
+      8, 0.6,
+      11, 0.8,
+      13, 1.0,
+      14, 0.9,
+      16, 0.7,
+      18, 0.6,
     ],
     'heatmap-color': [
       'interpolate', ['linear'], ['heatmap-density'],
@@ -105,13 +104,14 @@ const BASE_LAYER_SPEC: any = {
       1.0,  'rgba(50, 255, 175, 0.70)',    // peak luminous green
     ],
     'heatmap-radius': [
-      'interpolate', ['exponential', 1.5], ['zoom'],
-      6,  18,     // continental dots
-      8,  35,     // city-sized blooms
+      'interpolate', ['linear'], ['zoom'],
+      8, 30,
       10, 60,
-      12, 90,     // neighborhood smears blend together
-      14, 120,
-      16, 160,    // per-venue halos at high zoom
+      12, 100,
+      13, 140,
+      14, 180,
+      16, 240,
+      18, 300,
     ],
     // Zoom-gated fadeout: full opacity below z 12.5, fades to 0 by z 13.5
     // so the WebGL canvas (zoom 14+) takes over without overlap. The

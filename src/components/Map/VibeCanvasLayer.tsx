@@ -21,9 +21,9 @@ const LAYER_ID = 'vibe-canvas-mural';
 const MAX_VENUES = 64;
 // Radius scales with zoom — wider for district feel, tighter for
 // per-venue precision at street level. Per Phase D.5 v2 tuning.
-const RADIUS_METERS_WIDE = 220;   // at zoom <= 14 (district scale)
-const RADIUS_METERS_TIGHT = 100;  // at zoom >= 17 (per-venue precision)
-const KERNEL_STEEPNESS = 4.0;     // 4x the original Gaussian sharpness
+const RADIUS_METERS_WIDE = 280;    // was 220 — slightly wider at district zoom
+const RADIUS_METERS_TIGHT = 200;   // was 100 — adjacent venues now clash
+const KERNEL_STEEPNESS = 2.5;      // was 4.0 — softer falloff, visible clash zones
 
 function radiusForZoom(zoom: number): number {
   if (zoom <= 14) return RADIUS_METERS_WIDE;
@@ -33,7 +33,7 @@ function radiusForZoom(zoom: number): number {
 }
 const FADE_IN_START_ZOOM = 13.5;
 const FADE_IN_END_ZOOM = 14.5;
-const PEAK_ALPHA = 0.55;
+const PEAK_ALPHA = 0.62;  // was 0.55 — slightly more present
 const TRANSITION_SECONDS = 3.0;
 
 // Fragment shader operates entirely in clip space.
