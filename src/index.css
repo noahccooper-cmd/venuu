@@ -2301,7 +2301,7 @@ body {
    ───────────────────────────────────────────────────────────── */
 .map-pulse-line-wrapper {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0) + 14px);
+  top: calc(env(safe-area-inset-top, 0) + 56px);
   left: 16px;
   right: 16px;
   z-index: var(--z-map-pulse-bar, 40);

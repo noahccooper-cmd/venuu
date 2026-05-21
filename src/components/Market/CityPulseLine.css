@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 16px;
+  padding: 8px 14px;
   border-radius: 14px;
   background: linear-gradient(180deg,
     rgba(20, 20, 28, 0.92) 0%,
@@ -60,7 +60,7 @@
 
 .city-pulse-line__city {
   font-weight: 800;
-  font-size: 15px;
+  font-size: 14px;
   color: #FFFFFF;
   letter-spacing: -0.02em;
 }
@@ -75,7 +75,7 @@
 
 .city-pulse-line__delta {
   font-weight: 800;
-  font-size: 16px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   color: var(--pulse-accent, #FF8200);
   letter-spacing: -0.02em;

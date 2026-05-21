@@ -210,7 +210,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
       {/* Pill */}
       <div className="drop-pill-wrapper" style={{
         position: 'absolute',
-        top: 'calc(env(safe-area-inset-top) + 125px)',
+        top: 'calc(env(safe-area-inset-top) + 134px)',
         left: 0,
         right: 0,
         // Rides above the VennyBar pill (zIndex 590) so the revenue
@@ -236,7 +236,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
             border: hasContent ? '1px solid rgba(255, 130, 0, 0.3)' : '1px solid rgba(255,255,255,0.1)',
             color: hasContent ? ORANGE : 'rgba(255,255,255,0.35)',
             fontFamily: FONT,
-            fontSize: '12px',
+            fontSize: '13px',
             fontWeight: 700,
             cursor: 'pointer',
             transition: 'all 0.2s',
