@@ -36,19 +36,17 @@ const HALO_LAYER_ID = 'heat-field-halos-layer';
 const BASE_SOURCE_ID = 'heat-field-base';
 const HALO_SOURCE_ID = 'heat-field-halos';
 
+// Heatmap opacity fade ramp. The breath loop multiplies this by the breath
+// scalar and writes it every tick at ALL zooms, so the fire genuinely
+// reaches 0 by z15 (a guarded flat-number write froze it mid-fade — the old
+// persistent street-zoom wash). Halos own their own opacity expression.
 const BASE_OPACITY_STOPS: ReadonlyArray<readonly [number, number]> = [
-  [6, 0.95],   // dominant at continental zoom
-  [11, 1.0],
-  [13, 0.85],  // letting bubbles through
-  [15, 0.45],
-  [17, 0.2],
-];
-
-const HALO_OPACITY_STOPS: ReadonlyArray<readonly [number, number]> = [
-  [13, 0.0],
-  [14, 0.6],
-  [16, 0.85],
-  [18, 0.5],
+  [8, 1.0],
+  [12, 1.0],
+  [13, 0.7],
+  [14, 0.3],
+  [15, 0.0],
+  [18, 0.0],
 ];
 
 /** Linear interpolation between zoom stops; clamps outside the range. */
@@ -113,18 +111,17 @@ const BASE_LAYER_SPEC: any = {
       16, 200,
       18, 280,
     ],
-    // Zoom-gated fadeout: full opacity below z 12.5, fades to 0 by z 13.5
-    // so the WebGL canvas (zoom 14+) takes over without overlap. The
-    // breath loop below only writes setPaintProperty when zoom < 13, so
-    // this layout-time expression governs at the crossover zone.
+    // Initial value; the breath loop owns this at runtime (BASE_OPACITY_STOPS
+    // × breath scalar), fading the fire fully out by z15 so the per-venue
+    // halo mural takes over the street-zoom view.
     'heatmap-opacity': [
       'interpolate', ['linear'], ['zoom'],
-      10, 1.0,
-      12.5, 1.0,
-      13.5, 0.70,
-      14.5, 0.45,
-      16, 0.35,
-      18, 0.35,
+      8, 1.0,
+      12, 1.0,
+      13, 0.7,
+      14, 0.3,
+      15, 0.0,
+      18, 0.0,
     ],
   },
 };
@@ -134,34 +131,47 @@ const HALO_LAYER_SPEC: any = {
   source: HALO_SOURCE_ID,
   minzoom: 13,
   paint: {
+    // The per-venue mural brushstroke. Radius grows aggressively from z13
+    // so each venue becomes a distinct watercolor field at street zoom.
     'circle-radius': [
-      'interpolate', ['linear'], ['get', 'heat_weight'],
-      0,    0,
-      0.3,  30,
-      0.5,  50,
-      0.7,  75,
-      0.85, 100,
-      1.0,  130,
+      'interpolate', ['linear'], ['zoom'],
+      10, 0,
+      13, 30,
+      14, 70,
+      15, 130,
+      17, 220,
+      19, 320,
     ],
+    // Per-venue VIBE hue (get_venue_current_hue → vibe_hue_lookup, surfaced
+    // as hue_degrees + hue_default_saturation on the heat_points feature).
+    // This is what makes each venue paint its OWN identity — Hannas crimson,
+    // a cocktail bar royal-blue — instead of a state color. Every venue has
+    // a hue (defaults to grey-lavender), so none vanish the way the old
+    // state_label match made Unknown venues invisible.
     'circle-color': [
-      'match', ['get', 'state_label'],
-      'Quiet',   'rgba(61, 42, 94, 0.45)',     // purple
-      'Lively',  'rgba(94, 73, 35, 0.50)',
-      'Busy',    'rgba(139, 64, 36, 0.55)',
-      'Packed',  'rgba(125, 28, 51, 0.58)',
-      'Surging', 'rgba(0, 200, 130, 0.50)',
-      'rgba(0, 0, 0, 0)',                       // Unknown invisible
+      'concat', 'hsl(',
+      ['to-string', ['get', 'hue_degrees']], ', ',
+      ['to-string', ['get', 'hue_default_saturation']], '%, 55%)',
     ],
-    'circle-blur': 1.0,
-    // Halos visible at mid-zoom band where they already worked; fade out
-    // by z 14.5 as the WebGL canvas takes over. Breath loop guards by zoom.
+    // Soft Gaussian edges → wet-paint blending where neighbours overlap.
+    'circle-blur': [
+      'interpolate', ['linear'], ['zoom'],
+      13, 0.8,
+      15, 0.7,
+      17, 0.6,
+      19, 0.5,
+    ],
+    // Fades in as the heatmap fades out; owned entirely by this zoom
+    // expression (the breath loop no longer writes halo opacity).
     'circle-opacity': [
       'interpolate', ['linear'], ['zoom'],
-      10, 0.0,
-      13, 0.85,
-      14, 0.60,
-      15, 0.30,
-      18, 0.30,
+      10, 0,
+      12, 0.2,
+      13, 0.5,
+      14, 0.75,
+      15, 0.85,
+      17, 0.9,
+      19, 0.9,
     ],
   },
 };
@@ -240,18 +250,17 @@ export function HeatFieldLayer({ map, mapLoaded, geojson, mode }: HeatFieldLayer
       // 10% intensity boost during nightlife hours
       const nightBoost = mode === 'night' ? 1.10 : 1.0;
 
+      // Breath owns heatmap opacity at ALL zooms: it multiplies the zoom
+      // fade ramp (BASE_OPACITY_STOPS, which reaches 0 by z15) by the breath
+      // scalar and writes every tick. setPaintProperty replaces the property
+      // atomically, so writing the full ramp here is what lets the fire
+      // actually fade out — a guarded flat-number write froze it mid-fade
+      // (the old persistent street-zoom wash). Halos are owned entirely by
+      // their layout zoom expression now, so the breath never touches them.
       const baseOpacity = evalLinearStops(BASE_OPACITY_STOPS, zoom) * breathe * burst * nightBoost;
-      const haloOpacity = evalLinearStops(HALO_OPACITY_STOPS, zoom) * breathe * burst * nightBoost;
 
       try {
-        // Phase D.5 — only override the layout-time zoom expression while
-        // the heatmap is dominant (zoom < 13). Above that, the static
-        // expression handles fadeout into the WebGL canvas crossover and
-        // any setPaintProperty here would clobber it back to a flat value.
-        if (map.getZoom() < 13.5) {
-          map.setPaintProperty(BASE_LAYER_ID, 'heatmap-opacity', Math.min(1.0, baseOpacity));
-          map.setPaintProperty(HALO_LAYER_ID, 'circle-opacity', Math.min(1.0, haloOpacity));
-        }
+        map.setPaintProperty(BASE_LAYER_ID, 'heatmap-opacity', Math.min(1.0, baseOpacity));
       } catch {
         // layer briefly gone during a style swap — next tick recovers
       }

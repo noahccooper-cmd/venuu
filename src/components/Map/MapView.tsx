@@ -17,9 +17,7 @@ import type { HeadcountEstimate } from '../../hooks/useVenuesInBounds';
 import { LiveVenueBubble } from './LiveVenueBubble';
 import { LiveEventsFeed } from './LiveEventsFeed';
 import { HeatFieldLayer } from './HeatFieldLayer';
-import VibeCanvasLayer from './VibeCanvasLayer';
 import { useHeatField } from '../../hooks/useHeatField';
-import { useVibeCanvasPoints } from '../../hooks/useVibeCanvasPoints';
 import type { Plan as VennyPlan } from '../Venny/PlanCard';
 import { FEATURE_FLAGS } from '../../lib/featureFlags';
 import { CityPulseLine } from '../Market/CityPulseLine';
@@ -430,7 +428,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
   // Heat field — the atmospheric layer beneath the bubbles.
   const { geojson: heatGeojson } = useHeatField(city);
-  const { points: canvasPoints } = useVibeCanvasPoints(city);
 
   // ── Globe view state (zoom < 4 → "we're at the globe") ───────
   const [isAtGlobe, setIsAtGlobe] = useState(false);
@@ -2550,17 +2547,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           mapLoaded={mapLoaded}
           geojson={heatGeojson}
           mode={isNightHours() ? 'night' : 'day'}
-        />
-      )}
-
-      {/* Phase D.5 — street-zoom WebGL mural. Fades in at zoom 14,
-          full at 14.5+. HeatFieldLayer fades out at zoom 13.5 so the
-          two never paint the same band. */}
-      {mapRef.current && mapLoaded && (
-        <VibeCanvasLayer
-          map={mapRef.current}
-          mapLoaded={mapLoaded}
-          points={canvasPoints}
         />
       )}
 
