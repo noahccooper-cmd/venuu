@@ -208,7 +208,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         bufferRef.current = buffer;
       },
 
-      render(gl, matrix) {
+      render(gl, _matrix) {
         const program = programRef.current;
         const buffer = bufferRef.current;
         if (!program || !buffer) return;
