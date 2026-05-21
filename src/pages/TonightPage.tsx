@@ -418,7 +418,7 @@ export function TonightPage({
             transition: 'opacity 320ms ease-out',
           }}
         >
-          <TheDrop venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
+          <TheDrop city={city} venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
         </div>
       )}
 

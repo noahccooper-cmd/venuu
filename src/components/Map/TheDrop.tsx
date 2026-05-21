@@ -9,13 +9,14 @@ const ORANGE = '#FF8200';
 
 
 interface TheDropProps {
+  city: string;
   venues: { id: string; lat: number; lng: number; category?: string }[];
   events?: VenueEvent[];
   onFlyTo: (lng: number, lat: number) => void;
   onEventTap?: (event: VenueEvent) => void;
 }
 
-export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
+export function TheDrop({ city, venues, events, onFlyTo, onEventTap }: TheDropProps) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [flash, setFlash] = useState(false);
@@ -43,7 +44,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
 
   // Unified feed: bar messages + events + live surges, each carrying the
   // venue's current hue (heat_points.hue_degrees) for the colored stripe.
-  const { feed, totalCount } = useDropFeed({ venueIds, events: activeEvents });
+  const { feed, totalCount } = useDropFeed({ city, venueIds, events: activeEvents });
   const hasContent = totalCount > 0;
 
   // Flash pill + urgency pulse when the feed grows (new content arrives)
