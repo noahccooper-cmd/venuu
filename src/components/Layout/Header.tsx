@@ -22,6 +22,17 @@ interface HeaderProps {
 export function Header({ city, onCityChange, totalCount, activeTab }: HeaderProps) {
   const isPortal = activeTab === 'portal';
 
+  // Hide the city selector at globe zoom on the tonight tab — at the
+  // universe view the user is looking at all cities, not one. Driven by
+  // the venuu:globe-state broadcast from TonightPage (single source).
+  const [isAtGlobe, setIsAtGlobe] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => setIsAtGlobe((e as CustomEvent).detail.isAtGlobe);
+    window.addEventListener('venuu:globe-state', handler as EventListener);
+    return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
+  }, []);
+  const hideCitySelector = isAtGlobe && activeTab === 'tonight';
+
   // Animated total count
   const [displayCount, setDisplayCount] = useState(totalCount);
   const prevCountRef = useRef(totalCount);
@@ -129,7 +140,13 @@ export function Header({ city, onCityChange, totalCount, activeTab }: HeaderProp
             Portal
           </span>
         ) : (
-          <CityToggle city={city} onChange={onCityChange} />
+          <div style={{
+            opacity: hideCitySelector ? 0 : 1,
+            pointerEvents: hideCitySelector ? 'none' : 'auto',
+            transition: 'opacity 0.3s ease',
+          }}>
+            <CityToggle city={city} onChange={onCityChange} />
+          </div>
         )}
       </div>
     </header>

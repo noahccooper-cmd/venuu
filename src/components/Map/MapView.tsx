@@ -2444,7 +2444,15 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       {FEATURE_FLAGS.MARKET_UX && (
         <>
           <div className="map-pulse-line-wrapper">
-            <CityPulseLine city={city} />
+            {/* City pulse stats card — hides at globe zoom (Knoxville-
+                specific narration doesn't belong at the universe view). */}
+            <div style={{
+              opacity: globalIsAtGlobe ? 0 : 1,
+              pointerEvents: globalIsAtGlobe ? 'none' : 'auto',
+              transition: 'opacity 0.3s ease',
+            }}>
+              <CityPulseLine city={city} />
+            </div>
             <MarketTicker
               city={city}
               onVenueTap={(venue) => {
