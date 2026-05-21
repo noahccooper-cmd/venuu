@@ -85,7 +85,6 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
       const { data, error } = await supabase
         .from('heat_points')
         .select('venue_id, hue_degrees')
-        .eq('city', city)
         .in('venue_id', venueIds);
       if (cancelled || error || !data) return;
       const m = new Map<string, number>();
@@ -110,7 +109,7 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
     const cutoff = getTonightCutoff();
     const venueIdSet = new Set(venueIds);
     const fetchUpdates = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('venue_updates')
         .select('id, venue_id, venue_name, message, created_at')
         .in('venue_id', venueIds)
@@ -155,7 +154,6 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
       const { data } = await supabase
         .from('heat_points')
         .select('venue_id, name, state_label, capacity_pct, estimate, last_calculated_at')
-        .eq('city', city)
         .in('venue_id', venueIds);
       if (!data) return;
 

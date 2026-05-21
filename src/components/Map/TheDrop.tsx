@@ -10,7 +10,7 @@ const ORANGE = '#FF8200';
 
 interface TheDropProps {
   city: string;
-  venues: { id: string; lat: number; lng: number; category?: string }[];
+  venues: { id: string; lat: number; lng: number; city?: string; category?: string }[];
   events?: VenueEvent[];
   onFlyTo: (lng: number, lat: number) => void;
   onEventTap?: (event: VenueEvent) => void;
@@ -32,8 +32,16 @@ export function TheDrop({ city, venues, events, onFlyTo, onEventTap }: TheDropPr
   const pillRef = useRef<HTMLButtonElement>(null);
   const urgencyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Stable set of venue IDs for the current city
-  const venueIds = useMemo(() => venues.map(v => v.id), [venues]);
+  // Scope venues to the active city. The `venues` prop comes from
+  // useVenuesInBounds in global mode (all venues across all 3 cities),
+  // so filter by city client-side. This also makes .eq('city',...) on
+  // heat_points unnecessary — that filter silently returned 0 rows on the
+  // view, which is why surges/hues disappeared entirely.
+  const cityVenues = useMemo(
+    () => venues.filter(v => v.city === city),
+    [venues, city]
+  );
+  const venueIds = useMemo(() => cityVenues.map(v => v.id), [cityVenues]);
 
   // Active (non-expired) events
   const activeEvents = useMemo(() => {
