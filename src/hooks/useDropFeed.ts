@@ -109,7 +109,7 @@ export function useDropFeed({ city, venueIds, events }: UseDropFeedProps) {
     const cutoff = getTonightCutoff();
     const venueIdSet = new Set(venueIds);
     const fetchUpdates = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('venue_updates')
         .select('id, venue_id, venue_name, message, created_at')
         .in('venue_id', venueIds)
