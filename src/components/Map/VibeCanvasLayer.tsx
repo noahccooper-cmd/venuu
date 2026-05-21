@@ -19,21 +19,21 @@ interface VibeCanvasLayerProps {
 
 const LAYER_ID = 'vibe-canvas-mural';
 const MAX_VENUES = 64;
-// Radius scales with zoom — wider for district feel, tighter for
-// per-venue precision at street level. Per Phase D.5 v2 tuning.
-const RADIUS_METERS_WIDE = 280;    // was 220 — slightly wider at district zoom
-const RADIUS_METERS_TIGHT = 200;   // was 100 — adjacent venues now clash
-const KERNEL_STEEPNESS = 2.5;      // was 4.0 — softer falloff, visible clash zones
-
-function radiusForZoom(zoom: number): number {
-  if (zoom <= 14) return RADIUS_METERS_WIDE;
-  if (zoom >= 17) return RADIUS_METERS_TIGHT;
-  const t = (zoom - 14) / 3;
-  return RADIUS_METERS_WIDE - t * (RADIUS_METERS_WIDE - RADIUS_METERS_TIGHT);
-}
+// Continuous scaling: all visual parameters move together as smooth
+// functions of zoom. zoomT goes 0 (wide) → 1 (tight) over z=12.5→16.
+// Wide zoom = softer falloff + larger radius = district wash effect.
+// Tight zoom = sharper falloff + smaller radius = clash dynamics.
+const RADIUS_METERS_WIDE = 320;
+const RADIUS_METERS_TIGHT = 200;
+const KERNEL_STEEPNESS_WIDE = 1.8;
+const KERNEL_STEEPNESS_TIGHT = 2.8;
+const PEAK_ALPHA_WIDE = 0.45;
+const PEAK_ALPHA_TIGHT = 0.62;
 const FADE_IN_START_ZOOM = 12.5;
-const FADE_IN_END_ZOOM = 14.0;
-const PEAK_ALPHA = 0.62;  // was 0.55 — slightly more present
+const FADE_IN_END_ZOOM = 16.0;
+// Floor alpha: per-venue minimum presence. Guarantees every venue is
+// at least faintly visible at wide zoom. Fades out above z=14.
+const FLOOR_ALPHA_WIDE = 0.04;
 const TRANSITION_SECONDS = 3.0;
 
 // Fragment shader operates entirely in clip space.
@@ -44,6 +44,8 @@ precision highp float;
 
 uniform float u_opacity;
 uniform float u_steepness;
+uniform float u_peak_alpha;
+uniform float u_floor_alpha;
 uniform int u_numVenues;
 // Per venue: xy = clip-space position, z = clip-space radius, w = saturation
 uniform vec4 u_venuePos[${MAX_VENUES}];
@@ -87,9 +89,16 @@ void main() {
   float hueNorm = (meanHue + 3.14159265) / 6.28318530;
   float meanSat = sumSat / sumWeight;
 
-  float alpha = clamp(sumWeight * 0.8, 0.0, 1.0) * u_opacity * ${PEAK_ALPHA.toFixed(2)};
+  float alpha = clamp(sumWeight * 0.8, 0.0, 1.0) * u_opacity * u_peak_alpha;
   vec3 rgb = hsl2rgb(hueNorm, meanSat, 0.55);
 
+  // Per-venue floor: guarantees minimum presence at wide zoom even
+  // when many venues overlap into few pixels. sumWeight is the sum of
+  // all venue contributions at this pixel (already computed above for
+  // the circular mean). Floor scales with weight so it only kicks in
+  // where there's actual venue activity.
+  float floor_contribution = u_floor_alpha * min(sumWeight, 1.0);
+  alpha = max(alpha, floor_contribution);
   gl_FragColor = vec4(rgb * alpha, alpha);
 }
 `;
@@ -244,7 +253,17 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         const venuePosData = new Float32Array(MAX_VENUES * 4);
         const venueHueData = new Float32Array(MAX_VENUES);
         let needsRepaint = false;
-        const radiusMeters = radiusForZoom(zoom);
+        // Smooth zoom interpolant 0 → 1 across the transitional zoom band
+        const zoomT = Math.max(0, Math.min(1,
+          (zoom - FADE_IN_START_ZOOM) / (FADE_IN_END_ZOOM - FADE_IN_START_ZOOM)
+        ));
+        // Smoothstep for C1 continuity (no derivative discontinuity at endpoints)
+        const tScale = zoomT * zoomT * (3 - 2 * zoomT);
+        const radiusMeters = RADIUS_METERS_WIDE + (RADIUS_METERS_TIGHT - RADIUS_METERS_WIDE) * tScale;
+        const steepness    = KERNEL_STEEPNESS_WIDE + (KERNEL_STEEPNESS_TIGHT - KERNEL_STEEPNESS_WIDE) * tScale;
+        const peakAlpha    = PEAK_ALPHA_WIDE + (PEAK_ALPHA_TIGHT - PEAK_ALPHA_WIDE) * tScale;
+        // Floor decays out as we zoom in past z=14
+        const floorAlpha = FLOOR_ALPHA_WIDE * Math.max(0, Math.min(1, (14.0 - zoom) / 4.0));
 
         for (let i = 0; i < visiblePoints.length; i++) {
           const p = visiblePoints[i];
@@ -300,7 +319,9 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
         gl.uniform1f(gl.getUniformLocation(program, 'u_opacity'), opacity);
-        gl.uniform1f(gl.getUniformLocation(program, 'u_steepness'), KERNEL_STEEPNESS);
+        gl.uniform1f(gl.getUniformLocation(program, 'u_steepness'), steepness);
+        gl.uniform1f(gl.getUniformLocation(program, 'u_peak_alpha'), peakAlpha);
+        gl.uniform1f(gl.getUniformLocation(program, 'u_floor_alpha'), floorAlpha);
         gl.uniform1i(gl.getUniformLocation(program, 'u_numVenues'), visiblePoints.length);
         gl.uniform4fv(gl.getUniformLocation(program, 'u_venuePos'), venuePosData);
         gl.uniform1fv(gl.getUniformLocation(program, 'u_venueHue'), venueHueData);

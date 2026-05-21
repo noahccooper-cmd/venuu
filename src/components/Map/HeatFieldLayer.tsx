@@ -105,8 +105,8 @@ const BASE_LAYER_SPEC: any = {
     ],
     'heatmap-radius': [
       'interpolate', ['linear'], ['zoom'],
-      8, 20,
-      10, 35,
+      8, 16,
+      11, 30,
       12, 60,
       13, 90,
       14, 130,
