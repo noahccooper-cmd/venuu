@@ -154,6 +154,14 @@ export function TonightPage({
       if (attached && handler) attached.off('zoom', handler);
     };
   }, []);
+
+  // Broadcast globe state so body-level pills mounted in other trees
+  // (VennyBar in App, MarketTicker + MoversChip in MapView) can hide in
+  // unison at globe zoom. TonightPage's isAtGlobe is the single source.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('venuu:globe-state', { detail: { isAtGlobe } }));
+  }, [isAtGlobe]);
+
   const [activeRoute, setActiveRoute] = useState<ActiveRoute | null>(null);
   const [getThereLoading, setGetThereLoading] = useState(false);
   type FollowMode = 'free' | 'center' | 'bearing';

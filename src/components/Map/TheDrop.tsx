@@ -210,7 +210,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
       {/* Pill */}
       <div className="drop-pill-wrapper" style={{
         position: 'absolute',
-        top: '20px',
+        top: '70px',
         left: 0,
         right: 0,
         // Rides above the VennyBar pill (zIndex 590) so the revenue

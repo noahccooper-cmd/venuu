@@ -3,8 +3,8 @@
   left: 16px;
   bottom: calc(env(safe-area-inset-bottom, 0) + 24px);
   width: 280px;
-  height: 55vh;
-  max-height: 560px;
+  height: 50vh;
+  max-height: 520px;
   background: linear-gradient(180deg,
     rgba(10, 10, 18, 0.96) 0%,
     rgba(15, 15, 22, 0.94) 100%);
@@ -25,8 +25,8 @@
 
 .market-panel--expanded {
   width: min(420px, 90vw);
-  height: 78vh;
-  max-height: 720px;
+  height: 65vh;
+  max-height: 640px;
 }
 
 /* HEADER */

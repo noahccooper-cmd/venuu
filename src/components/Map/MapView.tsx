@@ -431,6 +431,15 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
   // ── Globe view state (zoom < 4 → "we're at the globe") ───────
   const [isAtGlobe, setIsAtGlobe] = useState(false);
+  // Unified globe-zoom signal broadcast by TonightPage (single source of
+  // truth for hiding metro pills). Drives the MoversChip hide so the chip
+  // disappears at the universe view in unison with the other pills.
+  const [globalIsAtGlobe, setGlobalIsAtGlobe] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => setGlobalIsAtGlobe((e as CustomEvent).detail.isAtGlobe);
+    window.addEventListener('venuu:globe-state', handler as EventListener);
+    return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
+  }, []);
   const onCityTapFromGlobeRef = useRef(onCityTapFromGlobe);
   onCityTapFromGlobeRef.current = onCityTapFromGlobe;
   const cityPulseFrameRef = useRef<number>(0);
@@ -2449,11 +2458,13 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
               }}
             />
           </div>
-          <MoversChip
-            city={city}
-            onOpen={() => setMarketViewActive(true)}
-            hidden={marketViewActive}
-          />
+          {!globalIsAtGlobe && (
+            <MoversChip
+              city={city}
+              onOpen={() => setMarketViewActive(true)}
+              hidden={marketViewActive}
+            />
+          )}
           <MarketPanel
             city={city}
             active={marketViewActive}

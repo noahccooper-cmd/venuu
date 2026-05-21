@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { hapticLight } from '../../lib/haptics';
 
 /**
@@ -25,6 +25,18 @@ interface VennyBarProps {
 }
 
 function VennyBarInner({ onExpand, sheetOpen, hasUnreadResponse, hidden }: VennyBarProps) {
+  // Listen for the globe-zoom broadcast from TonightPage so Venny hides at
+  // the universe view in unison with the other metro pills.
+  const [isAtGlobe, setIsAtGlobe] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => setIsAtGlobe((e as CustomEvent).detail.isAtGlobe);
+    window.addEventListener('venuu:globe-state', handler as EventListener);
+    return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
+  }, []);
+
+  // Concealed = explicitly hidden by parent OR at globe zoom.
+  const concealed = hidden || isAtGlobe;
+
   const handleTap = () => {
     hapticLight();
     onExpand();
@@ -42,9 +54,9 @@ function VennyBarInner({ onExpand, sheetOpen, hasUnreadResponse, hidden }: Venny
         // a stable screen-relative anchor independent of any ancestor
         // layout. Pinned just below The Drop pill on the tonight tab.
         position: 'fixed',
-        top: 'calc(80px + env(safe-area-inset-top, 0px) + 70px)',
+        top: 'calc(80px + env(safe-area-inset-top, 0px) + 50px)',
         left: '50%',
-        transform: hidden
+        transform: concealed
           ? 'translate(-50%, -8px)'
           : 'translate(-50%, 0)',
         height: 38,
@@ -64,8 +76,8 @@ function VennyBarInner({ onExpand, sheetOpen, hasUnreadResponse, hidden }: Venny
         cursor: 'pointer',
         WebkitTapHighlightColor: 'transparent',
         boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
-        opacity: hidden ? 0 : (sheetOpen ? 0.4 : 1),
-        pointerEvents: hidden ? 'none' : 'auto',
+        opacity: concealed ? 0 : (sheetOpen ? 0.4 : 1),
+        pointerEvents: concealed ? 'none' : 'auto',
         transition: 'opacity 280ms ease-out, transform 280ms ease-out',
       }}
     >

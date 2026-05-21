@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTonightMovers, type TonightMover } from '../../hooks/useTonightMovers';
 import { useCityPulse } from '../../hooks/useCityPulse';
 import './MarketTicker.css';
@@ -26,6 +26,15 @@ export function MarketTicker({ city, onVenueTap }: MarketTickerProps) {
   const { pulse } = useCityPulse(city);
   const [paused, setPaused] = useState(false);
 
+  // Hide at globe zoom in unison with the other pills (broadcast by
+  // TonightPage). MarketTicker had no zoom logic of its own before.
+  const [isAtGlobe, setIsAtGlobe] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => setIsAtGlobe((e as CustomEvent).detail.isAtGlobe);
+    window.addEventListener('venuu:globe-state', handler as EventListener);
+    return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
+  }, []);
+
   if (!city) return null;
 
   const allMovers = [...risers, ...fallers]
@@ -46,6 +55,11 @@ export function MarketTicker({ city, onVenueTap }: MarketTickerProps) {
   return (
     <div
       className={`market-ticker ${tintClass}`}
+      style={{
+        opacity: isAtGlobe ? 0 : 1,
+        pointerEvents: isAtGlobe ? 'none' : 'auto',
+        transition: 'opacity 0.3s ease',
+      }}
       onTouchStart={() => setPaused(true)}
       onTouchEnd={() => setPaused(false)}
       onTouchCancel={() => setPaused(false)}
