@@ -28,20 +28,17 @@ const RADIUS_METERS_TIGHT = 200;
 const KERNEL_STEEPNESS_WIDE = 1.8;
 const KERNEL_STEEPNESS_TIGHT = 2.8;
 const PEAK_ALPHA_WIDE = 0.45;
-const PEAK_ALPHA_TIGHT = 0.62;
+const PEAK_ALPHA_TIGHT = 0.52;   // was 0.62 — let saturation drive the pop
+// Saturation morph: at wide zoom, venues restrained (50%) so overlap
+// produces coherent district color. At street zoom, venues confident
+// (95%) so each shows its full character.
+const SATURATION_WIDE = 0.50;
+const SATURATION_TIGHT = 0.95;
 const FADE_IN_START_ZOOM = 12.5;
 const FADE_IN_END_ZOOM = 16.0;
 // Floor alpha: per-venue minimum presence. Guarantees every venue is
 // at least faintly visible at wide zoom. Fades out above z=14.
 const FLOOR_ALPHA_WIDE = 0.04;
-// Core pass: each venue gets a sharp identity dot that resists
-// blending. Halo (existing) provides district context. Two-tier
-// rendering = every venue legible at every zoom.
-const CORE_RADIUS_METERS_WIDE = 80;
-const CORE_RADIUS_METERS_TIGHT = 25;
-const CORE_ALPHA_WIDE = 0.65;
-const CORE_ALPHA_TIGHT = 0.85;
-const CORE_STEEPNESS = 4.0;  // exp(-x^4) for very sharp falloff
 const TRANSITION_SECONDS = 3.0;
 
 // Fragment shader operates entirely in clip space.
@@ -54,9 +51,7 @@ uniform float u_opacity;
 uniform float u_steepness;
 uniform float u_peak_alpha;
 uniform float u_floor_alpha;
-uniform float u_core_radius;     // core-to-halo radius ratio (core_m / halo_m)
-uniform float u_core_alpha;      // 0.65 → 0.85
-uniform float u_core_steepness;  // core falloff exponent (4.0 = exp(-x^4))
+uniform float u_saturation;      // 0.50 wide → 0.95 tight (venue personality)
 uniform int u_numVenues;
 // Per venue: xy = clip-space position, z = clip-space radius, w = saturation
 uniform vec4 u_venuePos[${MAX_VENUES}];
@@ -76,15 +71,6 @@ void main() {
   float sumCos = 0.0;
   float sumSin = 0.0;
   float sumWeight = 0.0;
-  float sumSat = 0.0;
-
-  // CORE PASS tracking — the single nearest venue to this pixel.
-  // This shader works in CLIP space (not meters/degrees), so the spec's
-  // names hold clip-adapted values: nearest_dist_meters is a NORMALIZED
-  // clip distance (clipDist / haloClipRadius, dimensionless) and
-  // nearest_hue_degrees holds the venue hue in RADIANS (matches u_venueHue).
-  float nearest_dist_meters = 1e9;
-  float nearest_hue_degrees = 0.0;
 
   for (int i = 0; i < ${MAX_VENUES}; i++) {
     if (i >= u_numVenues) break;
@@ -96,52 +82,33 @@ void main() {
     if (radSq < 0.000001) continue;
     float weight = exp(-distSq / radSq * u_steepness);
     float hueRad = u_venueHue[i];
-    // Nearest-venue search for the core pass (normalized clip distance).
-    float normDist = sqrt(distSq / radSq);
-    if (normDist < nearest_dist_meters) {
-      nearest_dist_meters = normDist;
-      nearest_hue_degrees = hueRad;
-    }
     sumCos += cos(hueRad) * weight;
     sumSin += sin(hueRad) * weight;
     sumWeight += weight;
-    sumSat += v.w * weight;
   }
 
   if (sumWeight < 0.001) discard;
 
   float meanHue = atan(sumSin, sumCos);
   float hueNorm = (meanHue + 3.14159265) / 6.28318530;
-  float meanSat = sumSat / sumWeight;
+
+  // Density lightness: more venues contributing → darker, richer district;
+  // a single venue dominating → brighter so it pops. sumWeight ranges
+  // ~0 to ~5 in dense overlap; the clamp keeps lightness in [0.39, 0.55]
+  // so a district never goes muddy black.
+  float lightness = 0.55 - 0.08 * min(sumWeight, 2.0);
 
   float alpha = clamp(sumWeight * 0.8, 0.0, 1.0) * u_opacity * u_peak_alpha;
-  vec3 rgb = hsl2rgb(hueNorm, meanSat, 0.55);
+  // H = vibe identity (circular-mean hue), S = zoom-driven personality
+  // (u_saturation: restrained wide → confident tight), L = density above.
+  vec3 rgb = hsl2rgb(hueNorm, u_saturation, lightness);
 
-  // Per-venue floor: guarantees minimum presence at wide zoom even
-  // when many venues overlap into few pixels. sumWeight is the sum of
-  // all venue contributions at this pixel (already computed above for
-  // the circular mean). Floor scales with weight so it only kicks in
-  // where there's actual venue activity.
+  // Per-venue floor: guarantees minimum presence at wide zoom even when
+  // many venues overlap into few pixels.
   float floor_contribution = u_floor_alpha * min(sumWeight, 1.0);
   alpha = max(alpha, floor_contribution);
 
-  // CORE PASS: render the nearest venue's identity with a sharp x^4
-  // falloff so each venue keeps a legible core that resists the halo's
-  // circular-mean blending. u_core_radius is the core-to-halo radius
-  // RATIO; nearest_dist_meters is already in halo-radius units, so the
-  // division puts the distance in core-radius units.
-  float core_norm = nearest_dist_meters / u_core_radius;
-  float core_falloff = exp(-pow(core_norm, u_core_steepness));
-  float this_core_alpha = core_falloff * u_core_alpha * u_opacity;
-
-  // Nearest hue (radians) → 0..1 for hsl2rgb; saturated identity color.
-  vec3 halo_rgb = rgb;
-  vec3 core_rgb = hsl2rgb(nearest_hue_degrees / 6.28318530, 0.85, 0.55);
-
-  // Composite core OVER halo (premultiplied output for ONE / 1-SRC_ALPHA).
-  vec3 final_rgb = mix(halo_rgb, core_rgb, this_core_alpha);
-  float final_alpha = max(alpha, this_core_alpha);
-  gl_FragColor = vec4(final_rgb * final_alpha, final_alpha);
+  gl_FragColor = vec4(rgb * alpha, alpha);
 }
 `;
 
@@ -304,11 +271,10 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         const radiusMeters = RADIUS_METERS_WIDE + (RADIUS_METERS_TIGHT - RADIUS_METERS_WIDE) * tScale;
         const steepness    = KERNEL_STEEPNESS_WIDE + (KERNEL_STEEPNESS_TIGHT - KERNEL_STEEPNESS_WIDE) * tScale;
         const peakAlpha    = PEAK_ALPHA_WIDE + (PEAK_ALPHA_TIGHT - PEAK_ALPHA_WIDE) * tScale;
+        // Saturation morphs on the same band: restrained wide → confident tight.
+        const saturation   = SATURATION_WIDE + (SATURATION_TIGHT - SATURATION_WIDE) * tScale;
         // Floor decays out as we zoom in past z=14
         const floorAlpha = FLOOR_ALPHA_WIDE * Math.max(0, Math.min(1, (14.0 - zoom) / 4.0));
-        // Core pass: sharp per-venue identity dot, scales on the same band.
-        const coreRadiusMeters = CORE_RADIUS_METERS_WIDE + (CORE_RADIUS_METERS_TIGHT - CORE_RADIUS_METERS_WIDE) * tScale;
-        const coreAlpha = CORE_ALPHA_WIDE + (CORE_ALPHA_TIGHT - CORE_ALPHA_WIDE) * tScale;
 
         for (let i = 0; i < visiblePoints.length; i++) {
           const p = visiblePoints[i];
@@ -367,10 +333,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         gl.uniform1f(gl.getUniformLocation(program, 'u_steepness'), steepness);
         gl.uniform1f(gl.getUniformLocation(program, 'u_peak_alpha'), peakAlpha);
         gl.uniform1f(gl.getUniformLocation(program, 'u_floor_alpha'), floorAlpha);
-        // u_core_radius is the core-to-halo radius RATIO (see shader).
-        gl.uniform1f(gl.getUniformLocation(program, 'u_core_radius'), coreRadiusMeters / radiusMeters);
-        gl.uniform1f(gl.getUniformLocation(program, 'u_core_alpha'), coreAlpha);
-        gl.uniform1f(gl.getUniformLocation(program, 'u_core_steepness'), CORE_STEEPNESS);
+        gl.uniform1f(gl.getUniformLocation(program, 'u_saturation'), saturation);
         gl.uniform1i(gl.getUniformLocation(program, 'u_numVenues'), visiblePoints.length);
         gl.uniform4fv(gl.getUniformLocation(program, 'u_venuePos'), venuePosData);
         gl.uniform1fv(gl.getUniformLocation(program, 'u_venueHue'), venueHueData);
