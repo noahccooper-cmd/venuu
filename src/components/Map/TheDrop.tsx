@@ -1,48 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { supabase } from '../../lib/supabase';
 import { timeAgo } from '../../lib/utils';
-import { getEventTimeLabel } from '../../lib/eventUtils';
 import { hapticHeavy } from '../../lib/haptics';
 import type { VenueEvent } from '../../lib/types';
-
-/** Returns a full ISO 8601 timestamp for 4:00 AM on the current "night" date (4am rollover). */
-function getTonightCutoff(): string {
-  const now = new Date();
-  const cutoff = new Date(now);
-  if (now.getHours() < 5) {
-    cutoff.setDate(cutoff.getDate() - 1);
-  }
-  cutoff.setHours(4, 0, 0, 0);
-  return cutoff.toISOString();
-}
-
-interface VenueUpdate {
-  id: string;
-  venue_id: string;
-  venue_name: string;
-  message: string;
-  created_at: string;
-}
+import { useDropFeed } from '../../hooks/useDropFeed';
 
 const FONT = 'Satoshi, sans-serif';
-const BLUE = '#00D4FF';
 const ORANGE = '#FF8200';
-
-const EVENT_TYPE_EMOJI: Record<VenueEvent['event_type'], string> = {
-  party: '\u{1F389}',
-  brand: '\u{1F48E}',
-  greek: '\u{1F3DB}',
-  launch: '\u{1F680}',
-  special: '\u{2B50}',
-};
-
-const EVENT_TYPE_LABELS: Record<VenueEvent['event_type'], string> = {
-  party: 'Party',
-  brand: 'Brand',
-  greek: 'Greek',
-  launch: 'Launch',
-  special: 'Special',
-};
 
 
 interface TheDropProps {
@@ -53,7 +16,6 @@ interface TheDropProps {
 }
 
 export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
-  const [updates, setUpdates] = useState<VenueUpdate[]>([]);
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [flash, setFlash] = useState(false);
@@ -71,7 +33,6 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
 
   // Stable set of venue IDs for the current city
   const venueIds = useMemo(() => venues.map(v => v.id), [venues]);
-  const venueIdSet = useMemo(() => new Set(venueIds), [venueIds]);
 
   // Active (non-expired) events
   const activeEvents = useMemo(() => {
@@ -80,55 +41,14 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
     return events.filter(e => e.is_active && new Date(e.expires_at) > now);
   }, [events]);
 
-  // Fetch active updates for current city's venues + realtime subscription
+  // Unified feed: bar messages + events + live surges, each carrying the
+  // venue's current hue (heat_points.hue_degrees) for the colored stripe.
+  const { feed, totalCount } = useDropFeed({ venueIds, events: activeEvents });
+  const hasContent = totalCount > 0;
+
+  // Flash pill + urgency pulse when the feed grows (new content arrives)
   useEffect(() => {
-    if (venueIds.length === 0) {
-      setUpdates([]);
-      prevCountRef.current = 0;
-      return;
-    }
-
-    const cutoff = getTonightCutoff();
-    const fetchUpdates = async () => {
-      const { data, error } = await supabase
-        .from('venue_updates')
-        .select('id, venue_id, venue_name, message, created_at')
-        .in('venue_id', venueIds)
-        .gte('created_at', cutoff)
-        .order('created_at', { ascending: false })
-        .limit(15);
-      if (error) {
-        console.error('[drop] Fetch error:', error.message);
-        return;
-      }
-      if (data) {
-        setUpdates(data);
-        prevCountRef.current = data.length;
-      }
-    };
-    fetchUpdates();
-
-    // Realtime: filter client-side since Supabase doesn't support .in() on subscriptions
-    const channel = supabase
-      .channel(`the-drop-rt-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'venue_updates' },
-        (payload) => {
-          const row = payload.new as VenueUpdate;
-          if (row.created_at >= cutoff && venueIdSet.has(row.venue_id)) {
-            setUpdates(prev => [row, ...prev].slice(0, 15));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [venueIds, venueIdSet]);
-
-  // Flash pill + urgency pulse when count increases (new update arrives)
-  useEffect(() => {
-    if (updates.length > prevCountRef.current && prevCountRef.current >= 0) {
+    if (totalCount > prevCountRef.current && prevCountRef.current >= 0) {
       hapticHeavy();
       setFlash(true);
       const t = setTimeout(() => setFlash(false), 600);
@@ -138,16 +58,16 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
       if (urgencyTimerRef.current) clearTimeout(urgencyTimerRef.current);
       urgencyTimerRef.current = setTimeout(() => setUrgencyPulse(false), 30000);
 
-      prevCountRef.current = updates.length;
+      prevCountRef.current = totalCount;
       return () => clearTimeout(t);
     }
-    prevCountRef.current = updates.length;
-  }, [updates.length]);
+    prevCountRef.current = totalCount;
+  }, [totalCount]);
 
-  // Check newest update freshness on mount
+  // Check newest feed item freshness on mount
   useEffect(() => {
-    if (updates.length > 0) {
-      const newest = new Date(updates[0].created_at).getTime();
+    if (feed.length > 0) {
+      const newest = new Date(feed[0].created_at).getTime();
       const age = Date.now() - newest;
       if (age < 30000) {
         setUrgencyPulse(true);
@@ -156,7 +76,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
       }
     }
     return () => { if (urgencyTimerRef.current) clearTimeout(urgencyTimerRef.current); };
-  }, [updates]);
+  }, [feed]);
 
   const handlePillClick = useCallback(() => {
     if (open) {
@@ -209,9 +129,6 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
     }
   }, []);
 
-  const totalCount = updates.length + activeEvents.length;
-  const hasContent = totalCount > 0;
-
   return (
     <>
       {/* Pill */}
@@ -251,10 +168,17 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
         >
           {!open ? (
             <>
-              {'\uD83D\uDCE3'} {hasContent ? `${totalCount} update${totalCount === 1 ? '' : 's'} tonight` : 'No updates tonight'}
+              {'📣'} {hasContent ? `${totalCount} update${totalCount === 1 ? '' : 's'} tonight` : 'No updates tonight'}
             </>
           ) : (
-            <span style={{ opacity: 0.6 }}>{'\u2715'}</span>
+            <span style={{
+              fontSize: '13px',
+              fontWeight: 700,
+              letterSpacing: '0.5px',
+              color: 'rgba(255,255,255,0.7)',
+            }}>
+              tonight
+            </span>
           )}
         </button>
       </div>
@@ -279,7 +203,7 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
               top: '60px',
               left: '12px',
               right: '12px',
-              maxHeight: '60vh',
+              maxHeight: 'calc(70vh - env(safe-area-inset-bottom, 0px))',
               borderRadius: '16px',
               background: '#111114',
               border: '1px solid rgba(255,255,255,0.1)',
@@ -295,125 +219,24 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
               color: 'rgba(255,255,255,0.4)',
               letterSpacing: '1px',
               textTransform: 'uppercase',
-              padding: '0 4px 4px',
+              padding: '0 4px 8px',
             }}>
-              {'\uD83D\uDCE3'} THE DROP
+              {'📣'} THE DROP
             </div>
 
-            {/* Scrollable content */}
-            <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0px' }}>
-
-              {/* ── Pinned Events Section ── */}
-              {activeEvents.length > 0 && (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  maxHeight: '40%',
-                  overflowY: 'auto',
-                  flexShrink: 0,
-                  paddingBottom: '0px',
-                }}>
-                  {activeEvents.map(evt => (
-                    <button
-                      key={evt.id}
-                      onClick={() => handleEventCardClick(evt)}
-                      className="drop-event-card-enter"
-                      style={{
-                        background: 'rgba(0, 212, 255, 0.04)',
-                        borderLeft: `3px solid ${BLUE}`,
-                        border: `1px solid rgba(0, 212, 255, 0.15)`,
-                        borderLeftWidth: '3px',
-                        borderLeftColor: BLUE,
-                        borderRadius: '10px',
-                        padding: '10px 12px',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        transition: 'background 0.15s',
-                      }}
-                    >
-                      {/* Badge */}
-                      <span style={{
-                        fontFamily: FONT,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: BLUE,
-                        background: 'rgba(0, 212, 255, 0.12)',
-                        border: '1px solid rgba(0, 212, 255, 0.25)',
-                        borderRadius: 12,
-                        padding: '2px 8px',
-                        letterSpacing: '0.5px',
-                        textTransform: 'uppercase',
-                        alignSelf: 'flex-start',
-                        marginBottom: '6px',
-                      }}>
-                        {EVENT_TYPE_EMOJI[evt.event_type]} {EVENT_TYPE_LABELS[evt.event_type]}
-                      </span>
-                      {/* TIME — the hook */}
-                      {(() => {
-                        const tl = getEventTimeLabel(evt.start_time, evt.expires_at);
-                        return (
-                          <p style={{
-                            fontSize: '16px',
-                            fontWeight: 800,
-                            color: tl.isNow ? '#00FF88' : BLUE,
-                            margin: '0 0 4px',
-                            lineHeight: 1.2,
-                            fontFamily: FONT,
-                            letterSpacing: '0.5px',
-                          }}>
-                            {tl.isNow ? '\u26A1' : '\uD83D\uDD59'} {tl.text}
-                          </p>
-                        );
-                      })()}
-                      {/* Title */}
-                      <p style={{
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        color: 'white',
-                        margin: '0 0 2px',
-                        lineHeight: '1.3',
-                        fontFamily: FONT,
-                      }}>
-                        {evt.title}
-                      </p>
-                      {/* Host */}
-                      <p style={{
-                        fontSize: '11px',
-                        color: BLUE,
-                        margin: 0,
-                        fontFamily: FONT,
-                        fontWeight: 600,
-                        opacity: 0.8,
-                      }}>
-                        {evt.host_name}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* ── Divider between events and live feed ── */}
-              {activeEvents.length > 0 && updates.length > 0 && (
-                <div style={{ padding: '8px 4px 6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-                  <span style={{
-                    fontFamily: FONT,
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    color: ORANGE,
-                    letterSpacing: '1.5px',
-                    textTransform: 'uppercase',
-                    flexShrink: 0,
-                  }}>
-                    LIVE
-                  </span>
-                  <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-                </div>
-              )}
-
-              {/* ── Live Drop Messages ── */}
-              {updates.length === 0 && activeEvents.length === 0 ? (
+            {/* Unified feed — bar messages + events + live surges,
+                chronological, each with a left stripe in the venue's
+                current hue. Scrolls with iOS momentum, contained. */}
+            <div className="drop-feed" style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              overflowY: 'auto',
+              overscrollBehavior: 'contain',
+              WebkitOverflowScrolling: 'touch',
+              flex: 1,
+            }}>
+              {feed.length === 0 ? (
                 <div style={{
                   textAlign: 'center',
                   color: 'rgba(255,255,255,0.3)',
@@ -424,35 +247,60 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
                   No updates tonight
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: activeEvents.length > 0 && updates.length > 0 ? '0px' : '4px' }}>
-                  {updates.map(u => (
-                    <button
-                      key={u.id}
-                      onClick={() => handleUpdateClick(u.venue_id)}
-                      style={{
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: '10px',
-                        padding: '10px 12px',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        transition: 'background 0.15s',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: venues.find(v => v.id === u.venue_id)?.category === 'fraternity' ? '#C9A96E' : ORANGE, fontFamily: FONT }}>
-                          {u.venue_name}
+                feed.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      if (item.type === 'event' && item.raw) {
+                        handleEventCardClick(item.raw as VenueEvent);
+                      } else {
+                        handleUpdateClick(item.venue_id);
+                      }
+                    }}
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderLeftWidth: '4px',
+                      borderLeftColor: `hsl(${item.hue_degrees}, 70%, 55%)`,
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      color: 'white',
+                      fontFamily: FONT,
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 700 }}>
+                      <span style={{ fontSize: '16px' }}>{item.icon}</span>
+                      <span>{item.venue_name}</span>
+                      {item.type === 'surge' && (
+                        <span style={{
+                          fontSize: '10px',
+                          color: `hsl(${item.hue_degrees}, 70%, 55%)`,
+                          fontWeight: 800,
+                          letterSpacing: '0.5px',
+                        }}>
+                          SURGING
                         </span>
-                        <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontFamily: FONT }}>
-                          {timeAgo(u.created_at)}
-                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.8)', fontWeight: 500, lineHeight: 1.35 }}>
+                      {item.body}
+                    </div>
+                    {item.subline && (
+                      <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
+                        {item.subline}
                       </div>
-                      <p style={{ fontSize: '13px', color: 'white', margin: 0, lineHeight: '1.35', fontFamily: FONT }}>
-                        {u.message}
-                      </p>
-                    </button>
-                  ))}
-                </div>
+                    )}
+                    <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>
+                      {timeAgo(item.created_at)}
+                    </div>
+                  </button>
+                ))
               )}
             </div>
           </div>
