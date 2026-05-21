@@ -58,6 +58,13 @@ export function TheDrop({ venues, events, onFlyTo, onEventTap }: TheDropProps) {
   const [closing, setClosing] = useState(false);
   const [flash, setFlash] = useState(false);
   const [urgencyPulse, setUrgencyPulse] = useState(false);
+
+  // Broadcast open/closed so body-level pills (VennyBar, the ticker) can
+  // fade out while a drop is being read — same event-bus pattern as
+  // venuu:globe-state. Stats card stays (it's the masthead).
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('venuu:drop-state', { detail: { isOpen: open } }));
+  }, [open]);
   const prevCountRef = useRef(0);
   const pillRef = useRef<HTMLButtonElement>(null);
   const urgencyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

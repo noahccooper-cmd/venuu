@@ -34,8 +34,17 @@ function VennyBarInner({ onExpand, sheetOpen, hasUnreadResponse, hidden }: Venny
     return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
   }, []);
 
-  // Concealed = explicitly hidden by parent OR at globe zoom.
-  const concealed = hidden || isAtGlobe;
+  // Hide while a drop is open so its messages read without a competing pill
+  // below (broadcast by TheDrop via venuu:drop-state).
+  const [isDropOpen, setIsDropOpen] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => setIsDropOpen((e as CustomEvent).detail.isOpen);
+    window.addEventListener('venuu:drop-state', handler as EventListener);
+    return () => window.removeEventListener('venuu:drop-state', handler as EventListener);
+  }, []);
+
+  // Concealed = explicitly hidden by parent, at globe zoom, or drop open.
+  const concealed = hidden || isAtGlobe || isDropOpen;
 
   const handleTap = () => {
     hapticLight();

@@ -440,6 +440,14 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     window.addEventListener('venuu:globe-state', handler as EventListener);
     return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
   }, []);
+  // Drop-open broadcast (from TheDrop) — fades the ticker while a drop is
+  // being read. Stats card stays visible (masthead).
+  const [isDropOpen, setIsDropOpen] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => setIsDropOpen((e as CustomEvent).detail.isOpen);
+    window.addEventListener('venuu:drop-state', handler as EventListener);
+    return () => window.removeEventListener('venuu:drop-state', handler as EventListener);
+  }, []);
   const onCityTapFromGlobeRef = useRef(onCityTapFromGlobe);
   onCityTapFromGlobeRef.current = onCityTapFromGlobe;
   const cityPulseFrameRef = useRef<number>(0);
@@ -2456,7 +2464,12 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           </div>
           {/* Ticker — second row, positioned independently below the stats
               card. Self-hides at globe zoom via its own listener. */}
-          <div className="map-pulse-line-wrapper" style={{ top: 'calc(env(safe-area-inset-top) + 94px)' }}>
+          <div className="map-pulse-line-wrapper" style={{
+            top: 'calc(env(safe-area-inset-top) + 94px)',
+            opacity: (globalIsAtGlobe || isDropOpen) ? 0 : 1,
+            pointerEvents: (globalIsAtGlobe || isDropOpen) ? 'none' : 'auto',
+            transition: 'opacity 0.25s ease',
+          }}>
             <MarketTicker
               city={city}
               onVenueTap={(venue) => {
