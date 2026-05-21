@@ -92,7 +92,9 @@ export function useVibeCanvasPoints(city: string | null | undefined): UseVibeCan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city]);
 
-  // Realtime: subscribe to vibe_ratings INSERTs
+  // Realtime: subscribe to vibe_ratings INSERTs (instant on paint)
+  // + continuous poll every 60s (so recency decay animates smoothly
+  //   as paints age, even when nobody is painting right now)
   useEffect(() => {
     if (!city) return;
     const channel = supabase
@@ -105,8 +107,17 @@ export function useVibeCanvasPoints(city: string | null | undefined): UseVibeCan
         }
       )
       .subscribe();
+
+    // Continuous evolution poll: canvas re-queries every 60s so the
+    // recency-decayed current_hue per venue animates smoothly through
+    // the night without requiring fresh paint events.
+    const pollInterval = setInterval(() => {
+      throttledRefresh();
+    }, 60_000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(pollInterval);
       if (pendingRefreshRef.current) {
         clearTimeout(pendingRefreshRef.current);
         pendingRefreshRef.current = null;
