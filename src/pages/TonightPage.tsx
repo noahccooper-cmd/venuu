@@ -409,7 +409,7 @@ export function TonightPage({
   }, [activeRoute?.arrived, activeRoute?.destinationLng, activeRoute?.destinationLat, userLocation]);
 
   return (
-    <div className="absolute inset-0" style={{ top: 'calc(80px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
+    <div className="absolute inset-0" style={{ top: 'calc(44px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
       {!activeRoute && (
         <div
           style={{

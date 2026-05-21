@@ -2456,7 +2456,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           </div>
           {/* Ticker — second row, positioned independently below the stats
               card. Self-hides at globe zoom via its own listener. */}
-          <div className="map-pulse-line-wrapper" style={{ top: 'calc(env(safe-area-inset-top) + 98px)' }}>
+          <div className="map-pulse-line-wrapper" style={{ top: 'calc(env(safe-area-inset-top) + 94px)' }}>
             <MarketTicker
               city={city}
               onVenueTap={(venue) => {
