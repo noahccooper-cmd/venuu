@@ -120,9 +120,10 @@ const BASE_LAYER_SPEC: any = {
     'heatmap-opacity': [
       'interpolate', ['linear'], ['zoom'],
       10, 1.0,
-      12.5, 1.0,
-      13.5, 0.0,
-      18, 0.0,
+      13, 1.0,
+      14, 0.55,
+      15, 0.40,
+      18, 0.40,
     ],
   },
 };
@@ -157,9 +158,9 @@ const HALO_LAYER_SPEC: any = {
       'interpolate', ['linear'], ['zoom'],
       10, 0.0,
       13, 0.85,
-      14, 0.85,
-      14.5, 0.0,
-      18, 0.0,
+      14, 0.60,
+      15, 0.30,
+      18, 0.30,
     ],
   },
 };
@@ -246,7 +247,7 @@ export function HeatFieldLayer({ map, mapLoaded, geojson, mode }: HeatFieldLayer
         // the heatmap is dominant (zoom < 13). Above that, the static
         // expression handles fadeout into the WebGL canvas crossover and
         // any setPaintProperty here would clobber it back to a flat value.
-        if (map.getZoom() < 13.0) {
+        if (map.getZoom() < 13.5) {
           map.setPaintProperty(BASE_LAYER_ID, 'heatmap-opacity', Math.min(1.0, baseOpacity));
           map.setPaintProperty(HALO_LAYER_ID, 'circle-opacity', Math.min(1.0, haloOpacity));
         }
