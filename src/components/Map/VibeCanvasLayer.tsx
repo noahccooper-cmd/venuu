@@ -19,7 +19,18 @@ interface VibeCanvasLayerProps {
 
 const LAYER_ID = 'vibe-canvas-mural';
 const MAX_VENUES = 64;
-const RADIUS_METERS = 300;
+// Radius scales with zoom — wider for district feel, tighter for
+// per-venue precision at street level. Per Phase D.5 v2 tuning.
+const RADIUS_METERS_WIDE = 220;   // at zoom <= 14 (district scale)
+const RADIUS_METERS_TIGHT = 100;  // at zoom >= 17 (per-venue precision)
+const KERNEL_STEEPNESS = 4.0;     // 4x the original Gaussian sharpness
+
+function radiusForZoom(zoom: number): number {
+  if (zoom <= 14) return RADIUS_METERS_WIDE;
+  if (zoom >= 17) return RADIUS_METERS_TIGHT;
+  const t = (zoom - 14) / 3;
+  return RADIUS_METERS_WIDE - t * (RADIUS_METERS_WIDE - RADIUS_METERS_TIGHT);
+}
 const FADE_IN_START_ZOOM = 13.5;
 const FADE_IN_END_ZOOM = 14.5;
 const PEAK_ALPHA = 0.55;
@@ -32,6 +43,7 @@ const FRAGMENT_SHADER = `
 precision highp float;
 
 uniform float u_opacity;
+uniform float u_steepness;
 uniform int u_numVenues;
 // Per venue: xy = clip-space position, z = clip-space radius, w = saturation
 uniform vec4 u_venuePos[${MAX_VENUES}];
@@ -61,7 +73,7 @@ void main() {
     float distSq = dx * dx + dy * dy;
     float radSq = v.z * v.z;
     if (radSq < 0.000001) continue;
-    float weight = exp(-distSq / radSq);
+    float weight = exp(-distSq / radSq * u_steepness);
     float hueRad = u_venueHue[i];
     sumCos += cos(hueRad) * weight;
     sumSin += sin(hueRad) * weight;
@@ -232,6 +244,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         const venuePosData = new Float32Array(MAX_VENUES * 4);
         const venueHueData = new Float32Array(MAX_VENUES);
         let needsRepaint = false;
+        const radiusMeters = radiusForZoom(zoom);
 
         for (let i = 0; i < visiblePoints.length; i++) {
           const p = visiblePoints[i];
@@ -243,7 +256,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
           const clipY = projCenter[1] / projCenter[3];
 
           // Project a 300m-east offset to derive clip-space radius
-          const offsetMerc = metersToMercAtLat(RADIUS_METERS, p.lat);
+          const offsetMerc = metersToMercAtLat(radiusMeters, p.lat);
           const projOffset = multMatVec(matrix as unknown as Float32Array, [mx + offsetMerc, my, 0, 1]);
           const offClipX = projOffset[0] / projOffset[3];
           const offClipY = projOffset[1] / projOffset[3];
@@ -287,6 +300,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
         gl.uniform1f(gl.getUniformLocation(program, 'u_opacity'), opacity);
+        gl.uniform1f(gl.getUniformLocation(program, 'u_steepness'), KERNEL_STEEPNESS);
         gl.uniform1i(gl.getUniformLocation(program, 'u_numVenues'), visiblePoints.length);
         gl.uniform4fv(gl.getUniformLocation(program, 'u_venuePos'), venuePosData);
         gl.uniform1fv(gl.getUniformLocation(program, 'u_venueHue'), venueHueData);
