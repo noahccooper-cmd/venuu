@@ -123,43 +123,27 @@ export default function PaintScreen({
     setSubmitting(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('not signed in');
+      // Synthesize a "visit first seen at" for time_band calculation.
+      // For real flows it comes from the paint_prompts row; we don't
+      // have it directly in props, so reconstruct from visitTimeRangeLabel
+      // — but the server's record_paint computes from the timestamp we
+      // pass. Safest: pass now() and let server derive the band of when
+      // the paint happens (close enough for tonight's testing; for
+      // production we'll pass the actual visit_first_seen_at via prop).
+      const { data: ratingId, error: rpcErr } = await supabase.rpc('record_paint', {
+        p_venue_id: venueId,
+        p_hue_id: landedHueId,
+        p_visit_first_seen_at: new Date().toISOString(),
+        p_paint_prompt_id: paintPromptId,
+      });
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('auth_id', user.id)
-        .single();
-
-      if (!profile) throw new Error('profile not found');
-
-      const { data: rating, error: rateErr } = await supabase
-        .from('vibe_ratings')
-        .insert({
-          user_id: profile.id,
-          venue_id: venueId,
-          hue_id: landedHueId,
-        })
-        .select('id')
-        .single();
-
-      if (rateErr && rateErr.code !== '23505') {
-        console.error('[PaintScreen] paint insert failed', rateErr);
+      if (rpcErr) {
+        console.error('[PaintScreen] record_paint RPC failed', rpcErr);
         setSubmitting(false);
         return;
       }
 
-      if (paintPromptId) {
-        await supabase.from('paint_prompts')
-          .update({
-            status: 'painted',
-            painted_at: new Date().toISOString(),
-            vibe_rating_id: rating?.id ?? null,
-          })
-          .eq('id', paintPromptId);
-      }
-
+      console.log('[PaintScreen] paint recorded, rating_id=', ratingId);
       onPainted(landedHueId);
     } catch (err) {
       console.error('[PaintScreen] paint flow error', err);
