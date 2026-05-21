@@ -554,7 +554,12 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         paint: {
           'circle-radius': [
             'interpolate', ['linear'], ['zoom'],
-            0, 12, 2, 18, 4, 28, 6, 0,
+            1, 4,
+            3, 8,
+            5, 14,
+            8, 24,
+            10, 36,
+            12, 0,
           ],
           'circle-color': [
             'match', ['get', 'dominantState'],
@@ -581,7 +586,12 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         paint: {
           'circle-radius': [
             'interpolate', ['linear'], ['zoom'],
-            0, 6, 2, 8, 4, 14, 6, 0,
+            1, 2,
+            3, 4,
+            5, 7,
+            8, 12,
+            10, 18,
+            12, 0,
           ],
           'circle-color': [
             'match', ['get', 'dominantState'],

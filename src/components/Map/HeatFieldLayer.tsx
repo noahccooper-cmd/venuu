@@ -105,13 +105,13 @@ const BASE_LAYER_SPEC: any = {
     ],
     'heatmap-radius': [
       'interpolate', ['linear'], ['zoom'],
-      8, 30,
-      10, 60,
-      12, 100,
-      13, 140,
-      14, 180,
-      16, 240,
-      18, 300,
+      8, 20,
+      10, 35,
+      12, 60,
+      13, 90,
+      14, 130,
+      16, 200,
+      18, 280,
     ],
     // Zoom-gated fadeout: full opacity below z 12.5, fades to 0 by z 13.5
     // so the WebGL canvas (zoom 14+) takes over without overlap. The
@@ -120,10 +120,11 @@ const BASE_LAYER_SPEC: any = {
     'heatmap-opacity': [
       'interpolate', ['linear'], ['zoom'],
       10, 1.0,
-      13, 1.0,
-      14, 0.55,
-      15, 0.40,
-      18, 0.40,
+      12.5, 1.0,
+      13.5, 0.70,
+      14.5, 0.45,
+      16, 0.35,
+      18, 0.35,
     ],
   },
 };

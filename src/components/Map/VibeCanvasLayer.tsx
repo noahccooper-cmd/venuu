@@ -31,8 +31,8 @@ function radiusForZoom(zoom: number): number {
   const t = (zoom - 14) / 3;
   return RADIUS_METERS_WIDE - t * (RADIUS_METERS_WIDE - RADIUS_METERS_TIGHT);
 }
-const FADE_IN_START_ZOOM = 13.5;
-const FADE_IN_END_ZOOM = 14.5;
+const FADE_IN_START_ZOOM = 12.5;
+const FADE_IN_END_ZOOM = 14.0;
 const PEAK_ALPHA = 0.62;  // was 0.55 — slightly more present
 const TRANSITION_SECONDS = 3.0;
 
