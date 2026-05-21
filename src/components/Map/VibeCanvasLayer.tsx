@@ -71,6 +71,7 @@ void main() {
   float sumCos = 0.0;
   float sumSin = 0.0;
   float sumWeight = 0.0;
+  float sumSaturation = 0.0;
 
   for (int i = 0; i < ${MAX_VENUES}; i++) {
     if (i >= u_numVenues) break;
@@ -85,12 +86,17 @@ void main() {
     sumCos += cos(hueRad) * weight;
     sumSin += sin(hueRad) * weight;
     sumWeight += weight;
+    sumSaturation += v.w * weight;
   }
 
   if (sumWeight < 0.001) discard;
 
   float meanHue = atan(sumSin, sumCos);
   float hueNorm = (meanHue + 3.14159265) / 6.28318530;
+
+  // Per-venue earned saturation, weighted the same way as hue. Range
+  // 0.55 (canonical) → 0.95 (heavily painted), blended across overlaps.
+  float perVenueSaturation = sumSaturation / max(sumWeight, 0.001);
 
   // Density lightness: more venues contributing → darker, richer district;
   // a single venue dominating → brighter so it pops. sumWeight ranges
@@ -99,9 +105,14 @@ void main() {
   float lightness = 0.55 - 0.08 * min(sumWeight, 2.0);
 
   float alpha = clamp(sumWeight * 0.8, 0.0, 1.0) * u_opacity * u_peak_alpha;
-  // H = vibe identity (circular-mean hue), S = zoom-driven personality
-  // (u_saturation: restrained wide → confident tight), L = density above.
-  vec3 rgb = hsl2rgb(hueNorm, u_saturation, lightness);
+  // Final saturation: per-venue earned saturation × zoom-morph multiplier.
+  // u_saturation is the zoom-driven morph (0.50 wide → 0.95 tight).
+  // perVenueSaturation is the earned 0.55-0.95 from paint history. Their
+  // product responds to BOTH zoom AND venue history: canonical venues stay
+  // restrained at wide zoom; active venues pop at all zooms.
+  float finalSaturation = perVenueSaturation * u_saturation;
+  // H = vibe identity (circular-mean hue), S = earned × zoom, L = density.
+  vec3 rgb = hsl2rgb(hueNorm, finalSaturation, lightness);
 
   // Per-venue floor: guarantees minimum presence at wide zoom even when
   // many venues overlap into few pixels.
@@ -316,7 +327,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
           venuePosData[i * 4 + 0] = clipX;
           venuePosData[i * 4 + 1] = clipY;
           venuePosData[i * 4 + 2] = radiusClip;
-          venuePosData[i * 4 + 3] = renderSat * p.intensity;
+          venuePosData[i * 4 + 3] = renderSat;
           venueHueData[i] = renderRad;
         }
 

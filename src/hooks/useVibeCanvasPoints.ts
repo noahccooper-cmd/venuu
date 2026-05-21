@@ -11,13 +11,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
+/**
+ * Row returned by get_vibe_canvas_points RPC (migration 00061).
+ *
+ * hue_degrees:    CONTINUOUS numeric degrees [0, 360). Soul-true unsnapped
+ *                 circular mean of canonical + recency-decayed paints.
+ * saturation_pct: Earned-vibe curve 55-95. Canonical = 55 (soft presence),
+ *                 +4 per paint up to 10 paints = 95 (vivid earned identity).
+ * intensity:      Always 1.0 currently (Phase B.5: canvas alive 24/7).
+ * paint_count:    Total paints all-time. Drives saturation; visual lever.
+ */
 export interface VibeCanvasPoint {
   venue_id: string;
   lat: number;
   lng: number;
-  hue_degrees: number;     // 0-360, HSL hue angle
-  saturation_pct: number;  // 70-100, Phase B.5 floor enforced server-side
-  intensity: number;       // currently always 1.0; will modulate in Phase E
+  hue_degrees: number;     // numeric, continuous
+  saturation_pct: number;  // 55-95, earned-vibe
+  intensity: number;       // 1.0 currently
   state_label: string;
   paint_count: number;
 }
