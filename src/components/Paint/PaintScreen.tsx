@@ -206,19 +206,18 @@ export default function PaintScreen({
             </button>
           </div>
 
-          {/* Main content — header + slider, vertically centered */}
-          <div className="flex-1 flex flex-col items-center justify-center px-6">
-            {/* Venue header */}
-            <div className="text-center mb-20">
-              <h1 className="text-white text-[40px] leading-[1.1] font-bold tracking-tight mb-3">
-                {venueName}
-              </h1>
-              <p className="text-white/40 text-[15px] tracking-wide font-medium">
-                {visitTimeRangeLabel}
-              </p>
-            </div>
+          {/* Venue header — anchored NEAR TOP (~10% from top of safe area) */}
+          <div className="text-center px-6 pt-8">
+            <h1 className="text-white text-[44px] leading-[1.05] font-bold tracking-tight mb-3">
+              {venueName}
+            </h1>
+            <p className="text-white/40 text-[15px] tracking-wide font-medium">
+              {visitTimeRangeLabel}
+            </p>
+          </div>
 
-            {/* The slider. NO label above. Color is the only language. */}
+          {/* Spacer — pushes slider to middle */}
+          <div className="flex-1 flex items-center justify-center px-6">
             <div className="w-full max-w-md">
               <div
                 ref={sliderRef}
@@ -236,7 +235,6 @@ export default function PaintScreen({
                   transition: 'filter 250ms ease-out',
                 }}
               >
-                {/* Thumb */}
                 <motion.div
                   initial={false}
                   animate={{
@@ -262,7 +260,7 @@ export default function PaintScreen({
             </div>
           </div>
 
-          {/* Paint button — bottom-anchored with comfortable breathing room */}
+          {/* Paint button — bottom anchored */}
           <div className="px-6 pb-8 flex justify-center">
             <button
               onClick={handlePaint}
