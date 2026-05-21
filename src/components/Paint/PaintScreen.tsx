@@ -1,22 +1,17 @@
 // src/components/Paint/PaintScreen.tsx
 //
-// Phase D: Rate-on-Exit paint screen — v2 (interaction + polish fixes).
+// Phase D v3 — the sacred painting moment, polished.
 //
-// Soul Doc compliance:
-//   - ZERO words above the slider. No labels. No category names.
-//     Color is the only language.
-//   - 14-hue gradient slider (calm left → intensity right)
-//   - Thumb starts neutral grey, fills with the landed hue on release
-//   - First paint is permanent (UNIQUE(user_id, venue_id) in vibe_ratings)
-//
-// v2 fixes:
-//   - Pointer capture happens on the TRACK ref directly, not on e.target.
-//     This ensures iOS captures the pointer to the track regardless of
-//     where on the slider the touch lands.
-//   - Layout restructured: header top, slider center, button bottom-anchored
-//     with safe-area padding. No more clipping.
-//   - Visual polish: bigger thumb, inner ring, track inner shadow,
-//     stronger "paint" button presence, radial bg gradient.
+// Visual decisions:
+//   - Venue header anchored top-third of screen, name MASSIVE (52px),
+//     time below in elegant small caps tracking. The event is announced.
+//   - Slider: thinner track (56px not 80px), refined thumb (60px),
+//     subtle inner shadow + outer glow. Feels like a paint chooser,
+//     not an iOS volume slider.
+//   - Paint button: bigger circular pill (not full-width bar), 320px max,
+//     elevated above safe area with breathing room. "PAINT" in
+//     letter-spaced bold caps. Glows in your chosen hue.
+//   - Background: subtle radial gradient (slight lift at center).
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -33,8 +28,8 @@ interface PaintScreenProps {
   onPainted: (hueId: VibeHueId) => void;
 }
 
-const SLIDER_HEIGHT_PX = 80;
-const THUMB_SIZE_PX = 64;
+const SLIDER_HEIGHT_PX = 56;
+const THUMB_SIZE_PX = 60;
 
 export default function PaintScreen({
   open,
@@ -65,9 +60,6 @@ export default function PaintScreen({
     ).join(', ')
   })`;
 
-  // CRITICAL: pointer handlers operate on the SLIDER REF, not on the
-  // event target. This means we get pointer-down/move/up regardless
-  // of which child element the touch starts on.
   const updateFromClientX = useCallback((clientX: number) => {
     const rect = sliderRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -78,7 +70,6 @@ export default function PaintScreen({
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     dragActiveRef.current = true;
-    // Capture on the SLIDER element, not e.target. This is the iOS fix.
     sliderRef.current?.setPointerCapture(e.pointerId);
     updateFromClientX(e.clientX);
   }, [updateFromClientX]);
@@ -90,12 +81,9 @@ export default function PaintScreen({
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     dragActiveRef.current = false;
-    try {
-      sliderRef.current?.releasePointerCapture(e.pointerId);
-    } catch { /* ignore */ }
+    try { sliderRef.current?.releasePointerCapture(e.pointerId); } catch {}
   }, []);
 
-  // Mark prompt as opened
   useEffect(() => {
     if (open && paintPromptId) {
       supabase.from('paint_prompts')
@@ -108,7 +96,6 @@ export default function PaintScreen({
     }
   }, [open, paintPromptId]);
 
-  // Reset state when screen closes
   useEffect(() => {
     if (!open) {
       setSliderPct(null);
@@ -123,13 +110,6 @@ export default function PaintScreen({
     setSubmitting(true);
 
     try {
-      // Synthesize a "visit first seen at" for time_band calculation.
-      // For real flows it comes from the paint_prompts row; we don't
-      // have it directly in props, so reconstruct from visitTimeRangeLabel
-      // — but the server's record_paint computes from the timestamp we
-      // pass. Safest: pass now() and let server derive the band of when
-      // the paint happens (close enough for tonight's testing; for
-      // production we'll pass the actual visit_first_seen_at via prop).
       const { data: ratingId, error: rpcErr } = await supabase.rpc('record_paint', {
         p_venue_id: venueId,
         p_hue_id: landedHueId,
@@ -171,38 +151,48 @@ export default function PaintScreen({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
+          transition={{ duration: 0.35 }}
           className="fixed inset-0 z-[9000] flex flex-col"
           style={{
-            background: 'radial-gradient(ellipse at center, rgb(15,15,18) 0%, rgb(0,0,0) 80%)',
+            background: 'radial-gradient(ellipse at top center, rgb(20,20,24) 0%, rgb(0,0,0) 70%)',
             paddingTop: 'env(safe-area-inset-top)',
             paddingBottom: 'env(safe-area-inset-bottom)',
           }}
         >
-          {/* Dismiss X — top-right, low emphasis */}
-          <div className="flex justify-end px-6 pt-4">
+          {/* Dismiss X */}
+          <div className="flex justify-end px-6 pt-3">
             <button
               onClick={handleDismiss}
-              className="text-white/25 hover:text-white/60 text-3xl leading-none p-3 -m-3"
+              className="text-white/20 hover:text-white/60 text-3xl leading-none p-3 -m-3 transition-opacity"
               aria-label="Dismiss"
             >
               ×
             </button>
           </div>
 
-          {/* Venue header — anchored NEAR TOP (~10% from top of safe area) */}
-          <div className="text-center px-6 pt-8">
-            <h1 className="text-white text-[44px] leading-[1.05] font-bold tracking-tight mb-3">
+          {/* Venue header — top third, anchored */}
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="text-center px-6 pt-12"
+          >
+            <h1 className="text-white text-[52px] leading-[1.02] font-bold tracking-tight mb-4" style={{ letterSpacing: '-0.02em' }}>
               {venueName}
             </h1>
-            <p className="text-white/40 text-[15px] tracking-wide font-medium">
+            <p className="text-white/35 text-[13px] font-medium uppercase" style={{ letterSpacing: '0.18em' }}>
               {visitTimeRangeLabel}
             </p>
-          </div>
+          </motion.div>
 
-          {/* Spacer — pushes slider to middle */}
-          <div className="flex-1 flex items-center justify-center px-6">
-            <div className="w-full max-w-md">
+          {/* Slider — centered in remaining space */}
+          <div className="flex-1 flex items-center justify-center px-7">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.25 }}
+              className="w-full max-w-[380px]"
+            >
               <div
                 ref={sliderRef}
                 onPointerDown={onPointerDown}
@@ -214,54 +204,61 @@ export default function PaintScreen({
                   height: `${SLIDER_HEIGHT_PX}px`,
                   background: trackGradient,
                   touchAction: 'none',
-                  boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.4), 0 0 60px rgba(255,255,255,0.05)',
-                  filter: hasLanded ? 'saturate(1.15)' : 'saturate(0.9)',
-                  transition: 'filter 250ms ease-out',
+                  boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.5), 0 0 80px rgba(255,255,255,0.04)',
+                  filter: hasLanded ? 'saturate(1.2)' : 'saturate(0.85)',
+                  transition: 'filter 280ms ease-out',
                 }}
               >
                 <motion.div
                   initial={false}
                   animate={{
                     left: sliderPct === null ? '50%' : `${sliderPct}%`,
-                    backgroundColor: hasLanded && hueCSS ? hueCSS : 'rgb(195,195,195)',
-                    scale: hasLanded ? 1.0 : 0.9,
+                    backgroundColor: hasLanded && hueCSS ? hueCSS : 'rgb(220,220,225)',
+                    scale: hasLanded ? 1.0 : 0.85,
                   }}
                   transition={{
-                    left: { type: 'spring', stiffness: 380, damping: 28 },
-                    backgroundColor: { duration: 0.22 },
-                    scale: { duration: 0.22 },
+                    left: { type: 'spring', stiffness: 400, damping: 30 },
+                    backgroundColor: { duration: 0.2 },
+                    scale: { duration: 0.2 },
                   }}
                   className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
                   style={{
                     width: THUMB_SIZE_PX,
                     height: THUMB_SIZE_PX,
                     boxShadow: hasLanded && hueCSS
-                      ? `0 0 0 4px rgba(0,0,0,0.85), 0 0 0 6px rgba(255,255,255,0.95), 0 0 40px ${hueCSS}cc, 0 8px 20px rgba(0,0,0,0.6)`
-                      : '0 0 0 4px rgba(0,0,0,0.85), 0 0 0 6px rgba(255,255,255,0.95), 0 8px 20px rgba(0,0,0,0.6)',
+                      ? `0 0 0 3px rgba(0,0,0,0.95), 0 0 0 5px rgba(255,255,255,1), 0 0 50px ${hueCSS}, 0 10px 24px rgba(0,0,0,0.7)`
+                      : '0 0 0 3px rgba(0,0,0,0.95), 0 0 0 5px rgba(255,255,255,1), 0 10px 24px rgba(0,0,0,0.7)',
                   }}
                 />
               </div>
-            </div>
+            </motion.div>
           </div>
 
-          {/* Paint button — bottom anchored */}
-          <div className="px-6 pb-8 flex justify-center">
-            <button
+          {/* Paint button — pill, not full-width bar */}
+          <div className="flex justify-center pb-10">
+            <motion.button
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
               onClick={handlePaint}
               disabled={!hasLanded || submitting}
-              className="w-full max-w-md py-6 rounded-full text-white text-[19px] font-bold tracking-wider uppercase transition-all duration-300 disabled:cursor-not-allowed"
+              whileTap={hasLanded ? { scale: 0.96 } : {}}
+              className="rounded-full text-white font-bold uppercase transition-all duration-300 disabled:cursor-not-allowed"
               style={{
-                backgroundColor: hasLanded && hueCSS ? hueCSS : 'rgba(255,255,255,0.06)',
-                color: hasLanded ? 'white' : 'rgba(255,255,255,0.25)',
+                minWidth: '200px',
+                padding: '20px 56px',
+                fontSize: '17px',
+                letterSpacing: '0.22em',
+                backgroundColor: hasLanded && hueCSS ? hueCSS : 'rgba(255,255,255,0.05)',
+                color: hasLanded ? 'white' : 'rgba(255,255,255,0.2)',
                 boxShadow: hasLanded && hueCSS
-                  ? `0 0 60px ${hueCSS}80, 0 0 30px ${hueCSS}40, inset 0 1px 1px rgba(255,255,255,0.2)`
-                  : 'none',
-                opacity: submitting ? 0.7 : 1,
-                letterSpacing: '0.15em',
+                  ? `0 0 80px ${hueCSS}90, 0 0 40px ${hueCSS}60, inset 0 1px 0 rgba(255,255,255,0.25), 0 14px 30px rgba(0,0,0,0.5)`
+                  : 'inset 0 1px 0 rgba(255,255,255,0.05)',
+                opacity: submitting ? 0.6 : 1,
               }}
             >
               {submitting ? 'painting' : 'paint'}
-            </button>
+            </motion.button>
           </div>
         </motion.div>
       )}
