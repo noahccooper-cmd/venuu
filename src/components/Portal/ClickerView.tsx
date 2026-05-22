@@ -114,7 +114,7 @@ export function ClickerView({
 
   // ── Portal analytics state ──
   const [tonightCheckins, setTonightCheckins] = useState<number | null>(null);
-  const [tonightAvgRating, setTonightAvgRating] = useState<number | null>(null);
+  const [tonightMomentsCount, setTonightMomentsCount] = useState<number | null>(null);
   const [weekVisitors, setWeekVisitors] = useState<number | null>(null);
   const [weekAvgPeak, setWeekAvgPeak] = useState<number | null>(null);
 
@@ -150,17 +150,20 @@ export function ClickerView({
         .eq('night_of', nightOf);
       setTonightCheckins(checkinCount ?? 0);
 
-      // Tonight's avg rating
-      const { data: recapRows } = await supabase
+      // Moments captured at this venue today. Replaces the stars-based
+      // avg rating that was removed in migration 00063 (recaps → moments
+      // pivot). Counts ALL rows including those still developing — the
+      // operator wants to see engagement happening live.
+      const { count: momentsCount, error: momentsErr } = await supabase
         .from('venue_recaps')
-        .select('stars')
+        .select('*', { count: 'exact', head: true })
         .eq('venue_id', venue.id)
         .eq('day_of', nightOf);
-      if (recapRows && recapRows.length > 0) {
-        const avg = recapRows.reduce((sum, r) => sum + r.stars, 0) / recapRows.length;
-        setTonightAvgRating(Math.round(avg * 10) / 10);
+      if (momentsErr) {
+        console.warn('[clicker] moments count failed', momentsErr.message);
+        setTonightMomentsCount(null);
       } else {
-        setTonightAvgRating(null);
+        setTonightMomentsCount(momentsCount ?? 0);
       }
 
       // This week: total loyalty check-ins
@@ -759,7 +762,7 @@ export function ClickerView({
               Check-ins
             </p>
           </div>
-          {/* Avg Rating */}
+          {/* Moments count */}
           <div style={{
             flex: 1,
             background: '#111114',
@@ -769,10 +772,10 @@ export function ClickerView({
             textAlign: 'center',
           }}>
             <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '24px', fontWeight: 800, color: '#FF8200', lineHeight: 1 }}>
-              {tonightAvgRating !== null ? `${tonightAvgRating}` : '--'}
+              {tonightMomentsCount !== null ? `${tonightMomentsCount}` : '--'}
             </p>
             <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '11px', color: '#8A8A95', marginTop: '4px' }}>
-              Avg Rating
+              Moments tonight
             </p>
           </div>
         </div>
