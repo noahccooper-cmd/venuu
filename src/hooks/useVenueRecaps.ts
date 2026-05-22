@@ -1,18 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase, envReady } from '../lib/supabase';
 import { getNightOf } from '../lib/utils';
-import { recordSignal } from '../lib/signals';
 import type { VenueRecap } from '../lib/types';
 
 export function useVenueRecaps(venueId: string | null, username?: string) {
   const [recaps, setRecaps] = useState<VenueRecap[]>([]);
-  const [avgRating, setAvgRating] = useState<number | null>(null);
-  const [totalRecaps, setTotalRecaps] = useState(0);
   const nightOf = getNightOf();
   // Track IDs we already have to avoid realtime duplicates
   const knownIds = useRef(new Set<string>());
 
-  // Whether the current user already posted tonight
+  // Whether the current user already captured a moment at this venue (lifetime)
   const hasUserRecapped = useMemo(() => {
     if (!username) return false;
     return recaps.some(r => r.username === username);
@@ -44,31 +41,6 @@ export function useVenueRecaps(venueId: string | null, username?: string) {
       });
   }, [venueId, nightOf]);
 
-  // Fetch all-time rating stats for this venue
-  useEffect(() => {
-    if (!envReady || !venueId) {
-      setAvgRating(null);
-      setTotalRecaps(0);
-      return;
-    }
-
-    supabase
-      .from('venue_recaps')
-      .select('stars')
-      .eq('venue_id', venueId)
-      .then(({ data, error }) => {
-        if (error || !data || data.length === 0) {
-          setAvgRating(null);
-          setTotalRecaps(0);
-          return;
-        }
-        const rows = data as { stars: number }[];
-        const sum = rows.reduce((acc, r) => acc + r.stars, 0);
-        setAvgRating(Math.round((sum / rows.length) * 10) / 10);
-        setTotalRecaps(rows.length);
-      });
-  }, [venueId, recaps.length]); // re-fetch when new recaps are added
-
   // Real-time subscription for new recaps from OTHER users
   useEffect(() => {
     if (!envReady || !venueId) return;
@@ -98,60 +70,16 @@ export function useVenueRecaps(venueId: string | null, username?: string) {
     };
   }, [venueId, nightOf]);
 
-  const submitRecap = useCallback(async (uname: string, body: string, stars: number) => {
-    if (!envReady || !venueId || !body.trim() || stars < 1) return;
-
-    const trimmed = body.trim().slice(0, 200);
-    const optimisticId = crypto.randomUUID();
-    knownIds.current.add(optimisticId);
-
-    const { data, error } = await supabase
-      .from('venue_recaps')
-      .insert({
-        id: optimisticId,
-        venue_id: venueId,
-        username: uname,
-        body: trimmed,
-        stars,
-        day_of: nightOf,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      // Handle unique constraint violation (duplicate recap)
-      if (error.code === '23505') {
-        console.warn('[recap] Duplicate — already posted tonight');
-        return;
-      }
-      console.error('[recap] Insert error:', error.message);
-      return;
-    }
-
-    if (data) {
-      const row = data as VenueRecap;
-      knownIds.current.add(row.id);
-      setRecaps(prev => [row, ...prev]);
-    }
-
-    // PREDICTION ENGINE: log recap post as a signal
-    if (venueId) {
-      recordSignal({
-        venueId,
-        signalType: 'recap_post',
-        sourceTable: 'venue_recaps',
-        sourceRowId: optimisticId,
-        metadata: { stars, body_length: trimmed.length },
-      });
-    }
-  }, [venueId, nightOf]);
+  const submitRecap = useCallback(async () => {
+    // Direct recap submission is deprecated. Moments are submitted
+    // via the submit_moment RPC, which requires a photo_url + hue.
+    // PROMPT 43 wires this up with the camera + storage upload flow.
+    throw new Error('submitRecap is deprecated — use the moments capture flow');
+  }, []);
 
   return {
     recaps,
     submitRecap,
-    avgRating,
-    totalRecaps,
-    tonightCount: recaps.length,
     hasUserRecapped,
   };
 }

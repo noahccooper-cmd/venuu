@@ -134,9 +134,12 @@ export interface VenueRecap {
   created_at: string;
   venue_id: string;
   username: string;
-  body: string;
-  stars: number;
+  body: string | null;
   day_of: string;
+  photo_url: string;
+  hue_at_capture: number;
+  developed_at: string;
+  user_id: string | null;
 }
 
 export interface ClickerLog {

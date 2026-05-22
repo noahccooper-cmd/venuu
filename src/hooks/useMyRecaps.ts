@@ -7,9 +7,11 @@ export interface MyRecap {
   venue_id: string;
   venue_name: string;
   username: string;
-  body: string;
-  stars: number;
+  body: string | null;
   day_of: string;
+  photo_url: string;
+  hue_at_capture: number;
+  developed_at: string;
 }
 
 export function useMyRecaps(username: string | null) {
@@ -26,7 +28,7 @@ export function useMyRecaps(username: string | null) {
     setLoading(true);
     supabase
       .from('venue_recaps')
-      .select('id, created_at, venue_id, username, body, stars, day_of, venues(name)')
+      .select('id, created_at, venue_id, username, body, day_of, photo_url, hue_at_capture, developed_at, venues(name)')
       .eq('username', username)
       .order('created_at', { ascending: false })
       .limit(20)
@@ -43,8 +45,10 @@ export function useMyRecaps(username: string | null) {
           venue_name: r.venues?.name ?? 'Unknown venue',
           username: r.username,
           body: r.body,
-          stars: r.stars,
           day_of: r.day_of,
+          photo_url: r.photo_url,
+          hue_at_capture: r.hue_at_capture,
+          developed_at: r.developed_at,
         }));
         setRecaps(rows);
         setLoading(false);
