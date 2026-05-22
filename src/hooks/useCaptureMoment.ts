@@ -55,10 +55,11 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
       setStatus('preview');
     } catch (err: any) {
       // User cancellation should reset cleanly, not show an error
-      if (err?.message?.toLowerCase().includes('cancel')) {
+      if (err?.message?.toLowerCase().includes('cancel') || err?.message?.toLowerCase().includes('user cancelled')) {
         setStatus('idle');
         return;
       }
+      console.warn('[capture] camera failed:', err);
       setStatus('error');
       setError(err?.message || 'Camera unavailable');
     }

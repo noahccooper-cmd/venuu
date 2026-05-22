@@ -113,21 +113,31 @@ export default function PaintScreen({
     }
   }, [open]);
 
-  // Fetch username once for the submit_moment call
+  // Load the user's username for the moment submission. Without this,
+  // the capture UI is gated to never appear (and the existing flow
+  // fell through to paint-only silently). This is the fix for the
+  // device-tested "no camera button" bug.
   useEffect(() => {
     if (!open) return;
-    supabase.auth.getUser().then(({ data }) => {
-      const u = data.user;
-      if (!u) return;
-      supabase
+    let cancelled = false;
+    (async () => {
+      const { data: userRes } = await supabase.auth.getUser();
+      if (cancelled || !userRes?.user) return;
+      const { data: profile, error } = await supabase
         .from('profiles')
         .select('username')
-        .eq('auth_id', u.id)
-        .maybeSingle()
-        .then(({ data: profile }) => {
-          if (profile?.username) setPaintUsername(profile.username);
-        });
-    });
+        .eq('auth_id', userRes.user.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        console.warn('[paint] profile lookup failed:', error.message);
+        return;
+      }
+      if (profile?.username) {
+        setPaintUsername(profile.username);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [open]);
 
   const handlePaint = async () => {

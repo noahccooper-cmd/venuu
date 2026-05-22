@@ -739,6 +739,29 @@ export default function App() {
     return () => window.removeEventListener('push-notification', handler);
   }, []);
 
+  // PATCH 44A — in-app paint entry. The venue card dispatches a
+  // request-paint event when a user inside a geofenced venue taps
+  // "paint this venue." This opens the same PaintScreen as the
+  // push-driven path.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { venueId: string; venueName: string; lat: number; lng: number };
+      if (!detail?.venueId || !detail?.venueName) return;
+      setActivePaintVenue({
+        id: detail.venueId,
+        name: detail.venueName,
+        lat: detail.lat,
+        lng: detail.lng,
+      });
+      // In-app paint isn't tied to a server-side prompt.
+      setPaintPromptId(null);
+      setPaintVisitLabel('');
+      setPaintScreenOpen(true);
+    };
+    window.addEventListener('venuu:request-paint', handler);
+    return () => window.removeEventListener('venuu:request-paint', handler);
+  }, []);
+
   // ── activePlan lifecycle bound to activePlanSheet. When the
   //    sheet dismisses (close X, swipe-down past PILL, end-night
   //    completion sequence, etc.) we clear activePlan + the saved-

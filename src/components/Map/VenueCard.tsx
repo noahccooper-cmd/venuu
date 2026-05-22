@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { formatCount, getCapacityPercent, timeAgo } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
 import { useVenueRecaps } from '../../hooks/useVenueRecaps';
+import { useGeofence } from '../../hooks/useGeofence';
 import { PunchCard } from '../Loyalty/PunchCard';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
 import { recordSignal } from '../../lib/signals';
@@ -238,6 +239,7 @@ export function VenueSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const recapRef = useRef<HTMLDivElement>(null);
   const recapData = useVenueRecaps(venue.id, username);
+  const geofence = useGeofence(venue.lat, venue.lng);
   const startYRef = useRef(0);
   const currentYRef = useRef(0);
   const isDragging = useRef(false);
@@ -662,6 +664,68 @@ export function VenueSheet({
         {venue.category !== 'fraternity' && (
           <div style={{ padding: '0 16px' }}>
             <PunchCard venueId={venue.id} venueName={venue.name} venueLat={venue.lat} venueLng={venue.lng} loyaltyActive={venue.loyalty_active ?? false} nfcRequired={venue.nfc_required ?? false} userId={userId} onSignIn={onSignIn} />
+          </div>
+        )}
+
+        {/* In-app paint entry — new in 44A. Same destination as push-driven
+            paint, additional entry point. Geofence verified on tap. */}
+        {username && username !== 'Guest' && (
+          <div style={{
+            padding: '14px 16px',
+            margin: '12px 0',
+            borderRadius: '14px',
+            background: 'rgba(255, 130, 0, 0.04)',
+            border: '1px solid rgba(255, 130, 0, 0.18)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+          }}>
+            <button
+              onClick={() => {
+                if (!geofence.isNearVenue) {
+                  // Not inside — show the friendly message instead.
+                  // We use a simple alert here for now; PROMPT 44B will
+                  // polish this to a toast.
+                  const dist = geofence.distance != null ? `${geofence.distance}m` : 'unknown distance';
+                  alert(`Get within 200m of ${venue.name} to paint your night. You're ${dist} away.`);
+                  return;
+                }
+                // Geofenced — open PaintScreen for this venue.
+                // The actual open path is owned by App.tsx; for now, dispatch
+                // a custom event the App can listen for to open PaintScreen
+                // with this venue.
+                window.dispatchEvent(new CustomEvent('venuu:request-paint', {
+                  detail: { venueId: venue.id, venueName: venue.name, lat: venue.lat, lng: venue.lng },
+                }));
+              }}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                background: 'transparent',
+                border: 'none',
+                color: '#FF8200',
+                fontFamily: 'Satoshi, sans-serif',
+                fontSize: '14px',
+                fontWeight: 700,
+                letterSpacing: '1.5px',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                textAlign: 'center',
+              }}
+            >
+              {'✦'} paint this venue
+            </button>
+            {!geofence.isNearVenue && geofence.distance != null && (
+              <div style={{
+                fontSize: '10px',
+                color: 'rgba(255,255,255,0.35)',
+                fontFamily: 'Satoshi, sans-serif',
+                textAlign: 'center',
+                letterSpacing: '0.5px',
+              }}>
+                you must be inside · {geofence.distance}m away
+              </div>
+            )}
           </div>
         )}
 
