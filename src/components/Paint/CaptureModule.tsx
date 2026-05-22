@@ -94,8 +94,8 @@ export default function CaptureModule({ landedHue, onPhotoReady, onClear, captur
         </motion.div>
       ) : (
         <motion.div
-          key="capture-preview"
-          initial={{ opacity: 0, scale: 0.95 }}
+          key="capture-confirmed"
+          initial={{ opacity: 0, scale: 0.92 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35 }}
@@ -107,46 +107,90 @@ export default function CaptureModule({ landedHue, onPhotoReady, onClear, captur
             marginTop: '24px',
           }}
         >
-          {/* Photo with hue-tinted frame border */}
+          {/* Confirmation card — hue-tinted, no photo visible */}
           <div
             style={{
-              width: '180px',
-              height: '240px',
-              borderRadius: '14px',
-              overflow: 'hidden',
-              border: `4px solid ${hueBorder}`,
-              boxShadow: `0 0 28px ${hueGlow}, inset 0 0 0 1px rgba(255,255,255,0.06)`,
-              background: '#000',
-              position: 'relative',
+              width: '100%',
+              maxWidth: '320px',
+              padding: '20px 18px',
+              borderRadius: '16px',
+              border: `1.5px solid ${hueBorder}`,
+              background: `linear-gradient(135deg,
+                hsla(${landedHue.degrees}, ${landedHue.defaultSat}%, 50%, 0.08),
+                hsla(${landedHue.degrees}, ${landedHue.defaultSat}%, 30%, 0.04))`,
+              boxShadow: `0 0 28px ${hueGlow}, inset 0 0 0 1px rgba(255,255,255,0.04)`,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
             }}
           >
-            {capturedDataUrl && (
-              <img
-                src={capturedDataUrl}
-                alt="Your moment"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            )}
-            {/* Subtle hue gradient overlay at the bottom — engraving */}
+            {/* Mark — abstract symbol, not a photo. The hue carries the meaning. */}
             <div
               style={{
-                position: 'absolute',
-                inset: 0,
-                background: `linear-gradient(180deg, transparent 60%, ${hueGlow} 100%)`,
-                pointerEvents: 'none',
+                width: '52px',
+                height: '52px',
+                borderRadius: '50%',
+                border: `2px solid ${hueBorder}`,
+                background: `radial-gradient(circle,
+                  hsla(${landedHue.degrees}, 90%, 65%, 0.4) 0%,
+                  hsla(${landedHue.degrees}, 80%, 55%, 0.1) 70%,
+                  transparent 100%)`,
+                boxShadow: `0 0 20px ${hueGlow}, inset 0 0 12px hsla(${landedHue.degrees}, 90%, 60%, 0.25)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '20px',
+                color: hueBorder,
               }}
-            />
+            >
+              {'✦'}
+            </div>
+
+            <div
+              style={{
+                fontSize: '14px',
+                fontWeight: 800,
+                color: '#fff',
+                fontFamily: 'Satoshi, sans-serif',
+                letterSpacing: '2px',
+                textTransform: 'uppercase',
+                textAlign: 'center',
+                marginTop: '4px',
+              }}
+            >
+              moment captured
+            </div>
+
+            <div
+              style={{
+                fontSize: '11px',
+                color: 'rgba(255,255,255,0.55)',
+                fontFamily: 'Satoshi, sans-serif',
+                letterSpacing: '1px',
+                textTransform: 'uppercase',
+                textAlign: 'center',
+              }}
+            >
+              develops at 8am tomorrow
+            </div>
+
+            <div
+              style={{
+                fontSize: '10px',
+                color: 'rgba(255,255,255,0.3)',
+                fontFamily: 'Satoshi, sans-serif',
+                letterSpacing: '0.5px',
+                textAlign: 'center',
+                marginTop: '4px',
+                fontStyle: 'italic',
+              }}
+            >
+              you'll see it in the morning
+            </div>
           </div>
-          <div style={{
-            fontSize: '10px',
-            color: 'rgba(255,255,255,0.4)',
-            fontFamily: 'Satoshi, sans-serif',
-            letterSpacing: '1px',
-            textTransform: 'uppercase',
-            marginTop: '4px',
-          }}>
-            develops tomorrow at 8am
-          </div>
+
+          {/* Escape link — clear photo, paint without moment */}
           <button
             onClick={onClear}
             style={{
@@ -163,7 +207,7 @@ export default function CaptureModule({ landedHue, onPhotoReady, onClear, captur
               marginTop: '2px',
             }}
           >
-            clear photo, paint only
+            clear capture, paint only
           </button>
         </motion.div>
       )}
