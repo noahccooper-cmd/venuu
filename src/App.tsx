@@ -67,7 +67,6 @@ export default function App() {
 
   const [tab, setTab] = useState<Tab>('tonight');
   const [focusedVenue, setFocusedVenue] = useState<{ venue: Venue; headcount: Headcount | null } | null>(null);
-  const username = localStorage.getItem('venue_username') ?? 'Guest';
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('venuu_onboarded') === 'true');
   const [showSignIn, setShowSignIn] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
@@ -132,6 +131,17 @@ export default function App() {
   const planSheetLiveByVenueId = useMemo<Map<string, LiveStopState>>(() => new Map(), []);
   const { city, switchCity } = useCity();
   const { user, profile, needsOnboard, signInWithApple, sendMagicLink, createProfile, signOut, refreshProfile } = useAuth();
+
+  // Username source-of-truth: profile.username (from useAuth → DB) is the
+  // canonical value. Legacy localStorage covers the brief window where the
+  // profile is still loading; 'Guest' is the terminal fallback for truly
+  // unauthenticated sessions. Previously this was inverted (localStorage
+  // first, declared above useAuth, no profile lookup), so any user missing
+  // a 'venue_username' key posted recaps as @Guest.
+  const username = useMemo(
+    () => profile?.username ?? localStorage.getItem('venue_username') ?? 'Guest',
+    [profile?.username],
+  );
   const { venues, error: venuesError, refetch: refetchVenues } = useVenues(city);
   const cityAggregatesData = useCityAggregates();
   const tonightMapRef = useRef<MapboxMap | null>(null);
