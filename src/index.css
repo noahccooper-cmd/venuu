@@ -503,11 +503,11 @@ body {
 
 @-webkit-keyframes venue-pulse-slow {
   0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); }
-  50% { -webkit-transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.04) translateZ(0); }
 }
 @keyframes venue-pulse-slow {
   0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); }
-  50% { transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+  50% { transform: translate(-50%, -50%) scale(1.04) translateZ(0); }
 }
 @-webkit-keyframes venue-pulse-medium {
   0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); }
@@ -602,11 +602,11 @@ body {
 
 @-webkit-keyframes heat-glow-breathe {
   0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: inherit; }
-  50% { -webkit-transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.04) translateZ(0); }
 }
 @keyframes heat-glow-breathe {
   0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); opacity: inherit; }
-  50% { transform: translate(-50%, -50%) scale(1.06) translateZ(0); }
+  50% { transform: translate(-50%, -50%) scale(1.04) translateZ(0); }
 }
 
 /* Orbiting particles — energy field around packed venues (100+) */
@@ -696,28 +696,35 @@ body {
 }
 
 /* Featured venue label below venue name */
+/* Featured v3: editorial label — uppercase, tracked, hue-tinted.
+   Positioning preserved from before; only the typography upgraded.
+   --featured-hue is set on the marker root so it cascades here. */
 .venue-featured-label {
   position: absolute;
   top: 34px;
   left: 0;
   transform: translateX(-50%);
   font-family: 'Satoshi', sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  color: #A855F7;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: hsla(var(--featured-hue, 290), 60%, 88%, 0.92);
   text-align: center;
   white-space: nowrap;
   pointer-events: none;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  text-shadow:
+    0 0 4px hsla(var(--featured-hue, 290), 90%, 60%, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
 @-webkit-keyframes featured-breathe {
   0%, 100% { -webkit-transform: translate(-50%, -50%) scale(1) translateZ(0); -webkit-filter: brightness(1); }
-  50% { -webkit-transform: translate(-50%, -50%) scale(1.06) translateZ(0); -webkit-filter: brightness(1.15); }
+  50% { -webkit-transform: translate(-50%, -50%) scale(1.04) translateZ(0); -webkit-filter: brightness(1.12); }
 }
 @keyframes featured-breathe {
   0%, 100% { transform: translate(-50%, -50%) scale(1) translateZ(0); filter: brightness(1); }
-  50% { transform: translate(-50%, -50%) scale(1.06) translateZ(0); filter: brightness(1.15); }
+  50% { transform: translate(-50%, -50%) scale(1.04) translateZ(0); filter: brightness(1.12); }
 }
 
 /* Featured halo glow pulse — animates box-shadow on a slower cadence than
@@ -751,6 +758,73 @@ body {
       0 0 16px hsla(var(--featured-hue, 290), 100%, 80%, 1.0),
       0 4px 16px rgba(0, 0, 0, 0.5);
   }
+}
+
+/* ── Featured v3: Concentric radiating rings ─────────────────────
+   Subtle but impressive. Two rings expand outward on a 6s cycle with
+   staggered starts so motion is layered, not synchronized. Restraint:
+   opacity caps at 0.45 (ring 1) and 0.25 (ring 2). Hue inherited from
+   --featured-hue on the marker root. */
+.venue-featured-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1);
+  border: 1.5px solid hsla(var(--featured-hue, 290), 80%, 65%, 0.5);
+  background: radial-gradient(circle,
+    hsla(var(--featured-hue, 290), 90%, 70%, 0.08) 0%,
+    hsla(var(--featured-hue, 290), 90%, 70%, 0.02) 60%,
+    transparent 100%);
+}
+
+.venue-featured-ring-1 {
+  width: 64px;
+  height: 64px;
+  animation: featured-ring-1 6s ease-out infinite;
+}
+
+.venue-featured-ring-2 {
+  width: 64px;
+  height: 64px;
+  animation: featured-ring-2 6s ease-out infinite;
+  animation-delay: 2s;
+}
+
+@keyframes featured-ring-1 {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.45; border-width: 1.5px; }
+  70% { opacity: 0.18; }
+  100% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; border-width: 0.5px; }
+}
+
+@keyframes featured-ring-2 {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.25; border-width: 1px; }
+  70% { opacity: 0.1; }
+  100% { transform: translate(-50%, -50%) scale(2.6); opacity: 0; border-width: 0.4px; }
+}
+
+/* ── Featured v3: Floating four-pointed star badge ───────────────
+   Sits above the bubble, gentle 6s pulse, hue-glow drop-shadow. */
+.venue-featured-star {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  line-height: 1;
+  color: hsl(var(--featured-hue, 290), 90%, 75%);
+  text-shadow:
+    0 0 6px hsla(var(--featured-hue, 290), 100%, 70%, 0.9),
+    0 0 12px hsla(var(--featured-hue, 290), 90%, 65%, 0.6);
+  pointer-events: none;
+  animation: featured-star-pulse 6s ease-in-out infinite;
+  z-index: 4;
+}
+
+@keyframes featured-star-pulse {
+  0%, 100% { opacity: 0.75; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.08); }
 }
 
 /* Live indicator dot */

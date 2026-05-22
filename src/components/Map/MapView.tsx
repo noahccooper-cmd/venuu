@@ -1291,7 +1291,38 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         ].join(', ');
         bubbleEl.dataset.featuredHue = String(featuredHue);
         bubbleEl.style.setProperty('--featured-hue', String(featuredHue));
-        setAnim(bubbleEl, 'featured-breathe 3s ease-in-out infinite, featured-halo-pulse 5s ease-in-out infinite');
+        // Slower cadences than v2 = confident, not jumpy.
+        setAnim(bubbleEl, 'featured-breathe 4s ease-in-out infinite, featured-halo-pulse 6s ease-in-out infinite');
+
+        // ── v3: Two concentric radiating rings + floating star badge ──
+        // Subtle but impressive. Rings sit BEHIND the bubble (inserted as
+        // first children) and slowly expand/fade on a stagger. Star sits
+        // ABOVE with a hue-glow drop-shadow. All inherit --featured-hue.
+
+        // Ring 1 — inner, brighter, faster
+        const featuredRing1 = document.createElement('div');
+        featuredRing1.className = 'venue-featured-ring venue-featured-ring-1';
+        featuredRing1.style.setProperty('--featured-hue', String(featuredHue));
+        el.insertBefore(featuredRing1, el.firstChild);
+
+        // Ring 2 — outer, softer, delayed
+        const featuredRing2 = document.createElement('div');
+        featuredRing2.className = 'venue-featured-ring venue-featured-ring-2';
+        featuredRing2.style.setProperty('--featured-hue', String(featuredHue));
+        el.insertBefore(featuredRing2, el.firstChild);
+
+        // Floating four-pointed star badge above the bubble.
+        const featuredStar = document.createElement('div');
+        featuredStar.className = 'venue-featured-star';
+        featuredStar.style.setProperty('--featured-hue', String(featuredHue));
+        featuredStar.textContent = '✦';  // ✦ four-pointed star
+        el.appendChild(featuredStar);
+
+        // Set the hue on the marker root so ALL descendants (bubble,
+        // rings, star, AND the sibling label) inherit --featured-hue.
+        el.style.setProperty('--featured-hue', String(featuredHue));
+        // Always render featured pins above regular venues.
+        el.style.zIndex = '10';
       }
 
       // Initialize fraternity styling
