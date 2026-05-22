@@ -121,12 +121,19 @@ export function CinematicIntro({
 
   // ─── Identify ring screen tracking ───
   useEffect(() => {
-    if (phase !== 'identify' || !targetCenter) {
+    const map = mapRef.current;
+    if (!map || !targetCenter) {
       setRingScreen(null);
       return;
     }
-    const map = mapRef.current;
-    if (!map) return;
+
+    // Only project during identify — outside it, hide the ring. No point
+    // computing screen pixels while the camera is mid-flight elsewhere.
+    if (phase !== 'identify') {
+      setRingScreen(null);
+      return;
+    }
+
     const project = () => {
       try {
         const p = map.project([targetCenter.lng, targetCenter.lat]);
@@ -135,12 +142,42 @@ export function CinematicIntro({
         // map can briefly be in an unprojectable state during a flyTo
       }
     };
-    project();
-    map.on('move', project);
-    return () => {
-      map.off('move', project);
+
+    // Wait for the identify flyTo to SETTLE before the first projection.
+    // Projecting immediately lands the ring in a stale screen position
+    // (the camera is still en route from globe-emerge → looks like it's
+    // over Canada) before snapping into place. moveend fires when the
+    // flyTo animation completes.
+    let settled = false;
+    const onSettle = () => {
+      settled = true;
+      project();
     };
-  }, [phase, mapRef, targetCenter]);
+    map.once('moveend', onSettle);
+
+    // Subsequent moves (panning during identify, or descent starting)
+    // keep the ring locked — but only AFTER the initial settle, so we
+    // don't fight the in-flight flyTo.
+    const onMove = () => {
+      if (settled) project();
+    };
+    map.on('move', onMove);
+
+    // Safety fallback — if moveend never fires (flyTo interrupted),
+    // project after 800ms anyway (comfortably > the 700ms identify flyTo).
+    const fallback = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        project();
+      }
+    }, 800);
+
+    return () => {
+      map.off('moveend', onSettle);
+      map.off('move', onMove);
+      window.clearTimeout(fallback);
+    };
+  }, [phase, targetCenter, mapRef]);
 
   // ─── Phase 7 — drain to inactive ───
   useEffect(() => {
