@@ -867,6 +867,24 @@ function MarketLiveVenueBubbleInner({
     prevPulseRef.current = curr;
   }, [stateLabel]);
 
+  // Phase 6 — initial scales smoothly across the mid band so leaning
+  // into the city feels like the letter is growing toward you. Linear
+  // 0.9× at zoom 11 → 1.15× at zoom 13. Outside the mid band the value
+  // is unused — React unmounts the initial via the conditional render.
+  //
+  // HOOK ORDER NOTE: This useMemo must run on EVERY render, including
+  // renders where the algorithm-data guard below returns null. It used
+  // to live after the guard, causing a Rules of Hooks violation when
+  // estimate-presence toggled between renders — the crash that filled
+  // 1.7.0's App Store crash logs. Don't move it back.
+  const initialScale = useMemo(() => {
+    const tierInline = getZoomTier(mapZoom);
+    if (tierInline !== 'mid') return 1;
+    const z = mapZoom ?? 12;
+    const t = Math.max(0, Math.min(1, (z - 11) / 2));
+    return 0.9 + t * 0.25;
+  }, [mapZoom]);
+
   // No render when engine has nothing — same algorithm-run gate as legacy.
   if (!hasAlgorithmData(estimate)) return null;
 
@@ -889,16 +907,6 @@ function MarketLiveVenueBubbleInner({
     ? Math.round((1 - Math.min(1, Math.max(0, movementMagnitude ?? 0))) * 600)
     : 0;
 
-  // Phase 6 — initial scales smoothly across the mid band so leaning
-  // into the city feels like the letter is growing toward you. Linear
-  // 0.9× at zoom 11 → 1.15× at zoom 13. Outside the mid band the value
-  // is unused — React unmounts the initial via the conditional render.
-  const initialScale = useMemo(() => {
-    if (tier !== 'mid') return 1;
-    const z = mapZoom ?? 12;
-    const t = Math.max(0, Math.min(1, (z - 11) / 2));
-    return 0.9 + t * 0.25;
-  }, [tier, mapZoom]);
 
   // Capacity gauge — Phase 1 collapses the separate concentric arc
   // into the capsule's own border at tight zoom. Clamped 0–1 for
