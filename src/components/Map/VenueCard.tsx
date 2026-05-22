@@ -88,13 +88,6 @@ function RecapCard({ recap }: { recap: any; index: number }) {
           <span className="recap-time">{timeAgo(recap.created_at)}</span>
         </div>
       </div>
-      <div className="recap-stars">
-        {[1, 2, 3, 4, 5].map(s => (
-          <span key={s} className={`star ${s <= recap.stars ? 'filled' : 'empty'}`}>
-            {s <= recap.stars ? '\u2605' : '\u2606'}
-          </span>
-        ))}
-      </div>
       <p className="recap-body">{recap.body}</p>
     </div>
   );
@@ -102,60 +95,52 @@ function RecapCard({ recap }: { recap: any; index: number }) {
 
 /* ── Leave a Recap ── */
 
-function LeaveRecap({ username, submitRecap, disabled }: { venue: Venue; username: string; submitRecap: (u: string, b: string, s: number) => Promise<void>; disabled?: boolean }) {
-  const [stars, setStars] = useState(0);
-  const [text, setText] = useState('');
-
-  const submit = useCallback(async () => {
-    if (stars === 0 || !text.trim()) return;
-    if (navigator.vibrate) navigator.vibrate(10);
-    await submitRecap(username, text.trim(), stars);
-    setStars(0);
-    setText('');
-  }, [stars, text, username, submitRecap]);
-
+function LeaveRecap({ disabled }: {
+  venue: Venue;
+  username: string;
+  submitRecap: (u: string, b: string, s: number) => Promise<void>;
+  disabled?: boolean;
+}) {
   if (disabled) {
     return (
-      <div className="leave-recap">
+      <div className="leave-recap" style={{ textAlign: 'center', padding: '16px' }}>
         <div style={{
-          textAlign: 'center',
-          padding: '12px',
-          color: 'rgba(255,255,255,0.35)',
+          color: 'rgba(255,255,255,0.4)',
           fontSize: '13px',
           fontFamily: 'Satoshi, sans-serif',
           fontStyle: 'italic',
         }}>
-          {'\u2705'} You've already left a recap here tonight
+          {'\u2728'} Your moment at this venue is captured
         </div>
       </div>
     );
   }
 
   return (
-    <div className="leave-recap">
-      <div className="recap-input-label">{'\u2B50'} Leave your recap</div>
-      <div className="star-selector">
-        {[1, 2, 3, 4, 5].map(s => (
-          <button
-            key={s}
-            className={`star-btn ${s <= stars ? 'active' : ''}`}
-            onClick={() => setStars(s)}
-          >
-            {'\u2605'}
-          </button>
-        ))}
+    <div className="leave-recap" style={{
+      textAlign: 'center',
+      padding: '20px 16px',
+      background: 'rgba(255,255,255,0.03)',
+      border: '1px dashed rgba(255,255,255,0.12)',
+      borderRadius: '12px',
+      margin: '12px 0',
+    }}>
+      <div style={{
+        fontSize: '14px',
+        fontWeight: 600,
+        color: 'rgba(255,255,255,0.7)',
+        fontFamily: 'Satoshi, sans-serif',
+        marginBottom: '4px',
+      }}>
+        {'\u2728'} Moments coming soon
       </div>
-      <input
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="How was tonight?"
-        maxLength={200}
-        className="recap-input recap-input-full"
-        onKeyDown={e => e.key === 'Enter' && submit()}
-      />
-      <button onClick={submit} className="recap-submit-full" disabled={stars === 0 || !text.trim()}>
-        POST RECAP
-      </button>
+      <div style={{
+        fontSize: '11px',
+        color: 'rgba(255,255,255,0.4)',
+        fontFamily: 'Satoshi, sans-serif',
+      }}>
+        paint + capture one moment per venue, develops at 8am
+      </div>
     </div>
   );
 }
@@ -169,7 +154,7 @@ interface RecapSectionProps {
 }
 
 function RecapSection({ venue, username, recapData }: RecapSectionProps) {
-  const { recaps, submitRecap, avgRating, totalRecaps, tonightCount, hasUserRecapped } = recapData;
+  const { recaps, submitRecap, hasUserRecapped } = recapData;
   const [expanded, setExpanded] = useState(false);
 
   const visibleRecaps = expanded ? recaps : recaps.slice(0, 3);
@@ -177,40 +162,22 @@ function RecapSection({ venue, username, recapData }: RecapSectionProps) {
 
   return (
     <div className="recap-section">
-      {/* venuu rating header */}
+      {/* moments header */}
       <div className="recap-header-row">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="recap-title">RECAPS</span>
-          {avgRating !== null && (
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '3px',
-              fontSize: '13px',
-              fontWeight: 700,
-              color: '#FF8200',
-              fontFamily: 'Satoshi, sans-serif',
-            }}>
-              {'\u2605'} {avgRating}
-              <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px', fontWeight: 500 }}>
-                ({totalRecaps})
-              </span>
-            </span>
-          )}
-        </div>
-        {tonightCount > 0 && (
-          <span style={{
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.4)',
-            fontFamily: 'Satoshi, sans-serif',
-          }}>
-            {tonightCount} recap{tonightCount === 1 ? '' : 's'} tonight
-          </span>
-        )}
+        <span className="recap-title">Moments from {venue.name}</span>
       </div>
       <div className="recap-list">
         {recaps.length === 0 ? (
-          <p className="recap-empty">No recaps yet — be the first!</p>
+          <div style={{
+            padding: '24px 16px',
+            textAlign: 'center',
+            color: 'rgba(255,255,255,0.3)',
+            fontSize: '13px',
+            fontStyle: 'italic',
+            fontFamily: 'Satoshi, sans-serif',
+          }}>
+            No moments captured here yet
+          </div>
         ) : (
           <>
             {visibleRecaps.map((r, i) => <RecapCard key={r.id} recap={r} index={i} />)}
@@ -271,7 +238,6 @@ export function VenueSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const recapRef = useRef<HTMLDivElement>(null);
   const recapData = useVenueRecaps(venue.id, username);
-  const { avgRating: venueAvgRating, totalRecaps: venueTotalRecaps, tonightCount: venueTonightCount } = recapData;
   const startYRef = useRef(0);
   const currentYRef = useRef(0);
   const isDragging = useRef(false);
@@ -453,11 +419,6 @@ export function VenueSheet({
                 {formatCount(count)} inside
               </p>
             )}
-            {venueAvgRating !== null && (
-              <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 13, fontWeight: 600, color: '#C9A96E', margin: '6px 0 0' }}>
-                {'\u2605'} {venueAvgRating} <span style={{ color: '#8A8A95', fontSize: 11, fontWeight: 400 }}>({venueTotalRecaps} rating{venueTotalRecaps !== 1 ? 's' : ''})</span>
-              </p>
-            )}
           </div>
         )}
 
@@ -548,30 +509,6 @@ export function VenueSheet({
         {venue.category !== 'fraternity' && <div className="sheet-info">
           <div className="sheet-name-row">
             <h2 className="sheet-name" style={venue.featured ? { borderLeft: '3px solid #A855F7', paddingLeft: 10 } : undefined}>{venue.name}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* venuu community rating (primary) */}
-              {venueAvgRating !== null && (
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: '#FF8200',
-                  fontFamily: 'Satoshi, sans-serif',
-                }}>
-                  {'\u2605'} {venueAvgRating}
-                  <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: 500 }}>
-                    ({venueTotalRecaps})
-                  </span>
-                  {venueTonightCount > 0 && (
-                    <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', fontWeight: 500 }}>
-                      {' \u00B7 '}{venueTonightCount} recap{venueTonightCount === 1 ? '' : 's'} tonight
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
           </div>
           {venue.address && (
             <button

@@ -17,7 +17,6 @@ import { useMyPlans, type MyPlan } from '../../hooks/useMyPlans';
 import { useMyStamps, type Stamp } from '../../hooks/useMyStamps';
 import { useCountUp } from '../../hooks/useCountUp';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
-import { timeAgo } from '../../lib/utils';
 import { formatCoverPrice } from '../../lib/coverPricing';
 import { supabase } from '../../lib/supabase';
 import { generateProfileSnapshot } from '../../lib/profileSnapshot';
@@ -349,7 +348,8 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   // ── Existing data (preserved) ──
   const { bars, loading: barsLoading } = useVisitHistory(profile.auth_id);
-  const { recaps: myRecaps, loading: recapsLoading } = useMyRecaps(profile.username);
+  // hook stays wired for the photo-aware "My Venues" view; bindings re-added when that lands
+  useMyRecaps(profile.username);
 
   // ── New data sources ──
   const stats = useUserAccountStats({
@@ -379,7 +379,6 @@ export function ProfileScreen({
   }, [plansLoading, plans.length, profile.auth_id, profile.id]);
 
   // ── UI state ──
-  const [showAllRecaps, setShowAllRecaps] = useState(false);
   const [showAllStamps, setShowAllStamps] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -1678,76 +1677,33 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* ── 9. MY RECAPS (preserved) ─────────────────────── */}
+        {/* ── 9. MY VENUES (placeholder for moments feature) ── */}
         <div style={{ padding: '20px 16px 0' }}>
-          <SectionHeader
-            icon={<Star size={16} strokeWidth={1.8} style={{ color: 'var(--brand-orange)' }} />}
-            title="My Recaps"
-          />
-          {recapsLoading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
-              <div className="w-6 h-6 border-2 border-[#FF8200] border-t-transparent rounded-full animate-spin" />
+          <div style={{
+            padding: '20px 16px',
+            margin: '12px 0',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px dashed rgba(255,255,255,0.12)',
+            borderRadius: '12px',
+            textAlign: 'center',
+          }}>
+            <div style={{
+              fontSize: '14px',
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.7)',
+              fontFamily: 'Satoshi, sans-serif',
+              marginBottom: '4px',
+            }}>
+              {'✨'} My Venues
             </div>
-          ) : myRecaps.length === 0 ? (
-            <EmptyState
-              icon={Star}
-              title="No recaps yet"
-              body="Drop a star rating after your next night out — it sharpens what Venny remembers about you."
-              ctaLabel="Get Tonight Started →"
-              onCta={() => { hapticLight(); onClose(); }}
-            />
-          ) : (
-            <GlassCard style={{ padding: 0 }}>
-              {(showAllRecaps ? myRecaps : myRecaps.slice(0, 10)).map((recap, idx, arr) => (
-                <div
-                  key={recap.id}
-                  style={{
-                    padding: '12px 16px',
-                    borderBottom: idx < arr.length - 1 ? '1px solid var(--border-hairline)' : 'none',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <p style={{
-                      fontFamily: FONT, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      flex: 1, minWidth: 0, margin: 0,
-                    }}>
-                      {recap.venue_name}
-                    </p>
-                    <span style={{ fontFamily: FONT, fontSize: 11, color: 'var(--text-muted)', marginLeft: 8, flexShrink: 0 }}>
-                      {timeAgo(recap.created_at)}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 4 }}>
-                    {[1, 2, 3, 4, 5].map(s => (
-                      <span key={s} style={{ fontSize: 12, color: s <= recap.stars ? '#FF8200' : 'var(--text-faded)' }}>
-                        {'★'}
-                      </span>
-                    ))}
-                  </div>
-                  <p style={{ fontFamily: FONT, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4, margin: 0 }}>
-                    {recap.body}
-                  </p>
-                </div>
-              ))}
-              {myRecaps.length > 10 && !showAllRecaps && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllRecaps(true)}
-                  style={{
-                    width: '100%', padding: 12,
-                    background: 'transparent', border: 'none',
-                    color: 'var(--brand-orange)',
-                    fontSize: 13, fontWeight: 600, fontFamily: FONT,
-                    cursor: 'pointer', borderTop: '1px solid var(--border-hairline)',
-                    WebkitTapHighlightColor: 'transparent',
-                  }}
-                >
-                  Show more recaps
-                </button>
-              )}
-            </GlassCard>
-          )}
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255,255,255,0.4)',
+              fontFamily: 'Satoshi, sans-serif',
+            }}>
+              your nightlife map — coming with the moments feature
+            </div>
+          </div>
         </div>
 
         {/* ── 10. SETTINGS ─────────────────────────────────── */}
