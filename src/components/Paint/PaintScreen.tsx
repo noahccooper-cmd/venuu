@@ -114,15 +114,25 @@ export default function PaintScreen({
   }, [open]);
 
   // Load the user's username for the moment submission. Without this,
-  // the capture UI is gated to never appear (and the existing flow
-  // fell through to paint-only silently). This is the fix for the
-  // device-tested "no camera button" bug.
+  // the capture UI is gated to never appear. Heavy logging so next
+  // device test surfaces what's actually happening.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    console.log('[PaintScreen] effect: fetching paintUsername, open=', open);
     (async () => {
-      const { data: userRes } = await supabase.auth.getUser();
-      if (cancelled || !userRes?.user) return;
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr) {
+        console.warn('[PaintScreen] auth.getUser failed:', userErr.message);
+        return;
+      }
+      if (cancelled) return;
+      if (!userRes?.user) {
+        console.warn('[PaintScreen] no auth user — paint username will stay null (Guest)');
+        return;
+      }
+      console.log('[PaintScreen] auth user id:', userRes.user.id);
+
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('username')
@@ -130,40 +140,70 @@ export default function PaintScreen({
         .maybeSingle();
       if (cancelled) return;
       if (error) {
-        console.warn('[paint] profile lookup failed:', error.message);
+        console.warn('[PaintScreen] profile lookup failed:', error.message, error);
         return;
       }
-      if (profile?.username) {
-        setPaintUsername(profile.username);
+      if (!profile) {
+        console.warn('[PaintScreen] profile row not found for auth_id:', userRes.user.id);
+        return;
       }
+      if (!profile.username) {
+        console.warn('[PaintScreen] profile found but username is empty:', profile);
+        return;
+      }
+      console.log('[PaintScreen] paintUsername resolved:', profile.username);
+      setPaintUsername(profile.username);
     })();
     return () => { cancelled = true; };
   }, [open]);
 
   const handlePaint = async () => {
-    if (!landedHueId || !landedHue || submitting) return;
+    if (!landedHueId || !landedHue || submitting) {
+      console.log('[PaintScreen] submit blocked', {
+        landedHueId, landedHue: landedHue?.name, submitting,
+      });
+      return;
+    }
     setSubmitting(true);
 
-    const hasPhoto = capture.status === 'preview' && !!capture.capturedDataUrl;
+    const hasPhoto = capture.status === 'preview' && capture.capturedDataUrl;
+    console.log('[PaintScreen] submit start', {
+      venueId, venueName, paintPromptId, paintUsername,
+      landedHueId, hueDegrees: landedHue.degrees, hasPhoto,
+    });
 
     try {
-      // 1. If a photo was captured, upload + submit the moment first.
-      //    A recoverable failure (already_crowned, upload, etc.) falls
-      //    back to paint-only — the vibe contribution shouldn't be held
-      //    hostage by photo issues.
+      // 1. If photo, upload + submit moment FIRST. If photo fails,
+      //    fall back to paint-only (vibe contribution shouldn't be
+      //    held hostage by photo issues).
       if (hasPhoto && paintUsername) {
+        console.log('[PaintScreen] submitting moment first');
         const result = await capture.submitMoment(
-          venueId,
-          paintUsername,
-          landedHue.degrees,
+          venueId, paintUsername, landedHue.degrees
         );
         if (!result.success) {
-          console.warn('[moment] submit failed:', result.error);
+          console.warn('[PaintScreen] moment submit failed, continuing with paint-only:', result.error);
           capture.reset();
+          // Show user-visible alert so they know photo didn't go but
+          // paint will still try.
+          if (result.error === 'already_crowned') {
+            alert("You've already crowned this venue. Painting only.");
+          } else {
+            alert('Photo failed to upload. Painting only.');
+          }
+        } else {
+          console.log('[PaintScreen] moment submitted successfully');
         }
       }
 
-      // 2. Paint contribution (existing flow — record_paint unchanged).
+      // 2. Paint contribution. The RPC ACCEPTS null prompt_id per
+      //    confirmed signature (DEFAULT NULL::uuid).
+      console.log('[PaintScreen] calling record_paint RPC', {
+        p_venue_id: venueId,
+        p_hue_id: landedHueId,
+        p_visit_first_seen_at: new Date().toISOString(),
+        p_paint_prompt_id: paintPromptId,
+      });
       const { data: ratingId, error: rpcErr } = await supabase.rpc('record_paint', {
         p_venue_id: venueId,
         p_hue_id: landedHueId,
@@ -172,15 +212,18 @@ export default function PaintScreen({
       });
 
       if (rpcErr) {
-        console.error('[PaintScreen] record_paint RPC failed', rpcErr);
+        console.error('[PaintScreen] record_paint RPC FAILED', rpcErr);
+        alert(`Paint failed: ${rpcErr.message || 'Unknown error'}`);
         setSubmitting(false);
         return;
       }
 
-      console.log('[PaintScreen] paint recorded, rating_id=', ratingId);
+      console.log('[PaintScreen] paint recorded successfully, rating_id=', ratingId);
+      console.log('[PaintScreen] calling onPainted(landedHueId), triggering ceremony');
       onPainted(landedHueId);
-    } catch (err) {
-      console.error('[PaintScreen] paint flow error', err);
+    } catch (err: any) {
+      console.error('[PaintScreen] paint flow EXCEPTION', err);
+      alert(`Paint error: ${err?.message || 'Unknown error'}`);
       setSubmitting(false);
     }
   };
@@ -292,15 +335,30 @@ export default function PaintScreen({
             </motion.div>
           </div>
 
-          {/* Capture module — appears once a hue is landed (auth users only) */}
-          {landedHue && paintUsername && (
+          {/* Capture module — appears once a hue is landed. If username
+              is still resolving, show a placeholder so a stuck username
+              fetch is visible instead of silently rendering nothing. */}
+          {landedHue && (
             <div className="flex justify-center px-7">
-              <CaptureModule
-                landedHue={landedHue}
-                capture={capture}
-                onPhotoReady={() => { /* no-op — preview state managed by capture hook */ }}
-                onClear={() => capture.reset()}
-              />
+              {paintUsername ? (
+                <CaptureModule
+                  landedHue={landedHue}
+                  capture={capture}
+                  onPhotoReady={() => { /* no-op — preview state managed by capture hook */ }}
+                  onClear={() => capture.reset()}
+                />
+              ) : (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '24px 16px',
+                  color: 'rgba(255,255,255,0.4)',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontSize: '12px',
+                  letterSpacing: '0.5px',
+                }}>
+                  loading capture…
+                </div>
+              )}
             </div>
           )}
 

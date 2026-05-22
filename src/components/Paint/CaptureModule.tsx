@@ -29,7 +29,9 @@ export default function CaptureModule({ landedHue, onPhotoReady, onClear, captur
   const hueGlow = `hsla(${landedHue.degrees}, ${landedHue.defaultSat}%, 60%, 0.5)`;
 
   const handleCapture = async () => {
+    console.log('[CaptureModule] capture button clicked, landedHue:', landedHue.name, 'degrees:', landedHue.degrees);
     await capturePhoto();
+    console.log('[CaptureModule] capturePhoto returned, status now:', capture.status);
     onPhotoReady(landedHue, capture);
   };
 

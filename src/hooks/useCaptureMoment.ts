@@ -35,9 +35,11 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
   }, []);
 
   const capturePhoto = useCallback(async () => {
+    console.log('[capture] capturePhoto called, current status:', status);
     setStatus('capturing');
     setError(null);
     try {
+      console.log('[capture] calling Camera.getPhoto...');
       const photo = await Camera.getPhoto({
         quality: 85,
         width: 1080,
@@ -46,31 +48,36 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
         source: CameraSource.Camera,
         saveToGallery: false,
       });
+      console.log('[capture] Camera.getPhoto returned, has dataUrl:', !!photo.dataUrl);
       if (!photo.dataUrl) {
+        console.warn('[capture] photo missing dataUrl', photo);
         setStatus('error');
         setError('Photo capture failed');
         return;
       }
       setCapturedDataUrl(photo.dataUrl);
       setStatus('preview');
+      console.log('[capture] preview state set, dataUrl length:', photo.dataUrl.length);
     } catch (err: any) {
-      // User cancellation should reset cleanly, not show an error
+      console.warn('[capture] Camera.getPhoto THREW:', err?.message, err);
       if (err?.message?.toLowerCase().includes('cancel') || err?.message?.toLowerCase().includes('user cancelled')) {
+        console.log('[capture] treated as user cancellation, resetting to idle');
         setStatus('idle');
         return;
       }
-      console.warn('[capture] camera failed:', err);
       setStatus('error');
       setError(err?.message || 'Camera unavailable');
     }
-  }, []);
+  }, [status]);
 
   const submitMoment = useCallback(async (
     venueId: string,
     username: string,
     hueDegrees: number,
   ): Promise<{ success: boolean; error?: string }> => {
+    console.log('[capture] submitMoment called', { venueId, username, hueDegrees });
     if (!capturedDataUrl) {
+      console.warn('[capture] submitMoment: no capturedDataUrl in state');
       return { success: false, error: 'No photo to submit' };
     }
 
@@ -78,22 +85,24 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
     setError(null);
 
     try {
-      // 1. Convert data URL to Blob
+      console.log('[capture] converting dataUrl to blob...');
       const fetchRes = await fetch(capturedDataUrl);
       const blob = await fetchRes.blob();
+      console.log('[capture] blob ready, size:', blob.size);
 
-      // 2. Get user_id for path
       const { data: userRes, error: userErr } = await supabase.auth.getUser();
       if (userErr || !userRes.user) {
+        console.warn('[capture] auth.getUser failed in submit', userErr);
         setStatus('error');
         setError('not_authenticated');
         return { success: false, error: 'not_authenticated' };
       }
       const userId = userRes.user.id;
 
-      // 3. Upload to recap-moments bucket
       const filename = `${venueId}_${Date.now()}.jpg`;
       const path = `${userId}/${filename}`;
+      console.log('[capture] uploading to recap-moments:', path);
+
       const { error: uploadErr } = await supabase.storage
         .from('recap-moments')
         .upload(path, blob, {
@@ -102,24 +111,27 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
           upsert: false,
         });
       if (uploadErr) {
+        console.warn('[capture] storage upload failed:', uploadErr.message, uploadErr);
         setStatus('error');
         setError('photo_upload_failed');
         return { success: false, error: 'photo_upload_failed' };
       }
+      console.log('[capture] upload succeeded');
 
-      // 4. Get public URL
       const { data: publicUrlData } = supabase.storage
         .from('recap-moments')
         .getPublicUrl(path);
       const photoUrl = publicUrlData.publicUrl;
       if (!photoUrl) {
+        console.warn('[capture] could not get public URL');
         setStatus('error');
         setError('photo_upload_failed');
         return { success: false, error: 'photo_upload_failed' };
       }
+      console.log('[capture] photoUrl:', photoUrl);
 
-      // 5. Call submit_moment RPC
       setStatus('submitting');
+      console.log('[capture] calling submit_moment RPC');
       const { error: rpcErr } = await supabase.rpc('submit_moment', {
         p_venue_id: venueId,
         p_username: username,
@@ -127,8 +139,8 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
         p_hue_at_capture: hueDegrees,
       });
       if (rpcErr) {
+        console.warn('[capture] submit_moment RPC failed:', rpcErr.message, rpcErr);
         setStatus('error');
-        // Map RPC error codes to friendly messages
         const code = rpcErr.message || '';
         if (code.includes('already_crowned')) setError('already_crowned');
         else if (code.includes('guest_not_allowed')) setError('guest_not_allowed');
@@ -137,9 +149,11 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
         return { success: false, error: code };
       }
 
+      console.log('[capture] submit_moment succeeded');
       setStatus('success');
       return { success: true };
     } catch (err: any) {
+      console.warn('[capture] submitMoment EXCEPTION', err);
       setStatus('error');
       setError(err?.message || 'Unknown error');
       return { success: false, error: err?.message };
