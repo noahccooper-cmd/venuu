@@ -5,6 +5,13 @@ import type { CityAggregate } from '../../hooks/useCityAggregates';
 import type { CityKey } from '../../lib/constants';
 import { CITIES } from '../../lib/constants';
 
+// Cinematic ease for the descent — slow start, fast middle, slow landing.
+// Mimics a film dolly shot landing on a subject (Perlin smootherstep).
+// Default cubic feels like UI; this feels like cinema.
+function cinematicEase(t: number): number {
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
 /**
  * CinematicIntro — the visual layer for the 7-phase cold open.
  *
@@ -63,10 +70,17 @@ export function CinematicIntro({
     if (phase === 'globe-emerge') {
       flyToFiredRef.current[phase] = true;
       try {
+        // Anchor the globe over the user's target city. The old hardcoded
+        // center sat over western Mexico and bled into Canada at zoom 0.8;
+        // now the planet appears with the city centered and descent drops
+        // straight down. Knoxville fallback is defensive.
+        const [cityLng, cityLat] = targetCenter
+          ? [targetCenter.lng, targetCenter.lat]
+          : [-84.0, 35.96];
         map.flyTo({
-          center: [-90, 20],
-          zoom: 0.8,
-          pitch: 0,
+          center: [cityLng, cityLat],
+          zoom: 1.2,        // globe still visible, city region is the focus
+          pitch: 15,        // subtle planet-orbiting tilt
           bearing: 0,
           duration: mode === 'shortened' ? 350 : 1400,
           essential: true,
@@ -96,6 +110,7 @@ export function CinematicIntro({
           bearing: -8,
           duration: mode === 'shortened' ? 850 : 2600,
           curve: 1.42,
+          easing: cinematicEase,   // film-dolly slow → fast → slow
           essential: true,
         });
       } catch (err) {
