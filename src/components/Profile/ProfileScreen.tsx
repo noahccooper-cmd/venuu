@@ -11,6 +11,8 @@ import { Browser } from '@capacitor/browser';
 import { CITIES, type CityKey } from '../../lib/constants';
 import { useVisitHistory } from '../../hooks/useVisitHistory';
 import { useMyRecaps } from '../../hooks/useMyRecaps';
+import MomentOrb from '../Moment/MomentOrb';
+import MomentFullScreen from '../Moment/MomentFullScreen';
 import { useUserAccountStats, type UserLevel } from '../../hooks/useUserAccountStats';
 import { useUserVibe } from '../../hooks/useUserVibe';
 import { useMyPlans, type MyPlan } from '../../hooks/useMyPlans';
@@ -348,8 +350,12 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   // ── Existing data (preserved) ──
   const { bars, loading: barsLoading } = useVisitHistory(profile.auth_id);
-  // hook stays wired for the photo-aware "My Venues" view; bindings re-added when that lands
-  useMyRecaps(profile.username);
+  const { recaps: myMoments, loading: momentsLoading } = useMyRecaps(profile.username);
+  const [openMomentId, setOpenMomentId] = useState<string | null>(null);
+  const openMoment = useMemo(
+    () => myMoments?.find(m => m.id === openMomentId) ?? null,
+    [myMoments, openMomentId],
+  );
 
   // ── New data sources ──
   const stats = useUserAccountStats({
@@ -1677,32 +1683,63 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* ── 9. MY VENUES (placeholder for moments feature) ── */}
+        {/* ── 9. MY VENUES (moments trophy case) ───────────────── */}
         <div style={{ padding: '20px 16px 0' }}>
-          <div style={{
-            padding: '20px 16px',
-            margin: '12px 0',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px dashed rgba(255,255,255,0.12)',
-            borderRadius: '12px',
-            textAlign: 'center',
-          }}>
-            <div style={{
-              fontSize: '14px',
-              fontWeight: 600,
-              color: 'rgba(255,255,255,0.7)',
-              fontFamily: 'Satoshi, sans-serif',
-              marginBottom: '4px',
-            }}>
-              {'✨'} My Venues
-            </div>
-            <div style={{
-              fontSize: '11px',
-              color: 'rgba(255,255,255,0.4)',
-              fontFamily: 'Satoshi, sans-serif',
-            }}>
-              your nightlife map — coming with the moments feature
-            </div>
+          <SectionHeader
+            icon={<span style={{ fontSize: 16, color: 'var(--brand-orange)' }}>{'✨'}</span>}
+            title="My Venues"
+            subtitle={
+              momentsLoading
+                ? 'loading…'
+                : myMoments && myMoments.length > 0
+                  ? `${myMoments.length} crowned`
+                  : 'crown your first venue'
+            }
+          />
+          <div style={{ padding: '12px 0 4px' }}>
+            {momentsLoading ? (
+              <div style={{
+                padding: '24px 16px',
+                textAlign: 'center',
+                color: 'rgba(255,255,255,0.3)',
+                fontFamily: 'Satoshi, sans-serif',
+                fontSize: '12px',
+              }}>
+                loading your venues…
+              </div>
+            ) : !myMoments || myMoments.length === 0 ? (
+              <div style={{
+                padding: '24px 16px',
+                textAlign: 'center',
+                color: 'rgba(255,255,255,0.4)',
+                fontFamily: 'Satoshi, sans-serif',
+                fontSize: '13px',
+              }}>
+                <div style={{ marginBottom: 6 }}>
+                  paint + capture a venue
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.6 }}>
+                  your moments will live here forever
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '14px',
+                padding: '4px 4px 12px',
+                justifyItems: 'center',
+              }}>
+                {myMoments.map(m => (
+                  <MomentOrb
+                    key={m.id}
+                    moment={m}
+                    size="profile"
+                    onTap={() => setOpenMomentId(m.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1905,6 +1942,12 @@ export function ProfileScreen({
           </div>
         </div>
       )}
+
+      <MomentFullScreen
+        open={openMomentId !== null}
+        moment={openMoment}
+        onClose={() => setOpenMomentId(null)}
+      />
     </div>
   );
 }

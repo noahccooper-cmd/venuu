@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { formatCount, getCapacityPercent, timeAgo } from '../../lib/utils';
+import { formatCount, getCapacityPercent } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
 import { useVenueRecaps } from '../../hooks/useVenueRecaps';
 import { useGeofence } from '../../hooks/useGeofence';
+import MomentOrb from '../Moment/MomentOrb';
+import MomentFullScreen from '../Moment/MomentFullScreen';
 import { PunchCard } from '../Loyalty/PunchCard';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
 import { recordSignal } from '../../lib/signals';
@@ -78,22 +80,6 @@ function SpecialsRow({ venue }: { venue: Venue }) {
   );
 }
 
-/* ── Recap Card ── */
-
-function RecapCard({ recap }: { recap: any; index: number }) {
-  return (
-    <div className="recap-card">
-      <div className="recap-header">
-        <span className="recap-user">@{recap.username}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span className="recap-time">{timeAgo(recap.created_at)}</span>
-        </div>
-      </div>
-      <p className="recap-body">{recap.body}</p>
-    </div>
-  );
-}
-
 /* ── Leave a Recap ── */
 
 function LeaveRecap({ disabled }: {
@@ -156,10 +142,7 @@ interface RecapSectionProps {
 
 function RecapSection({ venue, username, recapData }: RecapSectionProps) {
   const { recaps, submitRecap, hasUserRecapped } = recapData;
-  const [expanded, setExpanded] = useState(false);
-
-  const visibleRecaps = expanded ? recaps : recaps.slice(0, 3);
-  const hasMore = recaps.length > 3 && !expanded;
+  const [openMomentId, setOpenMomentId] = useState<string | null>(null);
 
   return (
     <div className="recap-section">
@@ -168,43 +151,86 @@ function RecapSection({ venue, username, recapData }: RecapSectionProps) {
         <span className="recap-title">Moments from {venue.name}</span>
       </div>
       <div className="recap-list">
-        {recaps.length === 0 ? (
-          <div style={{
-            padding: '24px 16px',
-            textAlign: 'center',
-            color: 'rgba(255,255,255,0.3)',
-            fontSize: '13px',
-            fontStyle: 'italic',
-            fontFamily: 'Satoshi, sans-serif',
-          }}>
-            No moments captured here yet
-          </div>
-        ) : (
-          <>
-            {visibleRecaps.map((r, i) => <RecapCard key={r.id} recap={r} index={i} />)}
-            {hasMore && (
-              <button
-                onClick={() => setExpanded(true)}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '8px',
-                  color: '#FF8200',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  fontFamily: 'Satoshi, sans-serif',
-                  cursor: 'pointer',
-                }}
-              >
-                Show {recaps.length - 3} more recap{recaps.length - 3 === 1 ? '' : 's'}
-              </button>
-            )}
-          </>
-        )}
+        {(() => {
+          // Only show DEVELOPED moments publicly. Locked ones stay
+          // private to their author (and visible on author's profile
+          // via the read_own_developing RLS policy).
+          const developedMoments = recaps.filter(r => {
+            if (!r.developed_at) return false;
+            return new Date(r.developed_at).getTime() <= Date.now();
+          });
+
+          if (developedMoments.length === 0) {
+            return (
+              <div style={{
+                padding: '24px 16px',
+                textAlign: 'center',
+                color: 'rgba(255,255,255,0.3)',
+                fontSize: '13px',
+                fontStyle: 'italic',
+                fontFamily: 'Satoshi, sans-serif',
+              }}>
+                No moments captured here yet
+              </div>
+            );
+          }
+
+          return (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'row',
+              gap: '14px',
+              padding: '12px 4px 16px',
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+            }}>
+              {developedMoments.map(m => {
+                const momentForOrb = {
+                  id: m.id,
+                  venue_id: venue.id,
+                  venue_name: venue.name,
+                  photo_url: m.photo_url || '',
+                  hue_at_capture: m.hue_at_capture || 0,
+                  developed_at: m.developed_at || new Date().toISOString(),
+                  created_at: m.created_at,
+                  username: m.username,
+                };
+                return (
+                  <MomentOrb
+                    key={m.id}
+                    moment={momentForOrb}
+                    size="venue-card"
+                    onTap={() => setOpenMomentId(m.id)}
+                  />
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
       <LeaveRecap venue={venue} username={username} submitRecap={submitRecap} disabled={hasUserRecapped} />
+
+      {openMomentId && (() => {
+        const m = recaps.find(r => r.id === openMomentId);
+        if (!m) return null;
+        return (
+          <MomentFullScreen
+            open={true}
+            moment={{
+              id: m.id,
+              venue_id: venue.id,
+              venue_name: venue.name,
+              photo_url: m.photo_url || '',
+              hue_at_capture: m.hue_at_capture || 0,
+              developed_at: m.developed_at || new Date().toISOString(),
+              created_at: m.created_at,
+              username: m.username,
+            }}
+            onClose={() => setOpenMomentId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
