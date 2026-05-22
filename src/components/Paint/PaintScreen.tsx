@@ -17,6 +17,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { VIBE_HUES, type VibeHueId } from '../../lib/hueMath';
+import CaptureModule from './CaptureModule';
+import { useCaptureMoment } from '../../hooks/useCaptureMoment';
 
 interface PaintScreenProps {
   open: boolean;
@@ -45,6 +47,9 @@ export default function PaintScreen({
   const [submitting, setSubmitting] = useState(false);
   const sliderRef = useRef<HTMLDivElement>(null);
   const dragActiveRef = useRef(false);
+
+  const capture = useCaptureMoment();
+  const [paintUsername, setPaintUsername] = useState<string | null>(null);
 
   const landedHueId: VibeHueId | null = sliderPct === null
     ? null
@@ -102,14 +107,53 @@ export default function PaintScreen({
       setHasLanded(false);
       setSubmitting(false);
       dragActiveRef.current = false;
+      // Drop any captured-but-unsubmitted photo so it can't leak into
+      // the next venue's paint session.
+      capture.reset();
     }
   }, [open]);
 
+  // Fetch username once for the submit_moment call
+  useEffect(() => {
+    if (!open) return;
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data.user;
+      if (!u) return;
+      supabase
+        .from('profiles')
+        .select('username')
+        .eq('auth_id', u.id)
+        .maybeSingle()
+        .then(({ data: profile }) => {
+          if (profile?.username) setPaintUsername(profile.username);
+        });
+    });
+  }, [open]);
+
   const handlePaint = async () => {
-    if (!landedHueId || submitting) return;
+    if (!landedHueId || !landedHue || submitting) return;
     setSubmitting(true);
 
+    const hasPhoto = capture.status === 'preview' && !!capture.capturedDataUrl;
+
     try {
+      // 1. If a photo was captured, upload + submit the moment first.
+      //    A recoverable failure (already_crowned, upload, etc.) falls
+      //    back to paint-only — the vibe contribution shouldn't be held
+      //    hostage by photo issues.
+      if (hasPhoto && paintUsername) {
+        const result = await capture.submitMoment(
+          venueId,
+          paintUsername,
+          landedHue.degrees,
+        );
+        if (!result.success) {
+          console.warn('[moment] submit failed:', result.error);
+          capture.reset();
+        }
+      }
+
+      // 2. Paint contribution (existing flow — record_paint unchanged).
       const { data: ratingId, error: rpcErr } = await supabase.rpc('record_paint', {
         p_venue_id: venueId,
         p_hue_id: landedHueId,
@@ -143,6 +187,10 @@ export default function PaintScreen({
   const hueCSS = landedHue
     ? `hsl(${landedHue.degrees}, ${landedHue.defaultSat}%, 50%)`
     : null;
+
+  const buttonLabel = (capture.status === 'preview' && capture.capturedDataUrl)
+    ? 'paint + capture'
+    : 'paint';
 
   return (
     <AnimatePresence>
@@ -234,6 +282,18 @@ export default function PaintScreen({
             </motion.div>
           </div>
 
+          {/* Capture module — appears once a hue is landed (auth users only) */}
+          {landedHue && paintUsername && (
+            <div className="flex justify-center px-7">
+              <CaptureModule
+                landedHue={landedHue}
+                capture={capture}
+                onPhotoReady={() => { /* no-op — preview state managed by capture hook */ }}
+                onClear={() => capture.reset()}
+              />
+            </div>
+          )}
+
           {/* Paint button — pill, not full-width bar */}
           <div className="flex justify-center pb-10">
             <motion.button
@@ -257,7 +317,7 @@ export default function PaintScreen({
                 opacity: submitting ? 0.6 : 1,
               }}
             >
-              {submitting ? 'painting' : 'paint'}
+              {submitting ? 'painting' : buttonLabel}
             </motion.button>
           </div>
         </motion.div>

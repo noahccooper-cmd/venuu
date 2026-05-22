@@ -29,7 +29,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>venuu uses your camera to scan QR codes for cover charge entry.</string>
+	<string>venuu uses your camera to capture and save your moment at each venue you crown.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>venuu saves your captured moments to develop overnight.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>venuu uses your location to show nearby venues and verify check-ins.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
