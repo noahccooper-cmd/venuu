@@ -59,14 +59,37 @@ export function useCaptureMoment(): UseCaptureMomentReturn {
       setStatus('preview');
       console.log('[capture] preview state set, dataUrl length:', photo.dataUrl.length);
     } catch (err: any) {
-      console.warn('[capture] Camera.getPhoto THREW:', err?.message, err);
-      if (err?.message?.toLowerCase().includes('cancel') || err?.message?.toLowerCase().includes('user cancelled')) {
+      const msg = err?.message || '';
+      console.warn('[capture] Camera.getPhoto THREW:', msg, err);
+
+      // Cancellation — silent reset
+      if (msg.toLowerCase().includes('cancel') || msg.toLowerCase().includes('user cancelled')) {
         console.log('[capture] treated as user cancellation, resetting to idle');
         setStatus('idle');
         return;
       }
+
+      // Permission denial — surface to user with settings hint
+      if (msg.toLowerCase().includes('denied') || msg.toLowerCase().includes('permission')) {
+        setStatus('error');
+        setError('camera_permission_denied');
+        // Visible alert so user knows how to fix
+        alert('Camera permission denied.\n\nGo to: Settings → venuu → Camera → Allow\n\nThen come back and tap CAPTURE YOUR MOMENT again.');
+        return;
+      }
+
+      // Plugin not implemented — surface clearly
+      if (msg.toLowerCase().includes('not implemented') || msg.toLowerCase().includes('plugin')) {
+        setStatus('error');
+        setError('camera_plugin_missing');
+        alert('Camera plugin not loaded. Please force-quit and reopen venuu.');
+        return;
+      }
+
+      // Generic camera failure — surface with the actual error
       setStatus('error');
-      setError(err?.message || 'Camera unavailable');
+      setError(msg || 'Camera unavailable');
+      alert(`Camera failed: ${msg || 'Unknown error'}`);
     }
   }, [status]);
 

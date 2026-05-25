@@ -33,6 +33,99 @@ interface PaintScreenProps {
 const SLIDER_HEIGHT_PX = 56;
 const THUMB_SIZE_PX = 60;
 
+function DebugBadge({
+  paintUsername, permState, captureStatus, hasLandedHue,
+}: {
+  paintUsername: string | null;
+  permState: string;
+  captureStatus: string;
+  hasLandedHue: boolean;
+}) {
+  const [visible, setVisible] = useState(true);
+  if (!visible) return null;
+
+  const userOk = !!paintUsername;
+  const permOk = permState === 'granted';
+  const hueOk = hasLandedHue;
+  const captureOk = captureStatus === 'idle' || captureStatus === 'preview' || captureStatus === 'success';
+
+  return (
+    <div
+      onClick={() => setVisible(false)}
+      style={{
+        position: 'absolute',
+        top: 'calc(env(safe-area-inset-top) + 12px)',
+        right: '12px',
+        zIndex: 9999,
+        background: 'rgba(0,0,0,0.85)',
+        border: '1px solid rgba(255,255,255,0.15)',
+        borderRadius: '8px',
+        padding: '6px 10px',
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: 'rgba(255,255,255,0.85)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        cursor: 'pointer',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      <div>auth: {userOk ? `✓ ${paintUsername}` : '✗ loading'}</div>
+      <div>perm: {permOk ? '✓ granted' : `✗ ${permState}`}</div>
+      <div>hue:  {hueOk ? '✓ landed' : '○ pick one'}</div>
+      <div>cam:  {captureOk ? `✓ ${captureStatus}` : `✗ ${captureStatus}`}</div>
+      <div style={{ opacity: 0.5, marginTop: '2px' }}>tap to hide</div>
+    </div>
+  );
+}
+
+function StuckLoadingFallback({ onRetry }: { onRetry: () => Promise<void> }) {
+  const [showRetry, setShowRetry] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowRetry(true), 3000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div style={{
+      padding: '24px 16px',
+      textAlign: 'center',
+      color: 'rgba(255,255,255,0.4)',
+      fontFamily: 'Satoshi, sans-serif',
+      fontSize: '12px',
+      letterSpacing: '0.5px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '12px',
+    }}>
+      <div>loading capture…</div>
+      {showRetry && (
+        <button
+          onClick={onRetry}
+          style={{
+            padding: '8px 16px',
+            background: 'rgba(255,130,0,0.1)',
+            border: '1px solid rgba(255,130,0,0.4)',
+            borderRadius: '8px',
+            color: '#FF8200',
+            fontFamily: 'Satoshi, sans-serif',
+            fontSize: '11px',
+            fontWeight: 700,
+            letterSpacing: '1px',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          tap to retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function PaintScreen({
   open,
   onClose,
@@ -50,6 +143,8 @@ export default function PaintScreen({
 
   const capture = useCaptureMoment();
   const [paintUsername, setPaintUsername] = useState<string | null>(null);
+  const [permState, setPermState] = useState<'unknown' | 'granted' | 'denied' | 'prompt'>('unknown');
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
   const landedHueId: VibeHueId | null = sliderPct === null
     ? null
@@ -157,6 +252,24 @@ export default function PaintScreen({
     return () => { cancelled = true; };
   }, [open]);
 
+  // Check camera permission state on open — surfaces denial early
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { Camera } = await import('@capacitor/camera');
+        const perms = await Camera.checkPermissions();
+        if (cancelled) return;
+        console.log('[PaintScreen] camera permission state:', perms);
+        setPermState(perms.camera as any);
+      } catch (err) {
+        console.warn('[PaintScreen] camera permission check failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
   const handlePaint = async () => {
     if (!landedHueId || !landedHue || submitting) {
       console.log('[PaintScreen] submit blocked', {
@@ -219,6 +332,14 @@ export default function PaintScreen({
       }
 
       console.log('[PaintScreen] paint recorded successfully, rating_id=', ratingId);
+
+      // Brief visible toast confirming submit (visible whether or not
+      // ceremony fires, so user knows something happened).
+      if (hasPhoto) {
+        setShowSuccessToast(true);
+        setTimeout(() => setShowSuccessToast(false), 1800);
+      }
+
       console.log('[PaintScreen] calling onPainted(landedHueId), triggering ceremony');
       onPainted(landedHueId);
     } catch (err: any) {
@@ -260,6 +381,52 @@ export default function PaintScreen({
             paddingBottom: 'env(safe-area-inset-bottom)',
           }}
         >
+          {/* Debug status badge — visible on-screen diagnostic
+              so we can walk-test without a laptop attached. */}
+          <DebugBadge
+            paintUsername={paintUsername}
+            permState={permState}
+            captureStatus={capture.status}
+            hasLandedHue={!!landedHue}
+          />
+
+          {/* Success confirmation toast — overlays everything */}
+          <AnimatePresence>
+            {showSuccessToast && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                style={{
+                  position: 'absolute',
+                  top: 'calc(env(safe-area-inset-top) + 60px)',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  zIndex: 9998,
+                  background: 'rgba(0,0,0,0.92)',
+                  backdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '16px',
+                  padding: '14px 20px',
+                  color: '#fff',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  letterSpacing: '1.2px',
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  boxShadow: '0 0 40px rgba(255, 130, 0, 0.3)',
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>{'✨'}</span>
+                moment committed
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Dismiss X */}
           <div className="flex justify-end px-6 pt-3">
             <button
@@ -348,16 +515,24 @@ export default function PaintScreen({
                   onClear={() => capture.reset()}
                 />
               ) : (
-                <div style={{
-                  textAlign: 'center',
-                  padding: '24px 16px',
-                  color: 'rgba(255,255,255,0.4)',
-                  fontFamily: 'Satoshi, sans-serif',
-                  fontSize: '12px',
-                  letterSpacing: '0.5px',
-                }}>
-                  loading capture…
-                </div>
+                <StuckLoadingFallback onRetry={async () => {
+                  // Force re-fetch paintUsername
+                  const { data: userRes } = await supabase.auth.getUser();
+                  if (!userRes?.user) {
+                    alert('Not signed in. Sign in first, then come back.');
+                    return;
+                  }
+                  const { data: profile, error } = await supabase
+                    .from('profiles')
+                    .select('username')
+                    .eq('auth_id', userRes.user.id)
+                    .maybeSingle();
+                  if (error || !profile?.username) {
+                    alert('Profile not found. Sign out and back in, then retry.');
+                    return;
+                  }
+                  setPaintUsername(profile.username);
+                }} />
               )}
             </div>
           )}

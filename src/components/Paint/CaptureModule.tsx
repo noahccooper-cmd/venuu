@@ -52,9 +52,22 @@ export default function CaptureModule({ landedHue, onPhotoReady, onClear, captur
             marginTop: '24px',
           }}
         >
-          <button
+          <motion.button
             onClick={handleCapture}
             disabled={isCapturing}
+            whileTap={{ scale: 0.94 }}
+            animate={isCapturing ? {
+              boxShadow: [
+                `0 0 18px ${hueGlow}`,
+                `0 0 32px ${hueGlow}`,
+                `0 0 18px ${hueGlow}`,
+              ],
+            } : {
+              boxShadow: `0 0 18px ${hueGlow}`,
+            }}
+            transition={{
+              boxShadow: { duration: 1.2, repeat: Infinity },
+            }}
             style={{
               width: '100%',
               maxWidth: '320px',
@@ -69,12 +82,10 @@ export default function CaptureModule({ landedHue, onPhotoReady, onClear, captur
               letterSpacing: '1.5px',
               textTransform: 'uppercase',
               cursor: 'pointer',
-              boxShadow: `0 0 18px ${hueGlow}`,
-              transition: 'all 0.2s',
             }}
           >
-            {isCapturing ? 'opening camera…' : '✦ capture your moment'}
-          </button>
+            {isCapturing ? '⟳ opening camera…' : '✦ capture your moment'}
+          </motion.button>
           <button
             onClick={onClear}
             style={{
