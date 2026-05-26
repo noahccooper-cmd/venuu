@@ -185,7 +185,7 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
           paddingRight: '22px',
           paddingTop: '24px',
           paddingLeft: '40px',
-          background: 'linear-gradient(0deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.22) 50%, transparent 100%)',
+          background: 'linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.28) 50%, transparent 100%)',
           pointerEvents: 'none',
           zIndex: 3,
           borderBottomLeftRadius: '20px',

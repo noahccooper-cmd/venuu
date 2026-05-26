@@ -15,6 +15,14 @@
   /* Cursive font — engraved Polaroid header on the capture surface. */
   --font-cursive: 'Caveat', cursive;
 
+  /* Pearlescent cream-gold — the eternal venuu mark.
+     Used for the intro wordmark + moment number + ✦ glyph.
+     This color does NOT change with hue. It's the permanent
+     identity of venuu and of the user across all moments. */
+  --venuu-pearl: #FFF8E7;
+  --venuu-pearl-bright: #FFFCEF;
+  --venuu-pearl-deep: #F5EFD8;
+
   /* Brand */
   --brand-orange: #FF8200;
   --brand-orange-hover: #FF5E1A;
@@ -5247,8 +5255,17 @@ body[data-sheet-state="pill"] .map-side-pill {
 }
 
 @keyframes wordmark-fade {
-  0%   { opacity: 0;   transform: scale(0.94); }
-  25%  { opacity: 1;   transform: scale(1);    }
-  70%  { opacity: 1;   transform: scale(1);    }
-  100% { opacity: 0;   transform: scale(1.06); }
+  0%   { opacity: 0;   transform: scale(0.92); }
+  20%  { opacity: 1;   transform: scale(1);    }
+  75%  { opacity: 1;   transform: scale(1);    }
+  100% { opacity: 0;   transform: scale(1.04); }
+}
+
+@keyframes pearl-shimmer {
+  0%, 100% {
+    filter: brightness(1) drop-shadow(0 0 8px rgba(255, 248, 231, 0.85));
+  }
+  50% {
+    filter: brightness(1.08) drop-shadow(0 0 14px rgba(255, 252, 239, 0.95));
+  }
 }

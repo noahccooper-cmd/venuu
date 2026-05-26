@@ -72,6 +72,8 @@ export default function CaptureSurface({
   const [mirrorFlash, setMirrorFlash] = useState(false);
   const [showIntroWordmark, setShowIntroWordmark] = useState(false);
   const [showNumberReveal, setShowNumberReveal] = useState(false);
+  const [chamberVisible, setChamberVisible] = useState(false);
+  const [frameVisible, setFrameVisible] = useState(false);
 
   // Request camera stream when surface opens
   useEffect(() => {
@@ -81,33 +83,45 @@ export default function CaptureSurface({
       // (and so the reserved prop isn't an unused-binding compile error).
       console.log('[CaptureSurface] opening for venue', venueId, '— starting cinematic sequence');
 
-      // BEAT 1: 0-700ms — wordmark center-screen
+      // BEAT 1: 0-1200ms — BLACK SCREEN with "venuu" wordmark only
+      // The chamber + camera are HIDDEN during this beat (chamberVisible
+      // and frameVisible stay false). Pure cinematic intro.
       setShowIntroWordmark(true);
+      setChamberVisible(false);
+      setFrameVisible(false);
 
-      // BEAT 2: 700-1500ms — chamber + camera fade in
-      // Request stream early so it's ready when camera reveals
+      // Stream request fires now so it's ready when frame reveals
       selfie.requestStream();
+
+      // BEAT 2: 1200ms — wordmark fades, chamber blooms in
       const t_chamber = setTimeout(() => {
         setShowIntroWordmark(false);
-      }, 700);
+        setChamberVisible(true);
+      }, 1200);
 
-      // BEAT 3: 1500ms — warmup shimmer + header types
+      // BEAT 3: 1500ms — frame + camera fade up underneath
+      const t_frame = setTimeout(() => {
+        setFrameVisible(true);
+      }, 1500);
+
+      // BEAT 4: 1900ms — warmup shimmer + Polaroid header types
       const t_warmup = setTimeout(() => {
         setWarming(true);
         setHeaderTriggerKey(k => k + 1);
-      }, 1500);
+      }, 1900);
 
       const t_warmup_end = setTimeout(() => {
         setWarming(false);
-      }, 1500 + 950);
+      }, 1900 + 950);
 
-      // BEAT 4: 2400ms — number reveals last (after header types)
+      // BEAT 5: 2600ms — number reveals last, the eternal mark
       const t_number = setTimeout(() => {
         setShowNumberReveal(true);
-      }, 2400);
+      }, 2600);
 
       return () => {
         clearTimeout(t_chamber);
+        clearTimeout(t_frame);
         clearTimeout(t_warmup);
         clearTimeout(t_warmup_end);
         clearTimeout(t_number);
@@ -118,6 +132,8 @@ export default function CaptureSurface({
       setWarming(false);
       setShowIntroWordmark(false);
       setShowNumberReveal(false);
+      setChamberVisible(false);
+      setFrameVisible(false);
     }
     // We deliberately omit selfie from deps — its identity changes
     // every render and we only want this effect on open transitions.
@@ -286,7 +302,8 @@ export default function CaptureSurface({
               inset: 0,
               zIndex: 0,
               pointerEvents: 'none',
-              transition: 'opacity 0.4s ease',
+              opacity: chamberVisible ? 1 : 0,
+              transition: 'opacity 700ms ease-out',
               overflow: 'hidden',
             }}
           >
@@ -373,20 +390,22 @@ export default function CaptureSurface({
                 justifyContent: 'center',
                 zIndex: 50,
                 pointerEvents: 'none',
-                animation: 'wordmark-fade 1400ms ease-out forwards',
+                animation: 'wordmark-fade 1200ms ease-out forwards',
               }}
             >
               <div
                 style={{
                   fontFamily: 'var(--font-cursive)',
-                  fontSize: '88px',
+                  fontSize: '92px',
                   fontWeight: 600,
-                  color: `hsl(${hueDegrees}, 85%, ${Math.min(80, hueLightness + 15)}%)`,
+                  color: 'var(--venuu-pearl)',
                   letterSpacing: '2px',
                   textShadow: `
-                    0 0 32px hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.7),
-                    0 0 64px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.4)
+                    0 0 24px rgba(255, 248, 231, 0.85),
+                    0 0 48px rgba(255, 248, 231, 0.6),
+                    0 0 96px rgba(255, 248, 231, 0.3)
                   `,
+                  animation: 'pearl-shimmer 4s ease-in-out infinite',
                 }}
               >
                 venuu
@@ -420,7 +439,7 @@ export default function CaptureSurface({
             ? renderPermissionDenied()
             : (
             <>
-              {/* Camera region — truly centered in available vertical space */}
+              {/* Camera region — fades up after wordmark + chamber */}
               <div style={{
                 flex: '1 1 auto',
                 minHeight: 0,
@@ -431,6 +450,8 @@ export default function CaptureSurface({
                 position: 'relative',
                 padding: '16px 0 24px',
                 overflow: 'hidden',
+                opacity: frameVisible ? 1 : 0,
+                transition: 'opacity 600ms ease-out',
               }}>
                 <CameraFrame
                   ref={cameraRef}
@@ -449,7 +470,7 @@ export default function CaptureSurface({
                 {selfie.status === 'captured' && renderCapturedState()}
               </div>
 
-              {/* Bottom controls — fixed bottom, never pushed off screen */}
+              {/* Bottom controls — fades up with the camera frame */}
               <div style={{
                 width: '100%',
                 padding: '0 24px',
@@ -461,6 +482,8 @@ export default function CaptureSurface({
                 flexShrink: 0,        // Never let this section compress
                 background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
                 paddingTop: '14px',
+                opacity: frameVisible ? 1 : 0,
+                transition: 'opacity 600ms ease-out',
               }}>
                 {/* Emotional thesis — the moment in one cursive sentence */}
                 <div style={{
