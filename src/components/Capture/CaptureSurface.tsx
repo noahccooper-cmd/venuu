@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelfieCapture } from '../../hooks/useSelfieCapture';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
 import { VIBE_HUES } from '../../lib/hueMath';
-import PolaroidHeader from './PolaroidHeader';
 import HueSpectrum2D from './HueSpectrum2D';
 import CameraFrame, { type CameraFrameHandle } from './CameraFrame';
 
@@ -69,6 +68,7 @@ export default function CaptureSurface({
   const [hueLightness, setHueLightness] = useState(initial.lightness);
   const [showFlash, setShowFlash]       = useState(false);
   const [headerTriggerKey, setHeaderTriggerKey] = useState(0);
+  const [warming, setWarming] = useState(false);
 
   // Request camera stream when surface opens
   useEffect(() => {
@@ -77,11 +77,16 @@ export default function CaptureSurface({
       // here so Phase 1 dev testing surfaces which venue we opened against
       // (and so the reserved prop isn't an unused-binding compile error).
       console.log('[CaptureSurface] opening for venue', venueId, '— requesting stream');
+      setWarming(true);
       selfie.requestStream();
       setHeaderTriggerKey(k => k + 1);
+      // Clear warmup shimmer after the sweep animation completes
+      const t = setTimeout(() => setWarming(false), 700);
+      return () => clearTimeout(t);
     } else {
       console.log('[CaptureSurface] closing, stopping stream');
       selfie.reset();
+      setWarming(false);
     }
     // We deliberately omit selfie from deps — its identity changes
     // every render and we only want this effect on open transitions.
@@ -269,25 +274,18 @@ export default function CaptureSurface({
             ? renderPermissionDenied()
             : (
             <>
-              {/* Camera region — flexible but capped so bottom controls always show */}
+              {/* Camera region — vertically centered, balanced breathing room */}
               <div style={{
                 flex: '1 1 auto',
-                minHeight: 0,           // allows flex shrink past content size
+                minHeight: 0,
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 position: 'relative',
-                paddingTop: '20px',
+                padding: '32px 0 16px',  // breathing room top, less bottom (slider sits close)
                 overflow: 'hidden',
               }}>
-                <PolaroidHeader
-                  venueName={venueName}
-                  hueDegrees={hueDegrees}
-                  hueLightness={hueLightness}
-                  triggerKey={headerTriggerKey}
-                />
-
                 <CameraFrame
                   ref={cameraRef}
                   stream={selfie.stream}
@@ -295,6 +293,9 @@ export default function CaptureSurface({
                   hueLightness={hueLightness}
                   capturedFrame={selfie.capturedFrame}
                   showFlash={showFlash}
+                  venueName={venueName}
+                  headerTriggerKey={headerTriggerKey}
+                  warming={warming}
                 />
 
                 {selfie.status === 'captured' && renderCapturedState()}

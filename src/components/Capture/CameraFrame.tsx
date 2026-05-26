@@ -1,4 +1,5 @@
 import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import PolaroidHeader from './PolaroidHeader';
 
 interface CameraFrameProps {
   stream: MediaStream | null;
@@ -8,6 +9,11 @@ interface CameraFrameProps {
   capturedFrame: ImageBitmap | null;
   /** Brief flash overlay during shutter */
   showFlash: boolean;
+  // NEW — Polaroid header props now live inside the frame
+  venueName: string;
+  headerTriggerKey: number;
+  // NEW — true during the brief warmup before stream is rendering
+  warming: boolean;
 }
 
 export interface CameraFrameHandle {
@@ -23,6 +29,7 @@ export interface CameraFrameHandle {
  */
 const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
   stream, hueDegrees, hueLightness, capturedFrame, showFlash,
+  venueName, headerTriggerKey, warming,
 }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -118,6 +125,36 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
         />
       )}
 
+      {/* Subtle gradient behind header — readability in bright lighting */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0,
+          height: '28%',
+          background: 'linear-gradient(180deg, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.16) 35%, transparent 100%)',
+          pointerEvents: 'none',
+          zIndex: 2,
+        }}
+      />
+
+      {/* Polaroid header — engraved into the photo, top-left */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '18px',
+          left: '18px',
+          zIndex: 3,
+          pointerEvents: 'none',
+        }}
+      >
+        <PolaroidHeader
+          venueName={venueName}
+          hueDegrees={hueDegrees}
+          hueLightness={hueLightness}
+          triggerKey={headerTriggerKey}
+        />
+      </div>
+
       {/* Subtle 5% hue bleed overlay — the venuu touch */}
       <div
         style={{
@@ -138,6 +175,32 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
         }}
       />
+
+      {/* Warming up — single shimmer sweep when stream first opens */}
+      {warming && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            overflow: 'hidden',
+            zIndex: 4,
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: 0, right: 0, height: '120px',
+              top: '-120px',
+              background: `linear-gradient(180deg,
+                transparent 0%,
+                hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.18) 50%,
+                transparent 100%)`,
+              animation: 'capture-warmup-sweep 700ms ease-out forwards',
+            }}
+          />
+        </div>
+      )}
 
       {/* Shutter flash */}
       {showFlash && (

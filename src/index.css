@@ -5227,3 +5227,9 @@ body[data-sheet-state="pill"] .map-side-pill {
   20%  { opacity: 0.85; }
   100% { opacity: 0; }
 }
+
+@keyframes capture-warmup-sweep {
+  0%   { top: -120px; opacity: 0; }
+  20%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}

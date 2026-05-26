@@ -86,19 +86,15 @@ export default function PolaroidHeader({
   return (
     <div
       style={{
-        position: 'absolute',
-        top: '6%',
-        left: '7%',
-        zIndex: 5,
         pointerEvents: 'none',
         fontFamily: "var(--font-cursive)",
         color: hueColor,
-        textShadow: `0 0 16px ${hueGlow}, 0 0 4px ${hueGlow}`,
+        textShadow: `0 0 16px ${hueGlow}, 0 1px 2px rgba(0,0,0,0.4)`,
         transition: 'color 0.18s ease, text-shadow 0.18s ease',
       }}
     >
       <div style={{
-        fontSize: '28px',
+        fontSize: '30px',
         fontWeight: 600,
         letterSpacing: '0.3px',
         lineHeight: 1.1,
@@ -109,19 +105,19 @@ export default function PolaroidHeader({
         )}
       </div>
       <div style={{
-        fontSize: '16px',
+        fontSize: '17px',
         fontWeight: 500,
         letterSpacing: '0.3px',
         marginTop: '2px',
-        opacity: 0.88,
+        opacity: 0.92,
       }}>
         {typedDate}
       </div>
       <div style={{
-        fontSize: '12px',
+        fontSize: '13px',
         fontWeight: 400,
         letterSpacing: '0.4px',
-        opacity: 0.7,
+        opacity: 0.78,
       }}>
         {typedTime}
       </div>
