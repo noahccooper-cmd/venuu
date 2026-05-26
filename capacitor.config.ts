@@ -8,9 +8,10 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
   },
   ios: {
-    contentInset: 'always',
-    // WebRTC requires inline media playback (no fullscreen takeover)
-    // for the live camera stream to render inside the React UI.
+    // contentInset removed — was causing a white bar at the
+    // bottom of the screen on devices with home indicators.
+    // The default ('automatic') respects safe areas correctly
+    // and matches the rendering venuu had pre-PROMPT-49a.
     allowsLinkPreview: false,
   },
   plugins: {
