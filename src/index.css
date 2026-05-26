@@ -5241,7 +5241,8 @@ body[data-sheet-state="pill"] .map-side-pill {
 
 @keyframes mirror-flash {
   0%   { opacity: 0; }
-  15%  { opacity: 1; }
+  12%  { opacity: 1; }
+  40%  { opacity: 0.85; }
   100% { opacity: 0; }
 }
 

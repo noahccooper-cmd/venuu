@@ -71,6 +71,7 @@ export default function CaptureSurface({
   const [warming, setWarming] = useState(false);
   const [mirrorFlash, setMirrorFlash] = useState(false);
   const [showIntroWordmark, setShowIntroWordmark] = useState(false);
+  const [showNumberReveal, setShowNumberReveal] = useState(false);
 
   // Request camera stream when surface opens
   useEffect(() => {
@@ -78,22 +79,45 @@ export default function CaptureSurface({
       // venueId is consumed by the Phase 3 (49c) submit pipeline; logged
       // here so Phase 1 dev testing surfaces which venue we opened against
       // (and so the reserved prop isn't an unused-binding compile error).
-      console.log('[CaptureSurface] opening for venue', venueId, '— requesting stream');
-      setWarming(true);
+      console.log('[CaptureSurface] opening for venue', venueId, '— starting cinematic sequence');
+
+      // BEAT 1: 0-700ms — wordmark center-screen
       setShowIntroWordmark(true);
+
+      // BEAT 2: 700-1500ms — chamber + camera fade in
+      // Request stream early so it's ready when camera reveals
       selfie.requestStream();
-      setHeaderTriggerKey(k => k + 1);
-      const tw = setTimeout(() => setWarming(false), 950);
-      const ti = setTimeout(() => setShowIntroWordmark(false), 1400);
+      const t_chamber = setTimeout(() => {
+        setShowIntroWordmark(false);
+      }, 700);
+
+      // BEAT 3: 1500ms — warmup shimmer + header types
+      const t_warmup = setTimeout(() => {
+        setWarming(true);
+        setHeaderTriggerKey(k => k + 1);
+      }, 1500);
+
+      const t_warmup_end = setTimeout(() => {
+        setWarming(false);
+      }, 1500 + 950);
+
+      // BEAT 4: 2400ms — number reveals last (after header types)
+      const t_number = setTimeout(() => {
+        setShowNumberReveal(true);
+      }, 2400);
+
       return () => {
-        clearTimeout(tw);
-        clearTimeout(ti);
+        clearTimeout(t_chamber);
+        clearTimeout(t_warmup);
+        clearTimeout(t_warmup_end);
+        clearTimeout(t_number);
       };
     } else {
-      console.log('[CaptureSurface] closing, stopping stream');
+      console.log('[CaptureSurface] closing');
       selfie.reset();
       setWarming(false);
       setShowIntroWordmark(false);
+      setShowNumberReveal(false);
     }
     // We deliberately omit selfie from deps — its identity changes
     // every render and we only want this effect on open transitions.
@@ -119,7 +143,7 @@ export default function CaptureSurface({
     setMirrorFlash(true);
     await selfie.captureFrame(videoEl);
     setTimeout(() => setShowFlash(false), 400);
-    setTimeout(() => setMirrorFlash(false), 320);
+    setTimeout(() => setMirrorFlash(false), 600);
   }, [selfie]);
 
   const handleRetake = useCallback(() => {
@@ -327,11 +351,11 @@ export default function CaptureSurface({
                 pointerEvents: 'none',
                 zIndex: 5,
                 background: `radial-gradient(circle at center,
-                  hsla(${hueDegrees}, 90%, ${Math.min(75, hueLightness + 15)}%, 0.55) 0%,
-                  hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.35) 40%,
-                  hsla(${hueDegrees}, 80%, ${hueLightness}%, 0.10) 80%,
+                  hsla(${hueDegrees}, 95%, ${Math.min(80, hueLightness + 20)}%, 0.72) 0%,
+                  hsla(${hueDegrees}, 90%, ${Math.min(78, hueLightness + 12)}%, 0.48) 35%,
+                  hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.18) 70%,
                   transparent 100%)`,
-                animation: 'mirror-flash 320ms ease-out forwards',
+                animation: 'mirror-flash 600ms ease-out forwards',
                 mixBlendMode: 'screen',
               }}
             />
@@ -418,6 +442,8 @@ export default function CaptureSurface({
                   venueName={venueName}
                   headerTriggerKey={headerTriggerKey}
                   warming={warming}
+                  momentNumber={1}
+                  showNumberReveal={showNumberReveal}
                 />
 
                 {selfie.status === 'captured' && renderCapturedState()}

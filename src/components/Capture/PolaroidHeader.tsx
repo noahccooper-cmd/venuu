@@ -98,6 +98,7 @@ export default function PolaroidHeader({
         fontWeight: 600,
         letterSpacing: '0.3px',
         lineHeight: 1.1,
+        marginTop: '8px',
       }}>
         {typedVenue}
         {typedVenue.length < lowercaseVenue.length && (

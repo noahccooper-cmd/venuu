@@ -1,5 +1,6 @@
 import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import PolaroidHeader from './PolaroidHeader';
+import MomentNumber from './MomentNumber';
 
 interface CameraFrameProps {
   stream: MediaStream | null;
@@ -14,6 +15,9 @@ interface CameraFrameProps {
   headerTriggerKey: number;
   // NEW — true during the brief warmup before stream is rendering
   warming: boolean;
+  // NEW — mythological number
+  momentNumber: number;
+  showNumberReveal: boolean;
 }
 
 export interface CameraFrameHandle {
@@ -30,6 +34,7 @@ export interface CameraFrameHandle {
 const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
   stream, hueDegrees, hueLightness, capturedFrame, showFlash,
   venueName, headerTriggerKey, warming,
+  momentNumber, showNumberReveal,
 }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -68,18 +73,18 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
     <div
       style={{
         position: 'relative',
-        width: '74%',
-        maxWidth: '340px',
+        width: '72%',
+        maxWidth: '320px',
         aspectRatio: '9/16',
         borderRadius: '24px',
         overflow: 'hidden',
         border: `3px solid ${hueColor}`,
         boxShadow: `
-          0 0 0 1px rgba(255,255,255,0.04),
-          0 0 18px ${hueGlowEdge},
-          0 0 48px ${hueGlowOut},
-          0 0 88px ${hueGlowOut},
-          inset 0 0 18px ${hueGlowEdge}
+          0 0 0 1px rgba(255,255,255,0.03),
+          0 0 14px ${hueGlowEdge},
+          0 0 36px ${hueGlowOut},
+          0 0 72px ${hueGlowOut},
+          inset 0 0 14px ${hueGlowEdge}
         `,
         background: '#000',
         transition: 'border-color 0.18s ease, box-shadow 0.25s ease',
@@ -165,6 +170,35 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
           hueDegrees={hueDegrees}
           hueLightness={hueLightness}
           triggerKey={headerTriggerKey}
+        />
+      </div>
+
+      {/* MOMENT NUMBER — mythological identity in the bottom-right.
+          Mirror position to the top-left Polaroid header. Every venuu
+          user gets this. The luxury IS having a number at all. */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          paddingBottom: '18px',
+          paddingRight: '22px',
+          paddingTop: '24px',
+          paddingLeft: '40px',
+          background: 'linear-gradient(0deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.22) 50%, transparent 100%)',
+          pointerEvents: 'none',
+          zIndex: 3,
+          borderBottomLeftRadius: '20px',
+          borderBottomRightRadius: '20px',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <MomentNumber
+          momentNumber={momentNumber}
+          hueDegrees={hueDegrees}
+          hueLightness={hueLightness}
+          revealed={showNumberReveal}
         />
       </div>
 
