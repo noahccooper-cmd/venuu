@@ -230,10 +230,14 @@ export default function CaptureSurface({
       hapticMedium();
       // Auto-reset to idle after 2.5s so the button can be tapped again
       setTimeout(() => setSaveStatus('idle'), 2500);
+    } else if (result.status === 'cancelled') {
+      // User dismissed the share sheet — silent reset, NOT an error.
+      // No alert, no haptic, just return to idle.
+      setTimeout(() => setSaveStatus('idle'), 300);
     } else if (result.status === 'permission_denied') {
       alert('Photos save permission denied.\n\nGo to: Settings → venuu → Photos → Add Photos Only\n\nThen tap Save again.');
     } else if (result.status === 'error') {
-      alert(`Save failed: ${result.error || 'Unknown error'}`);
+      alert(`Share failed: ${result.error || 'Unknown error'}`);
     }
   }, [selfie.composedBlob, venueName]);
 
@@ -815,7 +819,7 @@ export default function CaptureSurface({
                     {saveStatus === 'success' && '✓ saved'}
                     {saveStatus === 'permission_denied' && 'permission denied'}
                     {saveStatus === 'error' && 'save failed · retry'}
-                    {(saveStatus === 'idle' || saveStatus === 'unsupported') && 'save to photos'}
+                    {(saveStatus === 'idle' || saveStatus === 'unsupported' || saveStatus === 'cancelled') && 'save to photos'}
                   </button>
 
                   {/* retake — tertiary, smallest */}
