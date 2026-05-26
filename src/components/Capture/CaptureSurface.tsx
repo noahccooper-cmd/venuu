@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSelfieCapture } from '../../hooks/useSelfieCapture';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
 import { VIBE_HUES } from '../../lib/hueMath';
+import { saveMomentToPhotos, type SaveStatus } from '../../lib/saveMomentToPhotos';
 import HueSpectrum2D from './HueSpectrum2D';
 import CameraFrame, { type CameraFrameHandle } from './CameraFrame';
 
@@ -74,6 +75,31 @@ export default function CaptureSurface({
   const [showNumberReveal, setShowNumberReveal] = useState(false);
   const [chamberVisible, setChamberVisible] = useState(false);
   const [frameVisible, setFrameVisible] = useState(false);
+
+  // Captured hue — frozen at shutter time. The chamber locks to
+  // this hue once the moment is committed, so the slider's
+  // current position no longer affects the chamber.
+  const [committedHue, setCommittedHue] = useState<{
+    degrees: number;
+    lightness: number;
+  } | null>(null);
+
+  // Save-to-photos status
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+
+  // Active hue for visual elements — the slider's hue when tuning,
+  // the captured hue when committed. The chamber + frame + glow
+  // freeze at capture time so the post-capture state feels stable.
+  const activeHue = committedHue ?? { degrees: hueDegrees, lightness: hueLightness };
+  const activeHueDeg = activeHue.degrees;
+  const activeHueLight = activeHue.lightness;
+
+  // Composed-state gate — true from the moment of shutter onward,
+  // covers capturing → composing → composed (until retake or close).
+  const isComposed =
+    selfie.status === 'composed' ||
+    selfie.status === 'composing' ||
+    selfie.status === 'captured';
 
   // Request camera stream when surface opens
   useEffect(() => {
@@ -157,6 +183,10 @@ export default function CaptureSurface({
     hapticMedium();
     setShowFlash(true);
     setMirrorFlash(true);
+
+    // Snapshot the hue NOW — this becomes the moment's permanent color
+    setCommittedHue({ degrees: hueDegrees, lightness: hueLightness });
+
     await selfie.captureFrame(videoEl);
     setTimeout(() => setShowFlash(false), 400);
     setTimeout(() => setMirrorFlash(false), 600);
@@ -174,9 +204,42 @@ export default function CaptureSurface({
 
   const handleRetake = useCallback(() => {
     hapticLight();
+    setCommittedHue(null);
+    setSaveStatus('idle');
     selfie.reset();
     selfie.requestStream();
   }, [selfie]);
+
+  const handleSaveToPhotos = useCallback(async () => {
+    if (!selfie.composedBlob) {
+      console.warn('[CaptureSurface] save called without composed blob');
+      return;
+    }
+    hapticLight();
+    setSaveStatus('saving');
+    const result = await saveMomentToPhotos(selfie.composedBlob, venueName);
+    setSaveStatus(result.status);
+    if (result.status === 'success') {
+      hapticMedium();
+      // Auto-reset to idle after 2.5s so the button can be tapped again
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    } else if (result.status === 'permission_denied') {
+      alert('Photos save permission denied.\n\nGo to: Settings → venuu → Photos → Add Photos Only\n\nThen tap Save again.');
+    } else if (result.status === 'error') {
+      alert(`Save failed: ${result.error || 'Unknown error'}`);
+    }
+  }, [selfie.composedBlob, venueName]);
+
+  const handleMark = useCallback(() => {
+    hapticMedium();
+    // 49b placeholder. In 49c this will:
+    //   1. Upload selfie.composedBlob to recap-moments bucket
+    //   2. Call submit_moment RPC with the storage path
+    //   3. Read the returned user_moment_number
+    //   4. Fire onPainted to trigger PaintCeremony
+    //   5. Close the surface after ceremony
+    alert('Mark would submit the moment.\n\n(49c wires this to the real pipeline: storage upload + submit_moment RPC + ceremony.)');
+  }, []);
 
   // ── Permission denied state ─────────────────────────────────
   const renderPermissionDenied = () => (
@@ -236,103 +299,6 @@ export default function CaptureSurface({
     </div>
   );
 
-  // ── Captured-frame holding state (Phase 2: composite preview) ──
-  const renderCapturedState = () => (
-    <>
-      {selfie.status === 'composing' && (
-        <div style={{
-          position: 'absolute',
-          bottom: '20%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.75)',
-          backdropFilter: 'blur(12px)',
-          border: `1px solid hsl(${hueDegrees}, 80%, ${hueLightness}%)`,
-          borderRadius: '14px',
-          padding: '12px 20px',
-          color: '#fff',
-          fontFamily: 'Satoshi, sans-serif',
-          fontSize: '11px',
-          letterSpacing: '1.5px',
-          textTransform: 'uppercase',
-          zIndex: 50,
-        }}>
-          composing your moment...
-        </div>
-      )}
-
-      {selfie.status === 'composed' && selfie.composedPreviewURL && (
-        <div style={{
-          position: 'absolute',
-          bottom: '14%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.85)',
-          backdropFilter: 'blur(12px)',
-          border: `1px solid var(--venuu-pearl)`,
-          borderRadius: '14px',
-          padding: '14px 18px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          alignItems: 'center',
-          zIndex: 50,
-          maxWidth: '280px',
-        }}>
-          <div style={{
-            color: 'var(--venuu-pearl)',
-            fontFamily: 'var(--font-cursive)',
-            fontSize: '20px',
-            letterSpacing: '0.5px',
-            lineHeight: 1,
-          }}>
-            ✦ your moment
-          </div>
-          <div style={{
-            color: 'rgba(255,255,255,0.6)',
-            fontFamily: 'Satoshi, sans-serif',
-            fontSize: '10px',
-            letterSpacing: '1.2px',
-            textTransform: 'uppercase',
-            textAlign: 'center',
-          }}>
-            composite ready · phase 2 preview
-          </div>
-          <img
-            src={selfie.composedPreviewURL}
-            alt="Composed moment preview"
-            style={{
-              width: '100%',
-              maxWidth: '220px',
-              aspectRatio: '9/16',
-              borderRadius: '8px',
-              objectFit: 'cover',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
-            }}
-          />
-          <button
-            onClick={handleRetake}
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.3)',
-              borderRadius: '8px',
-              color: 'rgba(255,255,255,0.8)',
-              fontFamily: 'Satoshi, sans-serif',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '1.5px',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-              padding: '8px 16px',
-            }}
-          >
-            retake
-          </button>
-        </div>
-      )}
-    </>
-  );
-
   return (
     <AnimatePresence>
       {open && (
@@ -373,9 +339,9 @@ export default function CaptureSurface({
                 position: 'absolute',
                 inset: 0,
                 background: `linear-gradient(180deg,
-                  hsla(${hueDegrees}, ${Math.min(60, hueLightness + 5)}%, 8%, 0.55) 0%,
-                  hsla(${hueDegrees}, ${Math.min(50, hueLightness)}%, 5%, 0.35) 50%,
-                  hsla(${hueDegrees}, ${Math.min(60, hueLightness + 5)}%, 8%, 0.55) 100%)`,
+                  hsla(${activeHueDeg}, ${Math.min(60, activeHueLight + 5)}%, 8%, 0.55) 0%,
+                  hsla(${activeHueDeg}, ${Math.min(50, activeHueLight)}%, 5%, 0.35) 50%,
+                  hsla(${activeHueDeg}, ${Math.min(60, activeHueLight + 5)}%, 8%, 0.55) 100%)`,
                 transition: 'background 0.25s ease',
               }}
             />
@@ -387,16 +353,16 @@ export default function CaptureSurface({
                 inset: 0,
                 background: `
                   radial-gradient(ellipse 60% 50% at 0% 0%,
-                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.18) 0%,
+                    hsla(${activeHueDeg}, 85%, ${Math.min(70, activeHueLight + 10)}%, 0.18) 0%,
                     transparent 70%),
                   radial-gradient(ellipse 60% 50% at 100% 0%,
-                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.18) 0%,
+                    hsla(${activeHueDeg}, 85%, ${Math.min(70, activeHueLight + 10)}%, 0.18) 0%,
                     transparent 70%),
                   radial-gradient(ellipse 60% 50% at 0% 100%,
-                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.22) 0%,
+                    hsla(${activeHueDeg}, 85%, ${Math.min(70, activeHueLight + 10)}%, 0.22) 0%,
                     transparent 70%),
                   radial-gradient(ellipse 60% 50% at 100% 100%,
-                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.22) 0%,
+                    hsla(${activeHueDeg}, 85%, ${Math.min(70, activeHueLight + 10)}%, 0.22) 0%,
                     transparent 70%)`,
                 transition: 'background 0.25s ease',
               }}
@@ -409,8 +375,8 @@ export default function CaptureSurface({
                 position: 'absolute',
                 inset: 0,
                 background: `radial-gradient(circle at center,
-                  hsla(${hueDegrees}, 80%, ${Math.min(60, hueLightness + 5)}%, 0.15) 0%,
-                  hsla(${hueDegrees}, 70%, ${hueLightness}%, 0.05) 30%,
+                  hsla(${activeHueDeg}, 80%, ${Math.min(60, activeHueLight + 5)}%, 0.15) 0%,
+                  hsla(${activeHueDeg}, 70%, ${activeHueLight}%, 0.05) 30%,
                   transparent 60%)`,
                 transition: 'background 0.25s ease',
               }}
@@ -499,118 +465,300 @@ export default function CaptureSurface({
             ? renderPermissionDenied()
             : (
             <>
-              {/* Camera region — fades up after wordmark + chamber */}
-              <div style={{
-                flex: '1 1 auto',
-                minHeight: 0,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-                padding: '16px 0 24px',
-                overflow: 'hidden',
-                opacity: frameVisible ? 1 : 0,
-                transition: 'opacity 600ms ease-out',
-              }}>
-                <CameraFrame
-                  ref={cameraRef}
-                  stream={selfie.stream}
-                  hueDegrees={hueDegrees}
-                  hueLightness={hueLightness}
-                  capturedFrame={selfie.capturedFrame}
-                  showFlash={showFlash}
-                  venueName={venueName}
-                  headerTriggerKey={headerTriggerKey}
-                  warming={warming}
-                  momentNumber={1}
-                  showNumberReveal={showNumberReveal}
-                />
-
-                {(selfie.status === 'captured' || selfie.status === 'composing' || selfie.status === 'composed') && renderCapturedState()}
-              </div>
-
-              {/* Bottom controls — fades up with the camera frame */}
-              <div style={{
-                width: '100%',
-                padding: '0 24px',
-                paddingBottom: 'calc(env(safe-area-inset-bottom) + 18px)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '14px',
-                flexShrink: 0,        // Never let this section compress
-                background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
-                paddingTop: '14px',
-                opacity: frameVisible ? 1 : 0,
-                transition: 'opacity 600ms ease-out',
-              }}>
-                {/* Emotional thesis — the moment in one cursive sentence */}
+              {/* Camera region — visible only during TUNING state */}
+              {!isComposed && (
                 <div style={{
-                  fontFamily: 'var(--font-cursive)',
-                  fontSize: '22px',
-                  fontWeight: 500,
-                  color: `hsl(${hueDegrees}, 85%, ${Math.min(78, hueLightness + 12)}%)`,
-                  textAlign: 'center',
-                  transition: 'color 0.2s ease, text-shadow 0.2s ease',
-                  opacity: 0.95,
-                  minHeight: '32px',
-                  letterSpacing: '0.4px',
-                  lineHeight: 1.2,
-                  textShadow: `0 0 18px hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.45)`,
-                  padding: '0 16px',
+                  flex: '1 1 auto',
+                  minHeight: 0,
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  padding: '16px 0 24px',
+                  overflow: 'hidden',
+                  opacity: frameVisible ? 1 : 0,
+                  transition: 'opacity 600ms ease-out',
                 }}>
-                  {venueName.toLowerCase()} feels like {nearestHueName(hueDegrees)}
+                  <CameraFrame
+                    ref={cameraRef}
+                    stream={selfie.stream}
+                    hueDegrees={hueDegrees}
+                    hueLightness={hueLightness}
+                    capturedFrame={selfie.capturedFrame}
+                    showFlash={showFlash}
+                    venueName={venueName}
+                    headerTriggerKey={headerTriggerKey}
+                    warming={warming}
+                    momentNumber={1}
+                    showNumberReveal={showNumberReveal}
+                  />
                 </div>
+              )}
 
-                {/* The 2D slider */}
-                <HueSpectrum2D
-                  hueDegrees={hueDegrees}
-                  hueLightness={hueLightness}
-                  onChange={handleHueChange}
-                  width={Math.min(360, window.innerWidth - 48)}
-                />
+              {/* Composed state — clean committed UI */}
+              {isComposed && (
+                <div style={{
+                  flex: '1 1 auto',
+                  minHeight: 0,
+                  width: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  padding: '24px 0 16px',
+                  overflow: 'hidden',
+                  gap: '20px',
+                }}>
+                  {/* "✦ moment captured" header */}
+                  <div style={{
+                    fontFamily: 'var(--font-cursive)',
+                    fontSize: '28px',
+                    fontWeight: 600,
+                    color: 'var(--venuu-pearl)',
+                    letterSpacing: '0.5px',
+                    textShadow: `
+                      0 0 16px rgba(255, 248, 231, 0.7),
+                      0 0 32px rgba(255, 248, 231, 0.4)
+                    `,
+                    animation: 'pearl-shimmer 5s ease-in-out infinite',
+                  }}>
+                    ✦ moment captured
+                  </div>
 
-                {/* Shutter button */}
-                <motion.button
-                  onClick={handleShutter}
-                  disabled={selfie.status !== 'streaming'}
-                  whileTap={{ scale: 0.9 }}
-                  animate={
-                    selfie.status === 'streaming'
-                      ? {
-                          boxShadow: [
-                            `0 0 0 0 hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.6)`,
-                            `0 0 0 20px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0)`,
-                          ],
-                        }
-                      : { boxShadow: '0 0 0 0 rgba(0,0,0,0)' }
-                  }
-                  transition={{
-                    boxShadow: { duration: 1.8, repeat: Infinity, ease: 'easeOut' },
-                  }}
-                  style={{
-                    width: '88px',
-                    height: '88px',
-                    borderRadius: '50%',
-                    // Solid filled center — clearly visible as a button
-                    background: `radial-gradient(circle,
-                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.95) 0%,
-                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.7) 60%,
-                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.5) 100%)`,
-                    // White inner ring for the iPhone-camera-style affordance
-                    border: '4px solid white',
-                    boxShadow: `0 0 32px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.6)`,
-                    cursor: selfie.status === 'streaming' ? 'pointer' : 'not-allowed',
-                    opacity: selfie.status === 'streaming' ? 1 : 0.5,
-                    transition: 'background 0.18s, opacity 0.2s, border-color 0.18s',
-                    // Make absolutely sure it's interactive
-                    pointerEvents: 'auto',
-                    position: 'relative',
-                    zIndex: 10,
-                  }}
-                />
-              </div>
+                  {/* The composed JPEG — the artifact */}
+                  {selfie.composedPreviewURL && (
+                    <div style={{
+                      width: '74%',
+                      maxWidth: '300px',
+                      aspectRatio: '9/16',
+                      borderRadius: '20px',
+                      overflow: 'hidden',
+                      boxShadow: `
+                        0 0 0 1px rgba(255, 248, 231, 0.18),
+                        0 0 28px rgba(255, 248, 231, 0.32),
+                        0 0 64px rgba(255, 248, 231, 0.18),
+                        0 8px 40px rgba(0, 0, 0, 0.6)
+                      `,
+                    }}>
+                      <img
+                        src={selfie.composedPreviewURL}
+                        alt="Your moment"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          display: 'block',
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* "develops at 8am tomorrow" subline */}
+                  <div style={{
+                    fontFamily: 'Satoshi, sans-serif',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: 'rgba(255, 255, 255, 0.55)',
+                    letterSpacing: '2px',
+                    textTransform: 'uppercase',
+                    textAlign: 'center',
+                  }}>
+                    develops at 8am tomorrow
+                  </div>
+
+                  {/* Composing state — shown while canvas renders */}
+                  {selfie.status === 'composing' && (
+                    <div style={{
+                      fontFamily: 'var(--font-cursive)',
+                      fontSize: '16px',
+                      color: 'var(--venuu-pearl)',
+                      opacity: 0.7,
+                    }}>
+                      composing your moment...
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Bottom controls — TUNING state (slider + prompt + shutter) */}
+              {!isComposed && (
+                <div style={{
+                  width: '100%',
+                  padding: '0 24px',
+                  paddingBottom: 'calc(env(safe-area-inset-bottom) + 18px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '14px',
+                  flexShrink: 0,
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
+                  paddingTop: '14px',
+                  opacity: frameVisible ? 1 : 0,
+                  transition: 'opacity 600ms ease-out',
+                }}>
+                  {/* Emotional thesis — the moment in one cursive sentence */}
+                  <div style={{
+                    fontFamily: 'var(--font-cursive)',
+                    fontSize: '22px',
+                    fontWeight: 500,
+                    color: `hsl(${hueDegrees}, 85%, ${Math.min(78, hueLightness + 12)}%)`,
+                    textAlign: 'center',
+                    transition: 'color 0.2s ease, text-shadow 0.2s ease',
+                    opacity: 0.95,
+                    minHeight: '32px',
+                    letterSpacing: '0.4px',
+                    lineHeight: 1.2,
+                    textShadow: `0 0 18px hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.45)`,
+                    padding: '0 16px',
+                  }}>
+                    {venueName.toLowerCase()} feels like {nearestHueName(hueDegrees)}
+                  </div>
+
+                  {/* The 2D slider */}
+                  <HueSpectrum2D
+                    hueDegrees={hueDegrees}
+                    hueLightness={hueLightness}
+                    onChange={handleHueChange}
+                    width={Math.min(360, window.innerWidth - 48)}
+                  />
+
+                  {/* Shutter button — primary action in tuning state */}
+                  <motion.button
+                    onClick={handleShutter}
+                    disabled={selfie.status !== 'streaming'}
+                    whileTap={{ scale: 0.9 }}
+                    animate={
+                      selfie.status === 'streaming'
+                        ? {
+                            boxShadow: [
+                              `0 0 0 0 hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.6)`,
+                              `0 0 0 20px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0)`,
+                            ],
+                          }
+                        : { boxShadow: '0 0 0 0 rgba(0,0,0,0)' }
+                    }
+                    transition={{
+                      boxShadow: { duration: 1.8, repeat: Infinity, ease: 'easeOut' },
+                    }}
+                    style={{
+                      width: '88px',
+                      height: '88px',
+                      borderRadius: '50%',
+                      background: `radial-gradient(circle,
+                        hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.95) 0%,
+                        hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.7) 60%,
+                        hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.5) 100%)`,
+                      border: '4px solid white',
+                      boxShadow: `0 0 32px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.6)`,
+                      cursor: selfie.status === 'streaming' ? 'pointer' : 'not-allowed',
+                      opacity: selfie.status === 'streaming' ? 1 : 0.5,
+                      transition: 'background 0.18s, opacity 0.2s, border-color 0.18s',
+                      pointerEvents: 'auto',
+                      position: 'relative',
+                      zIndex: 10,
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Bottom controls — COMPOSED state (action buttons) */}
+              {isComposed && selfie.status === 'composed' && (
+                <div style={{
+                  width: '100%',
+                  padding: '0 28px',
+                  paddingBottom: 'calc(env(safe-area-inset-bottom) + 20px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '14px',
+                  flexShrink: 0,
+                  paddingTop: '14px',
+                }}>
+                  {/* MARK SUNSPOT — primary action, glows in captured hue */}
+                  <button
+                    onClick={handleMark}
+                    style={{
+                      width: '100%',
+                      maxWidth: '320px',
+                      padding: '18px 24px',
+                      background: `linear-gradient(180deg,
+                        hsla(${activeHueDeg}, 85%, ${activeHueLight}%, 0.92) 0%,
+                        hsla(${activeHueDeg}, 85%, ${activeHueLight}%, 0.78) 100%)`,
+                      border: `2px solid hsl(${activeHueDeg}, 90%, ${Math.min(80, activeHueLight + 10)}%)`,
+                      borderRadius: '16px',
+                      color: '#fff',
+                      fontFamily: 'Satoshi, sans-serif',
+                      fontSize: '15px',
+                      fontWeight: 800,
+                      letterSpacing: '2px',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      boxShadow: `
+                        0 0 28px hsla(${activeHueDeg}, 90%, ${activeHueLight}%, 0.5),
+                        0 6px 24px rgba(0, 0, 0, 0.4)
+                      `,
+                      transition: 'transform 0.15s, box-shadow 0.15s',
+                    }}
+                  >
+                    ✦ mark {venueName.toLowerCase()}
+                  </button>
+
+                  {/* SAVE TO PHOTOS — secondary, neutral */}
+                  <button
+                    onClick={handleSaveToPhotos}
+                    disabled={saveStatus === 'saving' || saveStatus === 'success'}
+                    style={{
+                      width: '100%',
+                      maxWidth: '320px',
+                      padding: '14px 24px',
+                      background: saveStatus === 'success'
+                        ? 'rgba(80, 200, 120, 0.18)'
+                        : 'rgba(255, 255, 255, 0.08)',
+                      border: saveStatus === 'success'
+                        ? '1px solid rgba(80, 200, 120, 0.4)'
+                        : '1px solid rgba(255, 255, 255, 0.18)',
+                      borderRadius: '14px',
+                      color: saveStatus === 'success' ? 'rgba(80, 220, 140, 1)' : 'rgba(255, 255, 255, 0.85)',
+                      fontFamily: 'Satoshi, sans-serif',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      letterSpacing: '1.8px',
+                      textTransform: 'uppercase',
+                      cursor: saveStatus === 'saving' ? 'wait' : 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {saveStatus === 'saving' && 'saving...'}
+                    {saveStatus === 'success' && '✓ saved'}
+                    {saveStatus === 'permission_denied' && 'permission denied'}
+                    {saveStatus === 'error' && 'save failed · retry'}
+                    {(saveStatus === 'idle' || saveStatus === 'unsupported') && 'save to photos'}
+                  </button>
+
+                  {/* retake — tertiary, smallest */}
+                  <button
+                    onClick={handleRetake}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'rgba(255, 255, 255, 0.5)',
+                      fontFamily: 'Satoshi, sans-serif',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      letterSpacing: '1.5px',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      padding: '8px 16px',
+                      textDecoration: 'underline',
+                      textUnderlineOffset: '4px',
+                    }}
+                  >
+                    retake
+                  </button>
+                </div>
+              )}
             </>
           )}
         </motion.div>
