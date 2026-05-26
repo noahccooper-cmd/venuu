@@ -7,6 +7,12 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
   },
+  ios: {
+    contentInset: 'always',
+    // WebRTC requires inline media playback (no fullscreen takeover)
+    // for the live camera stream to render inside the React UI.
+    allowsLinkPreview: false,
+  },
   plugins: {
     SplashScreen: {
       launchAutoHide: false,

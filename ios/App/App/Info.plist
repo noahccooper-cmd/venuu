@@ -30,6 +30,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>venuu uses your camera to capture and save your moment at each venue you crown.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>venuu may request microphone access alongside camera for moment capture, though we never record audio.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>venuu accesses your photo library when capturing moments at venues.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>venuu saves your captured moments to develop overnight.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

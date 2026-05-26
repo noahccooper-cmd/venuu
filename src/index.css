@@ -12,6 +12,9 @@
      var(--font-display). Keeps the choreographed weights honest. */
   --font-display: 'Satoshi', -apple-system, sans-serif;
 
+  /* Cursive font — engraved Polaroid header on the capture surface. */
+  --font-cursive: 'Caveat', cursive;
+
   /* Brand */
   --brand-orange: #FF8200;
   --brand-orange-hover: #FF5E1A;
@@ -5213,4 +5216,14 @@ body[data-sheet-state="pill"] .map-side-pill {
 @keyframes rate-subtitle-shimmer {
   0%, 100% { background-position: 200% 0; }
   50%      { background-position: -200% 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Capture Surface — shutter flash
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes shutter-flash {
+  0%   { opacity: 0; }
+  20%  { opacity: 0.85; }
+  100% { opacity: 0; }
 }

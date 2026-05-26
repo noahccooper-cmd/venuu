@@ -21,6 +21,7 @@ import { VennyBar } from './components/Venny/VennyBar';
 import { VennySheet } from './components/Venny/VennySheet';
 import PaintScreen from './components/Paint/PaintScreen';
 import PaintCeremony from './components/Paint/PaintCeremony';
+import CaptureSurface from './components/Capture/CaptureSurface';
 import type { VibeHueId } from './lib/hueMath';
 import type { Plan as VennyPlan } from './components/Venny/PlanCard';
 import { SignInSheet } from './components/Auth/SignInSheet';
@@ -124,6 +125,11 @@ export default function App() {
   const [paintedHueId, setPaintedHueId] = useState<VibeHueId | null>(null);
   const [paintPromptId, setPaintPromptId] = useState<string | null>(null);
   const [paintVisitLabel, setPaintVisitLabel] = useState<string>('');
+  // PHASE 1 (49a) — WebRTC capture surface, dev-gated for now.
+  const [captureSurfaceOpen, setCaptureSurfaceOpen] = useState(false);
+  const [captureSurfaceVenue, setCaptureSurfaceVenue] = useState<{
+    id: string; name: string;
+  } | null>(null);
   // PlanSheet expects a live-state lookup per venue. v1 ships with an
   // empty Map (everything falls back to the `unknown` accent); a
   // follow-up can populate from headcount_estimates when activePlan
@@ -762,6 +768,43 @@ export default function App() {
     return () => window.removeEventListener('venuu:request-paint', handler);
   }, []);
 
+  // PHASE 1 DEV ONLY — secret triple-tap to open CaptureSurface
+  // against a hardcoded venue for testing. Remove in PHASE 3 (49c).
+  useEffect(() => {
+    let taps = 0;
+    let timer: any;
+    const handler = () => {
+      taps++;
+      clearTimeout(timer);
+      timer = setTimeout(() => { taps = 0; }, 600);
+      if (taps >= 3) {
+        taps = 0;
+        // Use Sunspot as test venue; fall back to first venue if not loaded
+        const target = venues.find(v => v.name === 'Sunspot') || venues[0];
+        if (!target) {
+          console.warn('[dev] no venue available for capture test');
+          return;
+        }
+        console.log('[dev] opening CaptureSurface for', target.name);
+        setCaptureSurfaceVenue({ id: target.id, name: target.name });
+        setCaptureSurfaceOpen(true);
+      }
+    };
+    // Triple-tap the bottom-left corner of the screen
+    const onTouch = (e: TouchEvent) => {
+      const t = e.touches[0] || e.changedTouches[0];
+      if (!t) return;
+      if (t.clientX < 60 && t.clientY > window.innerHeight - 60) {
+        handler();
+      }
+    };
+    window.addEventListener('touchend', onTouch);
+    return () => {
+      window.removeEventListener('touchend', onTouch);
+      clearTimeout(timer);
+    };
+  }, [venues]);
+
   // ── activePlan lifecycle bound to activePlanSheet. When the
   //    sheet dismisses (close X, swipe-down past PILL, end-night
   //    completion sequence, etc.) we clear activePlan + the saved-
@@ -1127,6 +1170,18 @@ export default function App() {
           setPaintedHueId(null);
           setActivePaintVenue(null);
           setPaintPromptId(null);
+        }}
+      />
+
+      {/* PHASE 1 (49a) — WebRTC capture surface. Dev-gated via the
+       *  triple-tap bottom-left shortcut until 49c wires the CTA. */}
+      <CaptureSurface
+        open={captureSurfaceOpen}
+        venueId={captureSurfaceVenue?.id ?? ''}
+        venueName={captureSurfaceVenue?.name ?? ''}
+        onClose={() => {
+          setCaptureSurfaceOpen(false);
+          setCaptureSurfaceVenue(null);
         }}
       />
 
