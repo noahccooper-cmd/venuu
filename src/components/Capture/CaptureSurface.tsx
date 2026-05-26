@@ -236,18 +236,77 @@ export default function CaptureSurface({
             position: 'fixed',
             inset: 0,
             zIndex: 9000,
-            // Subtle radial gradient — depth, not flat black
-            background: `radial-gradient(ellipse at center,
-              hsla(${hueDegrees}, 30%, 8%, 1) 0%,
-              rgba(0,0,0,1) 70%)`,
+            background: '#000',  // pure black base; chamber layer below applies the hue
             transition: 'background 0.4s ease',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            // No safe-area padding here — handled inside child sections
-            // so flex layout has the full screen to work with.
+            justifyContent: 'flex-start',
           }}
         >
+          {/* THE CHAMBER — three-layer hue bloom that washes the entire
+              surface in the user's chosen feeling. The phone becomes the
+              room. The room becomes the moment. */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 0,
+              pointerEvents: 'none',
+              transition: 'opacity 0.4s ease',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Layer 1: ambient screen tint — the room's base color */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: `linear-gradient(180deg,
+                  hsla(${hueDegrees}, ${Math.min(60, hueLightness + 5)}%, 8%, 0.55) 0%,
+                  hsla(${hueDegrees}, ${Math.min(50, hueLightness)}%, 5%, 0.35) 50%,
+                  hsla(${hueDegrees}, ${Math.min(60, hueLightness + 5)}%, 8%, 0.55) 100%)`,
+                transition: 'background 0.25s ease',
+              }}
+            />
+
+            {/* Layer 2: corner blooms — four soft hue halos in each corner */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: `
+                  radial-gradient(ellipse 60% 50% at 0% 0%,
+                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.18) 0%,
+                    transparent 70%),
+                  radial-gradient(ellipse 60% 50% at 100% 0%,
+                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.18) 0%,
+                    transparent 70%),
+                  radial-gradient(ellipse 60% 50% at 0% 100%,
+                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.22) 0%,
+                    transparent 70%),
+                  radial-gradient(ellipse 60% 50% at 100% 100%,
+                    hsla(${hueDegrees}, 85%, ${Math.min(70, hueLightness + 10)}%, 0.22) 0%,
+                    transparent 70%)`,
+                transition: 'background 0.25s ease',
+              }}
+            />
+
+            {/* Layer 3: center halo behind the camera frame — the photo's
+                light reflecting back into the room */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: `radial-gradient(circle at center,
+                  hsla(${hueDegrees}, 80%, ${Math.min(60, hueLightness + 5)}%, 0.15) 0%,
+                  hsla(${hueDegrees}, 70%, ${hueLightness}%, 0.05) 30%,
+                  transparent 60%)`,
+                transition: 'background 0.25s ease',
+              }}
+            />
+          </div>
+
           {/* Close button — top right, subtle */}
           <button
             onClick={() => { hapticLight(); onClose(); }}
@@ -274,7 +333,7 @@ export default function CaptureSurface({
             ? renderPermissionDenied()
             : (
             <>
-              {/* Camera region — vertically centered, balanced breathing room */}
+              {/* Camera region — truly centered in available vertical space */}
               <div style={{
                 flex: '1 1 auto',
                 minHeight: 0,
@@ -283,7 +342,7 @@ export default function CaptureSurface({
                 alignItems: 'center',
                 justifyContent: 'center',
                 position: 'relative',
-                padding: '24px 0 24px',
+                padding: '16px 0 24px',
                 overflow: 'hidden',
               }}>
                 <CameraFrame
@@ -305,14 +364,14 @@ export default function CaptureSurface({
               <div style={{
                 width: '100%',
                 padding: '0 24px',
-                paddingBottom: 'calc(env(safe-area-inset-bottom) + 24px)',
+                paddingBottom: 'calc(env(safe-area-inset-bottom) + 18px)',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '18px',
+                gap: '14px',
                 flexShrink: 0,        // Never let this section compress
-                background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%)',
-                paddingTop: '20px',
+                background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
+                paddingTop: '14px',
               }}>
                 {/* Dynamic prompt — "the hill feels like crimson" */}
                 <div style={{

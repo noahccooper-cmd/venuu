@@ -68,8 +68,8 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
     <div
       style={{
         position: 'relative',
-        width: '78%',
-        maxWidth: '380px',
+        width: '74%',
+        maxWidth: '340px',
         aspectRatio: '9/16',
         borderRadius: '24px',
         overflow: 'hidden',
