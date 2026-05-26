@@ -12,6 +12,10 @@ interface MomentOrbProps {
     developed_at: string;
     created_at: string;
     username?: string;
+    /** User's personal moment number — engraved in JPEG +
+     *  displayed in the orb's top-right pearl badge.
+     *  Null on pre-migration legacy rows (badge hidden). */
+    user_moment_number?: number | null;
   };
   size?: OrbSize;
   onTap: () => void;
@@ -40,10 +44,10 @@ export default function MomentOrb({ moment, size = 'profile', onTap }: MomentOrb
   const venueLetter = (moment.venue_name?.[0] || '?').toUpperCase();
 
   const dimensions = size === 'profile'
-    ? { orbSize: 76, badgeSize: 22, badgeFont: 11 }
-    : { orbSize: 56, badgeSize: 18, badgeFont: 9 };
+    ? { orbSize: 76, badgeSize: 22, badgeFont: 11, momentBadgeFont: 13 }
+    : { orbSize: 56, badgeSize: 18, badgeFont: 9,  momentBadgeFont: 10 };
 
-  const { orbSize, badgeSize, badgeFont } = dimensions;
+  const { orbSize, badgeSize, badgeFont, momentBadgeFont } = dimensions;
 
   const hue = moment.hue_at_capture;
   const hueRing = `hsl(${hue}, 70%, 55%)`;
@@ -152,6 +156,57 @@ export default function MomentOrb({ moment, size = 'profile', onTap }: MomentOrb
       >
         {venueLetter}
       </div>
+
+      {/* Moment number badge — pearlescent ✦#N, top-right corner.
+          Mirrors the engraved JPEG's bottom-right number. The orb
+          becomes a counted trophy: which moment in your journey
+          this venue is. */}
+      {moment.user_moment_number != null && (
+        <div
+          style={{
+            position: 'absolute',
+            top: -2,
+            right: -2,
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: '1px',
+            padding: '2px 6px',
+            borderRadius: '12px',
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(6px)',
+            border: '1px solid rgba(255, 248, 231, 0.25)',
+            boxShadow: '0 0 8px rgba(255, 248, 231, 0.35)',
+            fontFamily: 'var(--font-cursive)',
+            lineHeight: 1,
+            pointerEvents: 'none',
+          }}
+        >
+          <span
+            style={{
+              fontSize: `${Math.max(8, momentBadgeFont - 3)}px`,
+              color: 'var(--venuu-pearl)',
+              textShadow: '0 0 4px rgba(255, 248, 231, 0.8)',
+              marginRight: '1px',
+            }}
+          >
+            ✦
+          </span>
+          <span
+            style={{
+              fontSize: `${momentBadgeFont}px`,
+              fontWeight: 700,
+              color: 'var(--venuu-pearl)',
+              textShadow: `
+                0 0 4px rgba(255, 248, 231, 0.9),
+                0 0 10px rgba(255, 252, 239, 0.55)
+              `,
+              letterSpacing: '0.2px',
+            }}
+          >
+            #{moment.user_moment_number}
+          </span>
+        </div>
+      )}
     </button>
   );
 }

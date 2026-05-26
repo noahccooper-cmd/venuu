@@ -12,6 +12,10 @@ export interface MyRecap {
   photo_url: string;
   hue_at_capture: number;
   developed_at: string;
+  /** The user's personal count when they captured this moment.
+   *  Engraved in the JPEG bottom-right + displayed in the orb
+   *  badge top-right. Null on pre-migration legacy rows (safe). */
+  user_moment_number: number | null;
 }
 
 export function useMyRecaps(username: string | null) {
@@ -28,7 +32,7 @@ export function useMyRecaps(username: string | null) {
     setLoading(true);
     supabase
       .from('venue_recaps')
-      .select('id, created_at, venue_id, username, body, day_of, photo_url, hue_at_capture, developed_at, venues(name)')
+      .select('id, created_at, venue_id, username, body, day_of, photo_url, hue_at_capture, developed_at, user_moment_number, venues(name)')
       .eq('username', username)
       .order('created_at', { ascending: false })
       .limit(20)
@@ -49,6 +53,7 @@ export function useMyRecaps(username: string | null) {
           photo_url: r.photo_url,
           hue_at_capture: r.hue_at_capture,
           developed_at: r.developed_at,
+          user_moment_number: r.user_moment_number ?? null,
         }));
         setRecaps(rows);
         setLoading(false);
