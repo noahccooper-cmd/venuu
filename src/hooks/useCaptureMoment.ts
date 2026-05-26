@@ -1,3 +1,12 @@
+/**
+ * LEGACY — Replaced by useMomentSubmit (src/hooks/) in PROMPT 49c.
+ * The new pipeline targets the WebRTC composite Blob path instead
+ * of the Capacitor Camera + dataURL path this hook uses.
+ *
+ * Left intact as dead code during the Tampa launch window. Slated
+ * for removal in the post-launch code cleanup pass.
+ */
+
 import { useState, useCallback } from 'react';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { supabase } from '../lib/supabase';

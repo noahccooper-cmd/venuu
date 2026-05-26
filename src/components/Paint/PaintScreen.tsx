@@ -1,3 +1,9 @@
+/**
+ * LEGACY — Replaced by CaptureSurface (src/components/Capture/) in
+ * PROMPT 49c. This file is intentionally left intact as dead code
+ * for safety during the Tampa launch window. Slated for removal in
+ * the post-launch code cleanup pass.
+ */
 // src/components/Paint/PaintScreen.tsx
 //
 // Phase D v3 — the sacred painting moment, polished.

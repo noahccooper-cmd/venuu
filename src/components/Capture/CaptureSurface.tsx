@@ -4,6 +4,7 @@ import { useSelfieCapture } from '../../hooks/useSelfieCapture';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
 import { VIBE_HUES } from '../../lib/hueMath';
 import { saveMomentToPhotos, type SaveStatus } from '../../lib/saveMomentToPhotos';
+import { useMomentSubmit } from '../../hooks/useMomentSubmit';
 import HueSpectrum2D from './HueSpectrum2D';
 import CameraFrame, { type CameraFrameHandle } from './CameraFrame';
 
@@ -11,6 +12,10 @@ interface CaptureSurfaceProps {
   open: boolean;
   venueId: string;
   venueName: string;
+  username: string | null;
+  /** Fires after MARK pipeline completes successfully. Triggers
+   *  PaintCeremony in App.tsx. */
+  onPainted: (hueId: number, recapId: string) => void;
   onClose: () => void;
 }
 
@@ -59,9 +64,10 @@ function nearestHueName(degrees: number): string {
 }
 
 export default function CaptureSurface({
-  open, venueId, venueName, onClose,
+  open, venueId, venueName, username, onPainted, onClose,
 }: CaptureSurfaceProps) {
   const selfie = useSelfieCapture();
+  const submit = useMomentSubmit();
   const cameraRef = useRef<CameraFrameHandle>(null);
 
   const initial = loadLastHue();
@@ -206,9 +212,10 @@ export default function CaptureSurface({
     hapticLight();
     setCommittedHue(null);
     setSaveStatus('idle');
+    submit.reset();
     selfie.reset();
     selfie.requestStream();
-  }, [selfie]);
+  }, [selfie, submit]);
 
   const handleSaveToPhotos = useCallback(async () => {
     if (!selfie.composedBlob) {
@@ -230,16 +237,61 @@ export default function CaptureSurface({
     }
   }, [selfie.composedBlob, venueName]);
 
-  const handleMark = useCallback(() => {
+  const handleMark = useCallback(async () => {
+    if (!selfie.composedBlob || !selfie.capturedFrame) {
+      console.warn('[CaptureSurface] MARK called without composed blob');
+      alert('Capture not ready. Please retake.');
+      return;
+    }
+    if (!username) {
+      console.warn('[CaptureSurface] MARK called without username');
+      alert('Please sign in to capture moments.');
+      return;
+    }
+
     hapticMedium();
-    // 49b placeholder. In 49c this will:
-    //   1. Upload selfie.composedBlob to recap-moments bucket
-    //   2. Call submit_moment RPC with the storage path
-    //   3. Read the returned user_moment_number
-    //   4. Fire onPainted to trigger PaintCeremony
-    //   5. Close the surface after ceremony
-    alert('Mark would submit the moment.\n\n(49c wires this to the real pipeline: storage upload + submit_moment RPC + ceremony.)');
-  }, []);
+
+    // Use the committed (captured) hue, not the current slider position
+    const submitDegrees = committedHue?.degrees ?? hueDegrees;
+    const submitLightness = committedHue?.lightness ?? hueLightness;
+
+    const result = await submit.submit({
+      blob: selfie.composedBlob,
+      capturedFrame: selfie.capturedFrame,
+      venueId,
+      venueName,
+      username,
+      hueDegrees: submitDegrees,
+      hueLightness: submitLightness,
+    });
+
+    if (result) {
+      hapticMedium();
+      // Close surface, then fire ceremony with the hueId + recapId
+      onPainted(result.hueId, result.recapId);
+    } else {
+      // Error already surfaced in submit.error via alert paths
+      // below. Just leave user on COMPOSED state to retry or retake.
+      if (submit.error && submit.errorCode !== 'unknown') {
+        // Specific actionable errors get an alert
+        alert(submit.error);
+      } else if (submit.error) {
+        // Unknown errors get the raw message
+        alert(`Submit failed: ${submit.error}`);
+      }
+    }
+  }, [
+    selfie.composedBlob,
+    selfie.capturedFrame,
+    username,
+    venueId,
+    venueName,
+    committedHue,
+    hueDegrees,
+    hueLightness,
+    submit,
+    onPainted,
+  ]);
 
   // ── Permission denied state ─────────────────────────────────
   const renderPermissionDenied = () => (
@@ -679,6 +731,13 @@ export default function CaptureSurface({
                   {/* MARK SUNSPOT — primary action, glows in captured hue */}
                   <button
                     onClick={handleMark}
+                    disabled={
+                      submit.status === 'uploading' ||
+                      submit.status === 'submitting' ||
+                      submit.status === 'recomposing' ||
+                      submit.status === 'reuploading' ||
+                      submit.status === 'recording_paint'
+                    }
                     style={{
                       width: '100%',
                       maxWidth: '320px',
@@ -694,15 +753,35 @@ export default function CaptureSurface({
                       fontWeight: 800,
                       letterSpacing: '2px',
                       textTransform: 'uppercase',
-                      cursor: 'pointer',
+                      cursor: (
+                        submit.status === 'uploading' ||
+                        submit.status === 'submitting' ||
+                        submit.status === 'recomposing' ||
+                        submit.status === 'reuploading' ||
+                        submit.status === 'recording_paint'
+                      ) ? 'wait' : 'pointer',
+                      opacity: (
+                        submit.status === 'uploading' ||
+                        submit.status === 'submitting' ||
+                        submit.status === 'recomposing' ||
+                        submit.status === 'reuploading' ||
+                        submit.status === 'recording_paint'
+                      ) ? 0.8 : 1,
                       boxShadow: `
                         0 0 28px hsla(${activeHueDeg}, 90%, ${activeHueLight}%, 0.5),
                         0 6px 24px rgba(0, 0, 0, 0.4)
                       `,
-                      transition: 'transform 0.15s, box-shadow 0.15s',
+                      transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.2s',
                     }}
                   >
-                    ✦ mark {venueName.toLowerCase()}
+                    {submit.status === 'uploading'        && '↑ uploading...'}
+                    {submit.status === 'submitting'       && '✦ committing your moment...'}
+                    {submit.status === 'recomposing'      && '✦ engraving your number...'}
+                    {submit.status === 'reuploading'      && '↑ finalizing...'}
+                    {submit.status === 'recording_paint'  && '✦ painting the venue...'}
+                    {submit.status === 'idle' && `✦ mark ${venueName.toLowerCase()}`}
+                    {submit.status === 'success' && '✓ marked'}
+                    {submit.status === 'error' && `✦ mark ${venueName.toLowerCase()} · retry`}
                   </button>
 
                   {/* SAVE TO PHOTOS — secondary, neutral */}

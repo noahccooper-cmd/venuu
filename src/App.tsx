@@ -19,7 +19,6 @@ import { PortalPage } from './pages/PortalPage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
 import { VennyBar } from './components/Venny/VennyBar';
 import { VennySheet } from './components/Venny/VennySheet';
-import PaintScreen from './components/Paint/PaintScreen';
 import PaintCeremony from './components/Paint/PaintCeremony';
 import CaptureSurface from './components/Capture/CaptureSurface';
 import type { VibeHueId } from './lib/hueMath';
@@ -113,8 +112,9 @@ export default function App() {
   } | null>(null);
   const [endNightCeremony, setEndNightCeremony] = useState<{ planId: string } | null>(null);
 
-  // PHASE D: paint flow state
-  const [paintScreenOpen, setPaintScreenOpen] = useState(false);
+  // Moments flow state. PaintCeremony state is reused across both
+  // the legacy (now-removed) PaintScreen path and the new CaptureSurface
+  // path — activePaintVenue + paintedHueId still drive the ceremony.
   const [paintCeremonyOpen, setPaintCeremonyOpen] = useState(false);
   const [activePaintVenue, setActivePaintVenue] = useState<{
     id: string;
@@ -123,12 +123,11 @@ export default function App() {
     lng: number;
   } | null>(null);
   const [paintedHueId, setPaintedHueId] = useState<VibeHueId | null>(null);
-  const [paintPromptId, setPaintPromptId] = useState<string | null>(null);
-  const [paintVisitLabel, setPaintVisitLabel] = useState<string>('');
-  // PHASE 1 (49a) — WebRTC capture surface, dev-gated for now.
+  // PHASE 3 (49c) — production CaptureSurface, opened by VenueCard
+  // dispatching `venuu:request-capture` or by a paint_prompt push.
   const [captureSurfaceOpen, setCaptureSurfaceOpen] = useState(false);
   const [captureSurfaceVenue, setCaptureSurfaceVenue] = useState<{
-    id: string; name: string;
+    id: string; name: string; lat?: number; lng?: number;
   } | null>(null);
   // PlanSheet expects a live-state lookup per venue. v1 ships with an
   // empty Map (everything falls back to the `unknown` accent); a
@@ -697,47 +696,42 @@ export default function App() {
     return () => window.removeEventListener('venuu-plan-sheet-stops-updated', handler as EventListener);
   }, [activePlanSheet]);
 
-  // PHASE D: listen for push-notification CustomEvents with paint_prompt type
+  // Listen for push-notification CustomEvents with paint_prompt type.
+  // 49c — opens CaptureSurface (replaces PaintScreen). The paint_prompt
+  // id itself is no longer threaded through; the production submit
+  // pipeline calls record_paint with null prompt id. If we ever want
+  // per-prompt analytics back, add p_paint_prompt_id support to
+  // submit_moment and thread it from here.
   useEffect(() => {
     const handler = async (ev: Event) => {
       const detail = (ev as CustomEvent).detail;
       if (!detail || detail?.data?.type !== 'paint_prompt') return;
 
       const venueId = detail.data.venue_id as string;
-      const promptId = detail.data.paint_prompt_id as string;
-
-      if (!venueId || !promptId) {
-        console.warn('[App] paint_prompt push missing venue_id or paint_prompt_id', detail);
+      if (!venueId) {
+        console.warn('[App] paint_prompt push missing venue_id', detail);
         return;
       }
 
-      // Fetch venue coords + prompt visit range for the PaintScreen header
-      const [{ data: venueRow }, { data: promptRow }] = await Promise.all([
-        supabase.from('venues').select('id, name, lat, lng').eq('id', venueId).single(),
-        supabase.from('paint_prompts')
-          .select('visit_first_seen_at, visit_last_seen_at')
-          .eq('id', promptId)
-          .single(),
-      ]);
+      // Fetch venue coords for the capture surface header + ceremony flyTo
+      const { data: venueRow } = await supabase
+        .from('venues')
+        .select('id, name, lat, lng')
+        .eq('id', venueId)
+        .single();
 
       if (!venueRow) {
         console.warn('[App] paint_prompt venue not found', venueId);
         return;
       }
 
-      const label = promptRow
-        ? formatVisitLabel(promptRow.visit_first_seen_at, promptRow.visit_last_seen_at)
-        : '';
-
-      setActivePaintVenue({
+      setCaptureSurfaceVenue({
         id: venueRow.id,
         name: venueRow.name,
         lat: venueRow.lat,
         lng: venueRow.lng,
       });
-      setPaintPromptId(promptId);
-      setPaintVisitLabel(label);
-      setPaintScreenOpen(true);
+      setCaptureSurfaceOpen(true);
     };
 
     window.addEventListener('push-notification', handler);
@@ -745,65 +739,28 @@ export default function App() {
     return () => window.removeEventListener('push-notification', handler);
   }, []);
 
-  // PATCH 44A — in-app paint entry. The venue card dispatches a
-  // request-paint event when a user inside a geofenced venue taps
-  // "paint this venue." This opens the same PaintScreen as the
-  // push-driven path.
+  // 49c — in-app capture entry. The venue card dispatches a
+  // request-capture event when a user inside a geofenced venue taps
+  // the "✦ capture {venue}" CTA. Opens CaptureSurface for that venue.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { venueId: string; venueName: string; lat: number; lng: number };
-      if (!detail?.venueId || !detail?.venueName) return;
-      setActivePaintVenue({
+      if (!detail?.venueId || !detail?.venueName) {
+        console.warn('[App] venuu:request-capture missing venue data', detail);
+        return;
+      }
+      console.log('[App] opening CaptureSurface for', detail.venueName);
+      setCaptureSurfaceVenue({
         id: detail.venueId,
         name: detail.venueName,
         lat: detail.lat,
         lng: detail.lng,
       });
-      // In-app paint isn't tied to a server-side prompt.
-      setPaintPromptId(null);
-      setPaintVisitLabel('');
-      setPaintScreenOpen(true);
+      setCaptureSurfaceOpen(true);
     };
-    window.addEventListener('venuu:request-paint', handler);
-    return () => window.removeEventListener('venuu:request-paint', handler);
+    window.addEventListener('venuu:request-capture', handler);
+    return () => window.removeEventListener('venuu:request-capture', handler);
   }, []);
-
-  // PHASE 1 DEV ONLY — secret triple-tap to open CaptureSurface
-  // against a hardcoded venue for testing. Remove in PHASE 3 (49c).
-  useEffect(() => {
-    let taps = 0;
-    let timer: any;
-    const handler = () => {
-      taps++;
-      clearTimeout(timer);
-      timer = setTimeout(() => { taps = 0; }, 600);
-      if (taps >= 3) {
-        taps = 0;
-        // Use Sunspot as test venue; fall back to first venue if not loaded
-        const target = venues.find(v => v.name === 'Sunspot') || venues[0];
-        if (!target) {
-          console.warn('[dev] no venue available for capture test');
-          return;
-        }
-        console.log('[dev] opening CaptureSurface for', target.name);
-        setCaptureSurfaceVenue({ id: target.id, name: target.name });
-        setCaptureSurfaceOpen(true);
-      }
-    };
-    // Triple-tap the bottom-left corner of the screen
-    const onTouch = (e: TouchEvent) => {
-      const t = e.touches[0] || e.changedTouches[0];
-      if (!t) return;
-      if (t.clientX < 60 && t.clientY > window.innerHeight - 60) {
-        handler();
-      }
-    };
-    window.addEventListener('touchend', onTouch);
-    return () => {
-      window.removeEventListener('touchend', onTouch);
-      clearTimeout(timer);
-    };
-  }, [venues]);
 
   // ── activePlan lifecycle bound to activePlanSheet. When the
   //    sheet dismisses (close X, swipe-down past PILL, end-night
@@ -1142,24 +1099,6 @@ export default function App() {
         onPlanSaved={(planId) => setActivePlanId(planId)}
       />
 
-      <PaintScreen
-        open={paintScreenOpen}
-        onClose={() => {
-          setPaintScreenOpen(false);
-          setActivePaintVenue(null);
-          setPaintPromptId(null);
-        }}
-        paintPromptId={paintPromptId}
-        venueId={activePaintVenue?.id ?? ''}
-        venueName={activePaintVenue?.name ?? ''}
-        visitTimeRangeLabel={paintVisitLabel}
-        onPainted={(hueId) => {
-          setPaintedHueId(hueId);
-          setPaintScreenOpen(false);
-          setPaintCeremonyOpen(true);
-        }}
-      />
-
       <PaintCeremony
         open={paintCeremonyOpen}
         hueId={paintedHueId}
@@ -1169,16 +1108,37 @@ export default function App() {
           setPaintCeremonyOpen(false);
           setPaintedHueId(null);
           setActivePaintVenue(null);
-          setPaintPromptId(null);
         }}
       />
 
-      {/* PHASE 1 (49a) — WebRTC capture surface. Dev-gated via the
-       *  triple-tap bottom-left shortcut until 49c wires the CTA. */}
+      {/* 49c — production WebRTC capture surface. Entry points:
+       *  1) venue-card "✦ capture {venue}" CTA → venuu:request-capture
+       *  2) paint_prompt push notification → push-notification handler */}
       <CaptureSurface
         open={captureSurfaceOpen}
         venueId={captureSurfaceVenue?.id ?? ''}
         venueName={captureSurfaceVenue?.name ?? ''}
+        username={username ?? null}
+        onPainted={(hueId, recapId) => {
+          console.log('[App] CaptureSurface onPainted, firing ceremony:', { hueId, recapId });
+          // Snapshot the venue (with lat/lng) BEFORE clearing capture state,
+          // since the ceremony needs the coordinates to fly the map to.
+          const venueForCeremony = captureSurfaceVenue;
+          setCaptureSurfaceOpen(false);
+          setCaptureSurfaceVenue(null);
+          if (venueForCeremony && venueForCeremony.lat != null && venueForCeremony.lng != null) {
+            setActivePaintVenue({
+              id: venueForCeremony.id,
+              name: venueForCeremony.name,
+              lat: venueForCeremony.lat,
+              lng: venueForCeremony.lng,
+            });
+            setPaintedHueId(hueId as VibeHueId);
+            setPaintCeremonyOpen(true);
+          } else {
+            console.warn('[App] missing lat/lng for ceremony — skipping fly');
+          }
+        }}
         onClose={() => {
           setCaptureSurfaceOpen(false);
           setCaptureSurfaceVenue(null);
@@ -1215,16 +1175,4 @@ export default function App() {
 
     </div>
   );
-}
-
-function formatVisitLabel(firstSeen: string, lastSeen: string): string {
-  const a = new Date(firstSeen);
-  const b = new Date(lastSeen);
-  const day = a.toLocaleDateString('en-US', { weekday: 'short' });
-  const fmt = (d: Date) => d.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).toLowerCase().replace(' ', '');
-  return `${day} · ${fmt(a)}–${fmt(b)}`;
 }

@@ -716,11 +716,12 @@ export function VenueSheet({
                   alert(`Get within 200m of ${venue.name} to paint your night. You're ${dist} away.`);
                   return;
                 }
-                // Geofenced — open PaintScreen for this venue.
-                // The actual open path is owned by App.tsx; for now, dispatch
-                // a custom event the App can listen for to open PaintScreen
-                // with this venue.
-                window.dispatchEvent(new CustomEvent('venuu:request-paint', {
+                // Geofenced — open CaptureSurface for this venue.
+                // The actual open path is owned by App.tsx; we dispatch a
+                // custom event the App listens for to open the capture
+                // surface with this venue. (49c — replaced the legacy
+                // venuu:request-paint path.)
+                window.dispatchEvent(new CustomEvent('venuu:request-capture', {
                   detail: { venueId: venue.id, venueName: venue.name, lat: venue.lat, lng: venue.lng },
                 }));
               }}
@@ -739,7 +740,7 @@ export function VenueSheet({
                 textAlign: 'center',
               }}
             >
-              {'✦'} paint this venue
+              {'✦'} capture {venue.name.toLowerCase()}
             </button>
             {!geofence.isNearVenue && geofence.distance != null && (
               <div style={{
