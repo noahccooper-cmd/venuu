@@ -5233,3 +5233,21 @@ body[data-sheet-state="pill"] .map-side-pill {
   20%  { opacity: 1; }
   100% { top: 100%; opacity: 0; }
 }
+
+@keyframes frame-breath {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+
+@keyframes mirror-flash {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes wordmark-fade {
+  0%   { opacity: 0;   transform: scale(0.94); }
+  25%  { opacity: 1;   transform: scale(1);    }
+  70%  { opacity: 1;   transform: scale(1);    }
+  100% { opacity: 0;   transform: scale(1.06); }
+}

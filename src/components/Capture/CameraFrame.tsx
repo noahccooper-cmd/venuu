@@ -73,19 +73,31 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
         aspectRatio: '9/16',
         borderRadius: '24px',
         overflow: 'hidden',
-        border: `4px solid ${hueColor}`,
+        border: `3px solid ${hueColor}`,
         boxShadow: `
-          0 0 0 1px rgba(255,255,255,0.08),
-          0 0 24px ${hueGlowEdge},
-          0 0 56px ${hueGlowOut},
-          0 0 96px ${hueGlowOut},
-          inset 0 0 0 1px rgba(255,255,255,0.12),
-          inset 0 0 24px ${hueGlowEdge}
+          0 0 0 1px rgba(255,255,255,0.04),
+          0 0 18px ${hueGlowEdge},
+          0 0 48px ${hueGlowOut},
+          0 0 88px ${hueGlowOut},
+          inset 0 0 18px ${hueGlowEdge}
         `,
         background: '#000',
         transition: 'border-color 0.18s ease, box-shadow 0.25s ease',
       }}
     >
+      {/* Slow breathing glow — frame is alive */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: '-1px',
+          borderRadius: '24px',
+          pointerEvents: 'none',
+          boxShadow: `0 0 32px ${hueGlowEdge}`,
+          animation: 'frame-breath 6s ease-in-out infinite',
+          zIndex: 0,
+        }}
+      />
+
       {/* Live stream */}
       {!capturedFrame && (
         <video

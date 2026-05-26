@@ -1,5 +1,6 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { hapticTick } from '../../lib/haptics';
 
 interface HueSpectrum2DProps {
   /** Current hue degrees, 0-360 */
@@ -27,6 +28,19 @@ export default function HueSpectrum2D({
   const draggingRef = useRef(false);
 
   const HEIGHT = 96;
+
+  // Track which hue bucket we're currently in so we can fire a
+  // haptic tick when the user crosses boundaries. 14 buckets means
+  // each bucket is ~25.7°.
+  const lastBucketRef = useRef<number>(Math.floor(hueDegrees / 25.7));
+
+  useEffect(() => {
+    const currentBucket = Math.floor(hueDegrees / 25.7);
+    if (currentBucket !== lastBucketRef.current) {
+      hapticTick();
+      lastBucketRef.current = currentBucket;
+    }
+  }, [hueDegrees]);
 
   // Compute indicator position from current hue/lightness
   const xPct = (hueDegrees / 360) * 100;

@@ -69,6 +69,8 @@ export default function CaptureSurface({
   const [showFlash, setShowFlash]       = useState(false);
   const [headerTriggerKey, setHeaderTriggerKey] = useState(0);
   const [warming, setWarming] = useState(false);
+  const [mirrorFlash, setMirrorFlash] = useState(false);
+  const [showIntroWordmark, setShowIntroWordmark] = useState(false);
 
   // Request camera stream when surface opens
   useEffect(() => {
@@ -78,15 +80,20 @@ export default function CaptureSurface({
       // (and so the reserved prop isn't an unused-binding compile error).
       console.log('[CaptureSurface] opening for venue', venueId, '— requesting stream');
       setWarming(true);
+      setShowIntroWordmark(true);
       selfie.requestStream();
       setHeaderTriggerKey(k => k + 1);
-      // Clear warmup shimmer after the sweep animation completes
-      const t = setTimeout(() => setWarming(false), 950);
-      return () => clearTimeout(t);
+      const tw = setTimeout(() => setWarming(false), 950);
+      const ti = setTimeout(() => setShowIntroWordmark(false), 1400);
+      return () => {
+        clearTimeout(tw);
+        clearTimeout(ti);
+      };
     } else {
       console.log('[CaptureSurface] closing, stopping stream');
       selfie.reset();
       setWarming(false);
+      setShowIntroWordmark(false);
     }
     // We deliberately omit selfie from deps — its identity changes
     // every render and we only want this effect on open transitions.
@@ -109,8 +116,10 @@ export default function CaptureSurface({
     }
     hapticMedium();
     setShowFlash(true);
+    setMirrorFlash(true);
     await selfie.captureFrame(videoEl);
     setTimeout(() => setShowFlash(false), 400);
+    setTimeout(() => setMirrorFlash(false), 320);
   }, [selfie]);
 
   const handleRetake = useCallback(() => {
@@ -307,6 +316,60 @@ export default function CaptureSurface({
             />
           </div>
 
+          {/* Mirror flash — chamber-wide bloom when shutter fires.
+              The room briefly fills with your color, like a flashbulb
+              went off and the walls caught the light. */}
+          {mirrorFlash && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'none',
+                zIndex: 5,
+                background: `radial-gradient(circle at center,
+                  hsla(${hueDegrees}, 90%, ${Math.min(75, hueLightness + 15)}%, 0.55) 0%,
+                  hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.35) 40%,
+                  hsla(${hueDegrees}, 80%, ${hueLightness}%, 0.10) 80%,
+                  transparent 100%)`,
+                animation: 'mirror-flash 320ms ease-out forwards',
+                mixBlendMode: 'screen',
+              }}
+            />
+          )}
+
+          {/* Intro wordmark — "venuu" writes itself across the screen on
+              open, fades as the chamber and camera settle in. */}
+          {showIntroWordmark && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 50,
+                pointerEvents: 'none',
+                animation: 'wordmark-fade 1400ms ease-out forwards',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'var(--font-cursive)',
+                  fontSize: '88px',
+                  fontWeight: 600,
+                  color: `hsl(${hueDegrees}, 85%, ${Math.min(80, hueLightness + 15)}%)`,
+                  letterSpacing: '2px',
+                  textShadow: `
+                    0 0 32px hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.7),
+                    0 0 64px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.4)
+                  `,
+                }}
+              >
+                venuu
+              </div>
+            </div>
+          )}
+
           {/* Close button — top right, subtle */}
           <button
             onClick={() => { hapticLight(); onClose(); }}
@@ -373,15 +436,20 @@ export default function CaptureSurface({
                 background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
                 paddingTop: '14px',
               }}>
-                {/* Dynamic prompt — "the hill feels like crimson" */}
+                {/* Emotional thesis — the moment in one cursive sentence */}
                 <div style={{
                   fontFamily: 'var(--font-cursive)',
-                  fontSize: '17px',
-                  color: `hsl(${hueDegrees}, 80%, ${Math.min(75, hueLightness + 10)}%)`,
+                  fontSize: '22px',
+                  fontWeight: 500,
+                  color: `hsl(${hueDegrees}, 85%, ${Math.min(78, hueLightness + 12)}%)`,
                   textAlign: 'center',
-                  transition: 'color 0.2s ease',
-                  opacity: 0.92,
-                  minHeight: '24px',
+                  transition: 'color 0.2s ease, text-shadow 0.2s ease',
+                  opacity: 0.95,
+                  minHeight: '32px',
+                  letterSpacing: '0.4px',
+                  lineHeight: 1.2,
+                  textShadow: `0 0 18px hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.45)`,
+                  padding: '0 16px',
                 }}>
                   {venueName.toLowerCase()} feels like {nearestHueName(hueDegrees)}
                 </div>
