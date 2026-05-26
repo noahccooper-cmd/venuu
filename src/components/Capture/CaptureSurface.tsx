@@ -160,7 +160,17 @@ export default function CaptureSurface({
     await selfie.captureFrame(videoEl);
     setTimeout(() => setShowFlash(false), 400);
     setTimeout(() => setMirrorFlash(false), 600);
-  }, [selfie]);
+
+    // Auto-compose the JPEG after the frame is captured.
+    // 49b uses momentNumber={1} placeholder. 49c will fetch the
+    // real number from submit_moment RPC return value.
+    await selfie.compose({
+      hueDegrees,
+      hueLightness,
+      venueName,
+      momentNumber: 1,
+    });
+  }, [selfie, hueDegrees, hueLightness, venueName]);
 
   const handleRetake = useCallback(() => {
     hapticLight();
@@ -226,51 +236,101 @@ export default function CaptureSurface({
     </div>
   );
 
-  // ── Captured-frame holding state (Phase 1 visual stub) ──
+  // ── Captured-frame holding state (Phase 2: composite preview) ──
   const renderCapturedState = () => (
-    <div style={{
-      position: 'absolute',
-      bottom: '24%',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      background: 'rgba(0,0,0,0.65)',
-      backdropFilter: 'blur(12px)',
-      border: `1px solid hsl(${hueDegrees}, 80%, ${hueLightness}%)`,
-      borderRadius: '14px',
-      padding: '12px 20px',
-      color: '#fff',
-      fontFamily: 'Satoshi, sans-serif',
-      fontSize: '11px',
-      letterSpacing: '1.5px',
-      textTransform: 'uppercase',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      zIndex: 50,
-    }}>
-      <span style={{ color: `hsl(${hueDegrees}, 85%, ${hueLightness}%)`, fontSize: '16px' }}>
-        {'✦'}
-      </span>
-      <span>frame captured · phase 1 stub</span>
-      <button
-        onClick={handleRetake}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: 'rgba(255,255,255,0.7)',
-          fontFamily: 'inherit',
-          fontSize: '10px',
-          fontWeight: 700,
+    <>
+      {selfie.status === 'composing' && (
+        <div style={{
+          position: 'absolute',
+          bottom: '20%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(12px)',
+          border: `1px solid hsl(${hueDegrees}, 80%, ${hueLightness}%)`,
+          borderRadius: '14px',
+          padding: '12px 20px',
+          color: '#fff',
+          fontFamily: 'Satoshi, sans-serif',
+          fontSize: '11px',
           letterSpacing: '1.5px',
           textTransform: 'uppercase',
-          cursor: 'pointer',
-          padding: '2px 6px',
-          textDecoration: 'underline',
-        }}
-      >
-        retake
-      </button>
-    </div>
+          zIndex: 50,
+        }}>
+          composing your moment...
+        </div>
+      )}
+
+      {selfie.status === 'composed' && selfie.composedPreviewURL && (
+        <div style={{
+          position: 'absolute',
+          bottom: '14%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(12px)',
+          border: `1px solid var(--venuu-pearl)`,
+          borderRadius: '14px',
+          padding: '14px 18px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          alignItems: 'center',
+          zIndex: 50,
+          maxWidth: '280px',
+        }}>
+          <div style={{
+            color: 'var(--venuu-pearl)',
+            fontFamily: 'var(--font-cursive)',
+            fontSize: '20px',
+            letterSpacing: '0.5px',
+            lineHeight: 1,
+          }}>
+            ✦ your moment
+          </div>
+          <div style={{
+            color: 'rgba(255,255,255,0.6)',
+            fontFamily: 'Satoshi, sans-serif',
+            fontSize: '10px',
+            letterSpacing: '1.2px',
+            textTransform: 'uppercase',
+            textAlign: 'center',
+          }}>
+            composite ready · phase 2 preview
+          </div>
+          <img
+            src={selfie.composedPreviewURL}
+            alt="Composed moment preview"
+            style={{
+              width: '100%',
+              maxWidth: '220px',
+              aspectRatio: '9/16',
+              borderRadius: '8px',
+              objectFit: 'cover',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+            }}
+          />
+          <button
+            onClick={handleRetake}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.3)',
+              borderRadius: '8px',
+              color: 'rgba(255,255,255,0.8)',
+              fontFamily: 'Satoshi, sans-serif',
+              fontSize: '10px',
+              fontWeight: 700,
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              padding: '8px 16px',
+            }}
+          >
+            retake
+          </button>
+        </div>
+      )}
+    </>
   );
 
   return (
@@ -467,7 +527,7 @@ export default function CaptureSurface({
                   showNumberReveal={showNumberReveal}
                 />
 
-                {selfie.status === 'captured' && renderCapturedState()}
+                {(selfie.status === 'captured' || selfie.status === 'composing' || selfie.status === 'composed') && renderCapturedState()}
               </div>
 
               {/* Bottom controls — fades up with the camera frame */}
