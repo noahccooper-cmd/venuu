@@ -36,6 +36,7 @@ import { OnboardingScreen } from './components/Onboarding/OnboardingScreen';
 import { TasteFlow } from './components/Onboarding/TasteFlow';
 import { PushBanner } from './components/Notifications/PushBanner';
 import { usePushNotifications, markPushListenerReady } from './hooks/usePushNotifications';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { useEvents } from './hooks/useEvents';
 import { useUserLocation } from './hooks/useUserLocation';
 import { useProximityDetection } from './hooks/useProximityDetection';
@@ -738,6 +739,40 @@ export default function App() {
     window.addEventListener('push-notification', handler);
     markPushListenerReady();
     return () => window.removeEventListener('push-notification', handler);
+  }, []);
+
+  // PROMPT 50 — 8am develop notification, tap handler.
+  // When the user taps the local notification fired at the moment's
+  // 8am develop time, deep-link them straight to the 'you' tab so
+  // they see their newly developed orb in My Venues. (showProfile
+  // is only used by the guest-only ProfileOverlay — the real profile
+  // with the moments grid lives on the 'you' tab.)
+  useEffect(() => {
+    let listener: { remove: () => Promise<void> } | undefined;
+    (async () => {
+      try {
+        listener = await LocalNotifications.addListener(
+          'localNotificationActionPerformed',
+          (action) => {
+            const kind = action?.notification?.extra?.kind;
+            console.log('[App] local notification tap, kind:', kind);
+            if (kind === 'moment_develop') {
+              setTab('you');
+              // Future enhancement: scroll to the specific orb via
+              // action.notification.extra.recapId
+            }
+          }
+        );
+      } catch (err) {
+        console.warn('[App] LocalNotifications listener failed:', err);
+      }
+    })();
+
+    return () => {
+      if (listener && typeof listener.remove === 'function') {
+        listener.remove();
+      }
+    };
   }, []);
 
   // 49c — in-app capture entry. The venue card dispatches a

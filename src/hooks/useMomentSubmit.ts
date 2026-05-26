@@ -21,6 +21,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { VIBE_HUES } from '../lib/hueMath';
 import { composeMomentJPEG } from '../lib/momentComposite';
+import { scheduleMomentDevelopNotification } from '../lib/scheduleMomentDevelopNotification';
 
 export type SubmitStatus =
   | 'idle'
@@ -199,7 +200,8 @@ export function useMomentSubmit(): UseMomentSubmitReturn {
 
       const recapId = recapRow.id as string;
       const momentNumber = recapRow.user_moment_number as number;
-      console.log('[momentSubmit] recap created, moment number:', momentNumber);
+      const developedAt = recapRow.developed_at as string;
+      console.log('[momentSubmit] recap created, moment number:', momentNumber, 'develops:', developedAt);
 
       // ── Step 5: Recompose with REAL moment number if !== 1 ─
       if (momentNumber !== 1) {
@@ -263,6 +265,20 @@ export function useMomentSubmit(): UseMomentSubmitReturn {
         // just won't contribute to the collective canvas.
         // Log and proceed.
       }
+
+      // ── Step 6.5: Schedule the 8am develop notification ───
+      // Fire-and-forget. Any failure here is non-fatal — the moment
+      // is already submitted and the orb appears. The user just
+      // won't get a push tomorrow morning.
+      scheduleMomentDevelopNotification({
+        recapId,
+        venueName,
+        venueId,
+        momentNumber,
+        developedAt,
+      }).catch(err => {
+        console.warn('[momentSubmit] notification schedule failed (non-fatal):', err);
+      });
 
       // ── Step 7: Success ────────────────────────────────────
       const finalResult: SubmitResult = {
