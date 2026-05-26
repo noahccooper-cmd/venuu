@@ -72,8 +72,11 @@ export function useSelfieCapture(): UseSelfieCaptureReturn {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
-          width:  { ideal: 1080 },
-          height: { ideal: 1920 },
+          // Request wider FOV. iOS Safari respects aspectRatio hints
+          // when available, falling back gracefully to standard lens.
+          aspectRatio: { ideal: 16/9 },
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 },
         },
         audio: false,
       });

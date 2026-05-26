@@ -239,8 +239,8 @@ export default function CaptureSurface({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            paddingTop: 'env(safe-area-inset-top)',
-            paddingBottom: 'env(safe-area-inset-bottom)',
+            // No safe-area padding here — handled inside child sections
+            // so flex layout has the full screen to work with.
           }}
         >
           {/* Close button — top right, subtle */}
@@ -269,15 +269,17 @@ export default function CaptureSurface({
             ? renderPermissionDenied()
             : (
             <>
-              {/* Camera region */}
+              {/* Camera region — flexible but capped so bottom controls always show */}
               <div style={{
-                flex: 1,
+                flex: '1 1 auto',
+                minHeight: 0,           // allows flex shrink past content size
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 position: 'relative',
                 paddingTop: '20px',
+                overflow: 'hidden',
               }}>
                 <PolaroidHeader
                   venueName={venueName}
@@ -298,14 +300,18 @@ export default function CaptureSurface({
                 {selfie.status === 'captured' && renderCapturedState()}
               </div>
 
-              {/* Bottom controls */}
+              {/* Bottom controls — fixed bottom, never pushed off screen */}
               <div style={{
                 width: '100%',
-                padding: '0 24px 24px',
+                padding: '0 24px',
+                paddingBottom: 'calc(env(safe-area-inset-bottom) + 24px)',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '20px',
+                gap: '18px',
+                flexShrink: 0,        // Never let this section compress
+                background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 100%)',
+                paddingTop: '20px',
               }}>
                 {/* Dynamic prompt — "the hill feels like crimson" */}
                 <div style={{
@@ -332,33 +338,39 @@ export default function CaptureSurface({
                 <motion.button
                   onClick={handleShutter}
                   disabled={selfie.status !== 'streaming'}
-                  whileTap={{ scale: 0.92 }}
+                  whileTap={{ scale: 0.9 }}
                   animate={
                     selfie.status === 'streaming'
                       ? {
                           boxShadow: [
-                            `0 0 0 0 hsla(${hueDegrees}, 90%, ${hueLightness}%, 0)`,
-                            `0 0 0 16px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.0)`,
-                            `0 0 0 0 hsla(${hueDegrees}, 90%, ${hueLightness}%, 0)`,
+                            `0 0 0 0 hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.6)`,
+                            `0 0 0 20px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0)`,
                           ],
                         }
                       : { boxShadow: '0 0 0 0 rgba(0,0,0,0)' }
                   }
                   transition={{
-                    boxShadow: { duration: 2, repeat: Infinity, ease: 'easeOut' },
+                    boxShadow: { duration: 1.8, repeat: Infinity, ease: 'easeOut' },
                   }}
                   style={{
-                    width: '78px',
-                    height: '78px',
+                    width: '88px',
+                    height: '88px',
                     borderRadius: '50%',
-                    border: `3px solid hsl(${hueDegrees}, 85%, ${hueLightness}%)`,
+                    // Solid filled center — clearly visible as a button
                     background: `radial-gradient(circle,
-                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.25) 0%,
-                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.05) 70%,
-                      transparent 100%)`,
+                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.95) 0%,
+                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.7) 60%,
+                      hsla(${hueDegrees}, 85%, ${hueLightness}%, 0.5) 100%)`,
+                    // White inner ring for the iPhone-camera-style affordance
+                    border: '4px solid white',
+                    boxShadow: `0 0 32px hsla(${hueDegrees}, 90%, ${hueLightness}%, 0.6)`,
                     cursor: selfie.status === 'streaming' ? 'pointer' : 'not-allowed',
-                    opacity: selfie.status === 'streaming' ? 1 : 0.4,
-                    transition: 'border-color 0.18s, opacity 0.2s',
+                    opacity: selfie.status === 'streaming' ? 1 : 0.5,
+                    transition: 'background 0.18s, opacity 0.2s, border-color 0.18s',
+                    // Make absolutely sure it's interactive
+                    pointerEvents: 'auto',
+                    position: 'relative',
+                    zIndex: 10,
                   }}
                 />
               </div>

@@ -61,8 +61,8 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
     <div
       style={{
         position: 'relative',
-        width: '88%',
-        maxWidth: '420px',
+        width: '78%',
+        maxWidth: '380px',
         aspectRatio: '9/16',
         borderRadius: '24px',
         overflow: 'hidden',
@@ -86,9 +86,18 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
-            transform: 'scaleX(-1)',  // mirror so it feels natural
+            // 'contain' shows the full sensor capture letterboxed instead
+            // of cropping to fill. Combined with the wider sensor request,
+            // this gives the .5x ultrawide selfie effect — you see your
+            // face AND the environment around you.
+            objectFit: 'contain',
+            // Mirror horizontally so it feels like a mirror not a camera
+            // The scale 0.85 zooms slightly OUT (smaller image in frame),
+            // creating the wide-angle perception. Adjust 0.7-0.95 to taste.
+            transform: 'scaleX(-1) scale(0.85)',
+            transformOrigin: 'center center',
             display: 'block',
+            background: '#000',  // letterbox bars are pure black
           }}
         />
       )}
@@ -100,9 +109,11 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
-            transform: 'scaleX(-1)',
+            objectFit: 'contain',
+            transform: 'scaleX(-1) scale(0.85)',
+            transformOrigin: 'center center',
             display: 'block',
+            background: '#000',
           }}
         />
       )}
