@@ -1686,7 +1686,7 @@ export function ProfileScreen({
         {/* ── 9. MY VENUES (moments trophy case) ───────────────── */}
         <div style={{ padding: '20px 16px 0' }}>
           <SectionHeader
-            icon={<span style={{ fontSize: 16, color: 'var(--brand-orange)' }}>{'✨'}</span>}
+            icon={<span style={{ fontSize: 16, color: 'var(--venuu-pearl)', textShadow: '0 0 8px rgba(255, 248, 231, 0.6)' }}>{'✦'}</span>}
             title="My Venues"
             subtitle={
               momentsLoading

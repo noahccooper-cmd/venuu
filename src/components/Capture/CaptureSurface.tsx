@@ -369,6 +369,8 @@ export default function CaptureSurface({
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'flex-start',
+            paddingTop: 'env(safe-area-inset-top)',
+            paddingBottom: 'env(safe-area-inset-bottom)',
           }}
         >
           {/* THE CHAMBER — three-layer hue bloom that washes the entire

@@ -106,11 +106,16 @@ export async function composeMomentJPEG(
     dx = (W - dw) / 2;
   }
 
-  // Fill background black first (for letterbox bars)
-  ctx.fillStyle = '#000';
+  // Paint the letterbox region in a dark version of the hue.
+  // When the source aspect ratio mismatches 9:16, the bars on
+  // top/bottom (or left/right) carry the hue rather than reading
+  // as dead black space. Frame border then wraps a unified
+  // colored canvas instead of fighting black letterbox bars.
+  const letterboxHue = hsl(hueDegrees, 70, Math.max(10, Math.min(20, hueLightness - 35)));
+  ctx.fillStyle = letterboxHue;
   ctx.fillRect(0, 0, W, H);
 
-  // Mirror horizontally before drawing the frame
+  // Mirror horizontally before drawing the source frame
   ctx.save();
   ctx.translate(W, 0);
   ctx.scale(-1, 1);
@@ -165,8 +170,8 @@ export async function composeMomentJPEG(
   // On 1080W canvas, equivalent scale is ~96px venue, ~54px timestamp.
   // ✦ glyph slightly smaller than venue name — ~68px.
 
-  const headerLeft = 60;       // matches paddingLeft: '20px' on ~380px width
-  const headerTop = 72;        // matches paddingTop: '20px' + marginTop: '8px'
+  const headerLeft = 80;       // 7.4% from left edge — breathing room
+  const headerTop = 120;       // 6.25% from top — well clear of edge
   const hueText = hsl(hueDegrees, 80, hueLightness);
 
   // ── ✦ glyph (pearlescent) ─────────────
@@ -198,12 +203,12 @@ export async function composeMomentJPEG(
 
   // ── Step 5: bottom gradient (number readability) ──────────
 
-  const botGrad = ctx.createLinearGradient(0, H * 0.78, 0, H);
+  const botGrad = ctx.createLinearGradient(0, H * 0.72, 0, H);
   botGrad.addColorStop(0, 'rgba(0,0,0,0)');
-  botGrad.addColorStop(0.5, 'rgba(0,0,0,0.30)');
-  botGrad.addColorStop(1, 'rgba(0,0,0,0.55)');
+  botGrad.addColorStop(0.5, 'rgba(0,0,0,0.32)');
+  botGrad.addColorStop(1, 'rgba(0,0,0,0.60)');
   ctx.fillStyle = botGrad;
-  ctx.fillRect(0, H * 0.78, W, H * 0.22);
+  ctx.fillRect(0, H * 0.72, W, H * 0.28);
 
   // ── Step 6: Moment number (pearlescent ✦ + #N) ───────────
   //
@@ -217,9 +222,9 @@ export async function composeMomentJPEG(
   ctx.font = '600 62px Caveat, cursive';
   const glyphWidth = ctx.measureText('✦').width;
 
-  // Compute right-anchored positions
-  const numberY = H - 80;
-  const numberX = W - 60 - numberWidth;
+  // Compute right-anchored positions — 7.3% inset from bottom + right
+  const numberY = H - 140;        // breathing room from bottom edge
+  const numberX = W - 80 - numberWidth;
   const glyphX = numberX - glyphWidth - 12;
 
   // ✦ glyph

@@ -461,6 +461,28 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     window.addEventListener('venuu:drop-state', handler as EventListener);
     return () => window.removeEventListener('venuu:drop-state', handler as EventListener);
   }, []);
+
+  // Listen for explicit venue-card dismissal from the moments flow.
+  // After MARK fires onPainted, App.tsx dispatches venuu:dismiss-venue-card
+  // so the map is fully visible when the ceremony's bloom radiates from
+  // the venue marker. App also clears focusedVenue directly — this listener
+  // is the defensive fallback for any deeper sheet path that lives below
+  // MapView and listens for the same event.
+  useEffect(() => {
+    const handler = () => {
+      console.log('[MapView] venuu:dismiss-venue-card received');
+      // onVenueClick's parent signature accepts a Venue; calling it with
+      // null is a documented dismiss convention. The cast bypasses the
+      // strict type; the catch swallows if the parent rejects null.
+      try {
+        onVenueClickRef.current(null as unknown as Venue);
+      } catch (err) {
+        console.warn('[MapView] onVenueClick(null) rejected by parent', err);
+      }
+    };
+    window.addEventListener('venuu:dismiss-venue-card', handler);
+    return () => window.removeEventListener('venuu:dismiss-venue-card', handler);
+  }, []);
   const onCityTapFromGlobeRef = useRef(onCityTapFromGlobe);
   onCityTapFromGlobeRef.current = onCityTapFromGlobe;
   const cityPulseFrameRef = useRef<number>(0);

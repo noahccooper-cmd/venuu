@@ -1124,21 +1124,44 @@ export default function App() {
         username={username ?? null}
         onPainted={(hueId, recapId, momentNumber) => {
           console.log('[App] CaptureSurface onPainted, firing ceremony:', { hueId, recapId, momentNumber });
-          // Snapshot the venue (with lat/lng) BEFORE clearing capture state,
-          // since the ceremony needs the coordinates to fly the map to.
-          const venueForCeremony = captureSurfaceVenue;
           setCaptureSurfaceOpen(false);
+
+          // Dismiss the venue card sheet so the map is fully visible
+          // when the ceremony fires. The user sees their mark on the
+          // map cleanly — bloom from venue marker outward — not partly
+          // hidden behind the sheet. Two-path defensive dismiss:
+          //   1. Clear focusedVenue directly (it controls the sheet)
+          //   2. Dispatch a window event MapView listens for, in case
+          //      a deeper sheet is mounted via a different path
+          setFocusedVenue(null);
+          window.dispatchEvent(new CustomEvent('venuu:dismiss-venue-card'));
+
+          const venueForCeremony = captureSurfaceVenue;
           setCaptureSurfaceVenue(null);
+
           if (venueForCeremony && venueForCeremony.lat != null && venueForCeremony.lng != null) {
-            setActivePaintVenue({
-              id: venueForCeremony.id,
-              name: venueForCeremony.name,
-              lat: venueForCeremony.lat,
-              lng: venueForCeremony.lng,
+            // Hoist narrowed values BEFORE the rAF — TS re-widens optional
+            // fields across async callback boundaries, so these locals
+            // preserve the `number` narrowing inside the closure.
+            const ceremonyVenueId = venueForCeremony.id;
+            const ceremonyVenueName = venueForCeremony.name;
+            const ceremonyLat = venueForCeremony.lat;
+            const ceremonyLng = venueForCeremony.lng;
+
+            // Wait one frame so the venue card begins dismissing before
+            // ceremony fires. Without this, ceremony's flyTo happens while
+            // the card is still occluding the bottom half of the map.
+            requestAnimationFrame(() => {
+              setActivePaintVenue({
+                id: ceremonyVenueId,
+                name: ceremonyVenueName,
+                lat: ceremonyLat,
+                lng: ceremonyLng,
+              });
+              setPaintedHueId(hueId as VibeHueId);
+              setPaintedMomentNumber(momentNumber);
+              setPaintCeremonyOpen(true);
             });
-            setPaintedHueId(hueId as VibeHueId);
-            setPaintedMomentNumber(momentNumber);
-            setPaintCeremonyOpen(true);
           } else {
             console.warn('[App] missing lat/lng for ceremony — skipping fly');
           }
