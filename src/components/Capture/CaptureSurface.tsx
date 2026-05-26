@@ -81,7 +81,7 @@ export default function CaptureSurface({
       selfie.requestStream();
       setHeaderTriggerKey(k => k + 1);
       // Clear warmup shimmer after the sweep animation completes
-      const t = setTimeout(() => setWarming(false), 700);
+      const t = setTimeout(() => setWarming(false), 950);
       return () => clearTimeout(t);
     } else {
       console.log('[CaptureSurface] closing, stopping stream');
@@ -283,7 +283,7 @@ export default function CaptureSurface({
                 alignItems: 'center',
                 justifyContent: 'center',
                 position: 'relative',
-                padding: '32px 0 16px',  // breathing room top, less bottom (slider sits close)
+                padding: '24px 0 24px',
                 overflow: 'hidden',
               }}>
                 <CameraFrame

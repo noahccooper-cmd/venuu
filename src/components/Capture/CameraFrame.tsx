@@ -61,8 +61,8 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
   const hueColor    = `hsl(${hueDegrees}, 80%, ${hueLightness}%)`;
   const hueGlowEdge = `hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 10)}%, 0.55)`;
   const hueGlowOut  = `hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 10)}%, 0.15)`;
-  const hueBleed    = `hsla(${hueDegrees}, 70%, ${hueLightness}%, 0.05)`;
-  // ^^ 5% bleed — extremely subtle, per locked decision
+  // Hue bloom is now expressed inline (edges-in, screen blend) rather
+  // than via a single precomputed bleed color — see the bloom overlay below.
 
   return (
     <div
@@ -73,11 +73,14 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
         aspectRatio: '9/16',
         borderRadius: '24px',
         overflow: 'hidden',
-        border: `3px solid ${hueColor}`,
+        border: `4px solid ${hueColor}`,
         boxShadow: `
-          0 0 28px ${hueGlowEdge},
-          0 0 60px ${hueGlowOut},
-          inset 0 0 0 1px rgba(255,255,255,0.04)
+          0 0 0 1px rgba(255,255,255,0.08),
+          0 0 24px ${hueGlowEdge},
+          0 0 56px ${hueGlowOut},
+          0 0 96px ${hueGlowOut},
+          inset 0 0 0 1px rgba(255,255,255,0.12),
+          inset 0 0 24px ${hueGlowEdge}
         `,
         background: '#000',
         transition: 'border-color 0.18s ease, box-shadow 0.25s ease',
@@ -125,26 +128,24 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
         />
       )}
 
-      {/* Subtle gradient behind header — readability in bright lighting */}
+      {/* Gradient + header are now grouped in a single container that
+          sits INSIDE the frame's rounded interior, never clipping
+          against the border. */}
       <div
         style={{
           position: 'absolute',
-          top: 0, left: 0, right: 0,
-          height: '28%',
-          background: 'linear-gradient(180deg, rgba(0,0,0,0.32) 0%, rgba(0,0,0,0.16) 35%, transparent 100%)',
+          top: 0,
+          left: 0,
+          right: 0,
+          paddingTop: '22px',
+          paddingLeft: '22px',
+          paddingRight: '22px',
+          paddingBottom: '32px',
+          background: 'linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.22) 50%, transparent 100%)',
           pointerEvents: 'none',
-          zIndex: 2,
-        }}
-      />
-
-      {/* Polaroid header — engraved into the photo, top-left */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '18px',
-          left: '18px',
           zIndex: 3,
-          pointerEvents: 'none',
+          borderTopLeftRadius: '20px',   // matches frame radius (24px) minus border (4px)
+          borderTopRightRadius: '20px',
         }}
       >
         <PolaroidHeader
@@ -155,13 +156,21 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
         />
       </div>
 
-      {/* Subtle 5% hue bleed overlay — the venuu touch */}
+      {/* Hue bloom — light leaking from frame edges INWARD into photo */}
       <div
         style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: `radial-gradient(circle at center,
-            transparent 40%,
-            ${hueBleed} 100%)`,
+          background: `
+            radial-gradient(ellipse at center,
+              transparent 35%,
+              hsla(${hueDegrees}, 80%, ${hueLightness}%, 0.10) 100%),
+            linear-gradient(180deg,
+              hsla(${hueDegrees}, 80%, ${hueLightness}%, 0.08) 0%,
+              transparent 25%,
+              transparent 75%,
+              hsla(${hueDegrees}, 80%, ${hueLightness}%, 0.08) 100%)
+          `,
+          mixBlendMode: 'screen',
           transition: 'background 0.2s ease',
         }}
       />
@@ -176,7 +185,7 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
         }}
       />
 
-      {/* Warming up — single shimmer sweep when stream first opens */}
+      {/* Warming up — luxurious hue sweep when surface first opens */}
       {warming && (
         <div
           style={{
@@ -190,13 +199,17 @@ const CameraFrame = forwardRef<CameraFrameHandle, CameraFrameProps>(({
           <div
             style={{
               position: 'absolute',
-              left: 0, right: 0, height: '120px',
-              top: '-120px',
+              left: 0, right: 0,
+              height: '220px',
+              top: '-220px',
               background: `linear-gradient(180deg,
                 transparent 0%,
-                hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.18) 50%,
+                hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.10) 30%,
+                hsla(${hueDegrees}, 95%, ${Math.min(80, hueLightness + 18)}%, 0.32) 55%,
+                hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 15)}%, 0.10) 80%,
                 transparent 100%)`,
-              animation: 'capture-warmup-sweep 700ms ease-out forwards',
+              animation: 'capture-warmup-sweep 950ms cubic-bezier(0.4, 0, 0.2, 1) forwards',
+              mixBlendMode: 'screen',
             }}
           />
         </div>
