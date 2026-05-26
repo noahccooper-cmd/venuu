@@ -3,124 +3,172 @@ import { useState, useEffect, useMemo } from 'react';
 interface PolaroidHeaderProps {
   venueName: string;
   hueDegrees: number;
-  hueLightness: number;  // 30-70 typical range
+  hueLightness: number;
   /** Triggers re-typing animation when changed */
   triggerKey: number;
 }
 
 /**
- * The engraved Polaroid header — venue name, date, time, in cursive,
- * tinted in the active hue. Types itself on mount letter-by-letter.
+ * The engraved Polaroid header — ✦ + venue name + date/time,
+ * in cursive, with hue + pearlescent dual-mark identity.
  *
- * Phase 1: visual only (lives in the DOM, not yet composited into
- * the photo). Phase 2 (49b) will render this onto canvas for the
- * permanent engraving on the captured JPEG.
+ * Layout:
+ *   ✦ sunspot              ← ✦ pearlescent, venue name hue, 34px
+ *      may 25, 2026 · 11:47pm   ← timestamp hue, single 19px line
+ *
+ * The ✦ glyph here mirrors the ✦ in the bottom-right MomentNumber.
+ * Both pearlescent cream-gold. Both the eternal venuu mark.
+ * The text between them is the moment's hue. Two identities, one frame.
+ *
+ * Types itself on mount: glyph fades in, venue name types letter
+ * by letter, then timestamp types letter by letter. Cinematic.
  */
 export default function PolaroidHeader({
   venueName, hueDegrees, hueLightness, triggerKey,
 }: PolaroidHeaderProps) {
   const lowercaseVenue = venueName.toLowerCase();
 
-  // Date + time formatted on mount, not re-computed
-  const dateStr = useMemo(() => {
+  // Date + time formatted on mount
+  const timestampStr = useMemo(() => {
     const d = new Date();
-    return d.toLocaleDateString('en-US', {
+    const dateStr = d.toLocaleDateString('en-US', {
       month: 'long', day: 'numeric', year: 'numeric'
     }).toLowerCase();
-  }, [triggerKey]);
-
-  const timeStr = useMemo(() => {
-    const d = new Date();
     const hours = d.getHours();
     const minutes = d.getMinutes();
     const ampm = hours >= 12 ? 'pm' : 'am';
     const displayHours = hours % 12 || 12;
-    return `${displayHours}:${minutes.toString().padStart(2, '0')}${ampm}`;
+    const timeStr = `${displayHours}:${minutes.toString().padStart(2, '0')}${ampm}`;
+    return `${dateStr} · ${timeStr}`;
   }, [triggerKey]);
 
-  // Letter-by-letter type-in
+  // Letter-by-letter type-in: glyph → venue → timestamp
+  const [glyphVisible, setGlyphVisible] = useState(false);
   const [typedVenue, setTypedVenue] = useState('');
-  const [typedDate, setTypedDate] = useState('');
-  const [typedTime, setTypedTime] = useState('');
+  const [typedTimestamp, setTypedTimestamp] = useState('');
 
   useEffect(() => {
     // Reset
+    setGlyphVisible(false);
     setTypedVenue('');
-    setTypedDate('');
-    setTypedTime('');
+    setTypedTimestamp('');
 
-    // Type venue name
-    let i = 0;
-    const v = setInterval(() => {
-      i++;
-      setTypedVenue(lowercaseVenue.slice(0, i));
-      if (i >= lowercaseVenue.length) {
-        clearInterval(v);
-        // Then type date
-        let j = 0;
-        const d = setInterval(() => {
-          j++;
-          setTypedDate(dateStr.slice(0, j));
-          if (j >= dateStr.length) {
-            clearInterval(d);
-            // Then type time
-            let k = 0;
-            const t = setInterval(() => {
-              k++;
-              setTypedTime(timeStr.slice(0, k));
-              if (k >= timeStr.length) clearInterval(t);
-            }, 30);
+    // BEAT 1: glyph fades in immediately
+    const t_glyph = setTimeout(() => setGlyphVisible(true), 50);
+
+    // BEAT 2: venue name types letter by letter
+    let venueChar = 0;
+    const venueInterval = setInterval(() => {
+      venueChar++;
+      setTypedVenue(lowercaseVenue.slice(0, venueChar));
+      if (venueChar >= lowercaseVenue.length) {
+        clearInterval(venueInterval);
+
+        // BEAT 3: timestamp types after venue completes
+        let tsChar = 0;
+        const tsInterval = setInterval(() => {
+          tsChar++;
+          setTypedTimestamp(timestampStr.slice(0, tsChar));
+          if (tsChar >= timestampStr.length) {
+            clearInterval(tsInterval);
           }
-        }, 25);
+        }, 22);
+
+        // Cleanup the inner interval if effect re-fires
+        return () => clearInterval(tsInterval);
       }
-    }, 50);
+    }, 48);
 
     return () => {
-      clearInterval(v);
+      clearTimeout(t_glyph);
+      clearInterval(venueInterval);
     };
-  }, [lowercaseVenue, dateStr, timeStr, triggerKey]);
+  }, [lowercaseVenue, timestampStr, triggerKey]);
 
+  // Hue tokens (venue name + timestamp tint with the slider)
   const hueColor = `hsl(${hueDegrees}, 80%, ${hueLightness}%)`;
   const hueGlow  = `hsla(${hueDegrees}, 90%, ${Math.min(80, hueLightness + 10)}%, 0.5)`;
+
+  // Pearlescent (✦ glyph — the eternal venuu mark, NOT hue-tinted)
+  const PEARL_GLOW_TIGHT = 'rgba(255, 248, 231, 0.9)';
+  const PEARL_GLOW_MID   = 'rgba(255, 252, 239, 0.55)';
 
   return (
     <div
       style={{
         pointerEvents: 'none',
         fontFamily: "var(--font-cursive)",
-        color: hueColor,
-        textShadow: `0 0 16px ${hueGlow}, 0 1px 2px rgba(0,0,0,0.4)`,
-        transition: 'color 0.18s ease, text-shadow 0.18s ease',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
       }}
     >
-      <div style={{
-        fontSize: '30px',
-        fontWeight: 600,
-        letterSpacing: '0.3px',
-        lineHeight: 1.1,
-        marginTop: '8px',
-      }}>
-        {typedVenue}
-        {typedVenue.length < lowercaseVenue.length && (
-          <span style={{ opacity: 0.6 }}>|</span>
-        )}
+      {/* Line 1: ✦ pearlescent glyph + venue name (hue) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'baseline',
+          gap: '8px',
+          marginTop: '8px',
+        }}
+      >
+        {/* ✦ glyph in pearlescent cream-gold — mirrors bottom-right
+            moment number's glyph. The eternal venuu mark. */}
+        <span
+          style={{
+            fontSize: '24px',
+            color: 'var(--venuu-pearl)',
+            opacity: glyphVisible ? 0.92 : 0,
+            transition: 'opacity 320ms ease-out',
+            textShadow: `
+              0 0 6px ${PEARL_GLOW_TIGHT},
+              0 0 14px ${PEARL_GLOW_MID}
+            `,
+            animation: 'pearl-shimmer 5s ease-in-out infinite',
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          ✦
+        </span>
+
+        {/* Venue name — elevated, hue-tinted, this is what makes
+            the photo identifiable. The venue's mark. */}
+        <span
+          style={{
+            fontSize: '34px',
+            fontWeight: 600,
+            letterSpacing: '0.5px',
+            lineHeight: 1.1,
+            color: hueColor,
+            textShadow: `0 0 16px ${hueGlow}, 0 1px 2px rgba(0,0,0,0.4)`,
+            transition: 'color 0.18s ease, text-shadow 0.18s ease',
+          }}
+        >
+          {typedVenue}
+          {typedVenue.length < lowercaseVenue.length && (
+            <span style={{ opacity: 0.6 }}>|</span>
+          )}
+        </span>
       </div>
-      <div style={{
-        fontSize: '17px',
-        fontWeight: 500,
-        letterSpacing: '0.3px',
-        marginTop: '2px',
-        opacity: 0.92,
-      }}>
-        {typedDate}
-      </div>
-      <div style={{
-        fontSize: '13px',
-        fontWeight: 400,
-        letterSpacing: '0.4px',
-        opacity: 0.78,
-      }}>
-        {typedTime}
+
+      {/* Line 2: timestamp — date · time on a single line,
+          indented under the venue name (NOT under the glyph,
+          which gives the typography a cleaner left-anchor) */}
+      <div
+        style={{
+          fontSize: '19px',
+          fontWeight: 500,
+          letterSpacing: '0.4px',
+          marginLeft: '32px',  // indent under venue name, past the ✦ glyph
+          color: hueColor,
+          opacity: 0.92,
+          textShadow: `0 0 12px ${hueGlow}, 0 1px 2px rgba(0,0,0,0.4)`,
+          transition: 'color 0.18s ease, text-shadow 0.18s ease',
+        }}
+      >
+        {typedTimestamp}
       </div>
     </div>
   );
