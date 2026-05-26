@@ -123,6 +123,7 @@ export default function App() {
     lng: number;
   } | null>(null);
   const [paintedHueId, setPaintedHueId] = useState<VibeHueId | null>(null);
+  const [paintedMomentNumber, setPaintedMomentNumber] = useState<number | null>(null);
   // PHASE 3 (49c) — production CaptureSurface, opened by VenueCard
   // dispatching `venuu:request-capture` or by a paint_prompt push.
   const [captureSurfaceOpen, setCaptureSurfaceOpen] = useState(false);
@@ -1104,9 +1105,11 @@ export default function App() {
         hueId={paintedHueId}
         venue={activePaintVenue}
         map={tonightMapRef.current}
+        momentNumber={paintedMomentNumber}
         onComplete={() => {
           setPaintCeremonyOpen(false);
           setPaintedHueId(null);
+          setPaintedMomentNumber(null);
           setActivePaintVenue(null);
         }}
       />
@@ -1119,8 +1122,8 @@ export default function App() {
         venueId={captureSurfaceVenue?.id ?? ''}
         venueName={captureSurfaceVenue?.name ?? ''}
         username={username ?? null}
-        onPainted={(hueId, recapId) => {
-          console.log('[App] CaptureSurface onPainted, firing ceremony:', { hueId, recapId });
+        onPainted={(hueId, recapId, momentNumber) => {
+          console.log('[App] CaptureSurface onPainted, firing ceremony:', { hueId, recapId, momentNumber });
           // Snapshot the venue (with lat/lng) BEFORE clearing capture state,
           // since the ceremony needs the coordinates to fly the map to.
           const venueForCeremony = captureSurfaceVenue;
@@ -1134,6 +1137,7 @@ export default function App() {
               lng: venueForCeremony.lng,
             });
             setPaintedHueId(hueId as VibeHueId);
+            setPaintedMomentNumber(momentNumber);
             setPaintCeremonyOpen(true);
           } else {
             console.warn('[App] missing lat/lng for ceremony — skipping fly');

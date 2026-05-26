@@ -15,7 +15,7 @@ interface CaptureSurfaceProps {
   username: string | null;
   /** Fires after MARK pipeline completes successfully. Triggers
    *  PaintCeremony in App.tsx. */
-  onPainted: (hueId: number, recapId: string) => void;
+  onPainted: (hueId: number, recapId: string, momentNumber: number) => void;
   onClose: () => void;
 }
 
@@ -267,8 +267,8 @@ export default function CaptureSurface({
 
     if (result) {
       hapticMedium();
-      // Close surface, then fire ceremony with the hueId + recapId
-      onPainted(result.hueId, result.recapId);
+      // Close surface, then fire ceremony with the hueId + recapId + momentNumber
+      onPainted(result.hueId, result.recapId, result.momentNumber);
     } else {
       // Error already surfaced in submit.error via alert paths
       // below. Just leave user on COMPOSED state to retry or retake.
