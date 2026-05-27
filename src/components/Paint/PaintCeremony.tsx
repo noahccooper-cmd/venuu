@@ -59,6 +59,11 @@ export default function PaintCeremony({
 }: PaintCeremonyProps) {
   const startedRef = useRef(false);
   const [cameraSettled, setCameraSettled] = useState(false);
+  /** Flips true AFTER Beat 2's approach flyTo completes (camera is at
+   *  zoom 17.5, pitch 50, perfectly centered on venue). The bloom
+   *  uses THIS gate, not cameraSettled, so it anchors to the final
+   *  settled position instead of mid-flight intermediate coords. */
+  const [approachSettled, setApproachSettled] = useState(false);
   const [showDeclaration, setShowDeclaration] = useState(false);
   const [showFloating, setShowFloating] = useState(false);
   const [showSurroundingsDim, setShowSurroundingsDim] = useState(false);
@@ -67,6 +72,7 @@ export default function PaintCeremony({
     if (!open || !hueId || !venue || !map || startedRef.current) return;
     startedRef.current = true;
     setCameraSettled(false);
+    setApproachSettled(false);
     setShowDeclaration(false);
     setShowFloating(false);
     setShowSurroundingsDim(false);
@@ -101,8 +107,15 @@ export default function PaintCeremony({
           duration: APPROACH_DURATION_MS,
           essential: true,
         });
+        // CRITICAL: bloom mounts when THIS flyTo completes, not the
+        // travel flyTo. Otherwise bloom captures projection mid-flight
+        // and appears at the wrong screen position.
+        map.once('moveend', () => setApproachSettled(true));
       } catch (err) {
         console.warn('[PaintCeremony] approach flyTo failed', err);
+        // Belt-and-suspenders: if moveend doesn't fire, force ready
+        // after the expected duration so ceremony doesn't hang.
+        setApproachSettled(true);
       }
     }, APPROACH_DELAY_MS);
 
@@ -205,8 +218,11 @@ export default function PaintCeremony({
             )}
           </AnimatePresence>
 
-          {/* Bloom + thump + permanence — mounted once camera lands. */}
-          {map && cameraSettled && (
+          {/* Bloom mounts only after the APPROACH flyTo completes —
+              ensures map.project() captures the final settled position
+              (venue centered at zoom 17.5), not an intermediate frame
+              from the travel→approach transition. */}
+          {map && approachSettled && (
             <VenueBloomOverlay
               map={map}
               venue={venue}
@@ -216,33 +232,43 @@ export default function PaintCeremony({
             />
           )}
 
-          {/* BEAT 3-5 — Cursive declaration center-screen */}
+          {/* BEAT 3-5 — Cursive declaration TOP-CENTER title card.
+              Positioned at top: 18% so it sits above the bloom which
+              radiates from the venue marker (typically mid-screen).
+              Font reduced from 88px → 64px so longer moment words
+              ("seventeen", "thirteen") fit within iPhone viewport.
+              textAlign: center + width: 100% guarantees horizontal
+              centering even if browser interprets transforms oddly. */}
           <AnimatePresence>
             {showDeclaration && declarationText && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.04 }}
+                initial={{ opacity: 0, scale: 0.92, y: -8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 1.04, y: -4 }}
                 transition={{
                   opacity: { duration: 0.4, ease: 'easeOut' },
                   scale:   { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] },
+                  y:       { duration: 0.4, ease: 'easeOut' },
                 }}
                 className="fixed pointer-events-none z-[8600]"
                 style={{
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
+                  top: 'calc(env(safe-area-inset-top, 0px) + 18vh)',
+                  left: 0,
+                  right: 0,
+                  width: '100%',
+                  textAlign: 'center',
                   fontFamily: 'var(--font-cursive)',
-                  fontSize: '88px',
+                  fontSize: '64px',
                   fontWeight: 600,
                   color: 'var(--venuu-pearl)',
-                  letterSpacing: '1.5px',
-                  lineHeight: 1,
-                  whiteSpace: 'nowrap',
+                  letterSpacing: '1px',
+                  lineHeight: 1.1,
+                  paddingLeft: '20px',
+                  paddingRight: '20px',
                   textShadow: `
-                    0 0 24px rgba(255, 248, 231, 0.85),
-                    0 0 48px rgba(255, 248, 231, 0.55),
-                    0 0 96px rgba(255, 248, 231, 0.30)
+                    0 0 18px rgba(255, 248, 231, 0.9),
+                    0 0 36px rgba(255, 248, 231, 0.55),
+                    0 0 72px rgba(255, 248, 231, 0.30)
                   `,
                   animation: 'pearl-shimmer 5s ease-in-out infinite',
                 }}
@@ -252,9 +278,11 @@ export default function PaintCeremony({
             )}
           </AnimatePresence>
 
-          {/* BEAT 4 — Floating ✦#N from venue marker */}
+          {/* BEAT 4 — Floating ✦#N from venue marker. Also uses
+              approachSettled so it anchors to the venue's final
+              screen position. */}
           <AnimatePresence>
-            {showFloating && map && cameraSettled && momentNumber != null && (
+            {showFloating && map && approachSettled && momentNumber != null && (
               <FloatingMomentNumber
                 map={map}
                 venue={venue}
@@ -473,7 +501,7 @@ function VenueBloomOverlay({
           scale: [0.3, 1.4, 2.2, 2.6],
         }}
         transition={{
-          duration: 3.4,
+          duration: 4.8,    // 3.4 → 4.8 for slower, more ceremonial radiation
           delay: 0.4,
           times: [0, 0.2, 0.75, 1],
           ease: [0.22, 1, 0.36, 1],
@@ -499,7 +527,7 @@ function VenueBloomOverlay({
           scale: [0.1, 1.0, 1.8],
         }}
         transition={{
-          duration: 2.5,
+          duration: 3.5,    // 2.5 → 3.5 to scale with bloom
           delay: 0.5,
           times: [0, 0.4, 1],
           ease: 'easeOut',

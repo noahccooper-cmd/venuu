@@ -1185,35 +1185,33 @@ export default function App() {
         username={username ?? null}
         onPainted={(hueId, recapId, momentNumber) => {
           console.log('[App] CaptureSurface onPainted, firing ceremony:', { hueId, recapId, momentNumber });
-          setCaptureSurfaceOpen(false);
 
-          // Dismiss the venue card sheet so the map is fully visible
-          // when the ceremony fires. The user sees their mark on the
-          // map cleanly — bloom from venue marker outward — not partly
-          // hidden behind the sheet. Two-path defensive dismiss:
-          //   1. Clear focusedVenue directly (it controls the sheet)
-          //   2. Dispatch a window event MapView listens for, in case
-          //      a deeper sheet is mounted via a different path
+          // CRITICAL ORDER: dismiss the venue card FIRST so it starts
+          // animating closed UNDER the still-open CaptureSurface. By the
+          // time CaptureSurface's exit animation completes (~300ms), the
+          // card is also fully gone. This is how iOS native dismisses
+          // chained sheets — the underneath one closes during the over
+          // one's exit.
           setFocusedVenue(null);
           window.dispatchEvent(new CustomEvent('venuu:dismiss-venue-card'));
+
+          // NOW close CaptureSurface — its exit animation plays over the
+          // already-dismissing card.
+          setCaptureSurfaceOpen(false);
 
           const venueForCeremony = captureSurfaceVenue;
           setCaptureSurfaceVenue(null);
 
           if (venueForCeremony && venueForCeremony.lat != null && venueForCeremony.lng != null) {
-            // Hoist narrowed values BEFORE the rAF — TS re-widens optional
-            // fields across async callback boundaries, so these locals
-            // preserve the `number` narrowing inside the closure.
             const ceremonyVenueId = venueForCeremony.id;
             const ceremonyVenueName = venueForCeremony.name;
             const ceremonyLat = venueForCeremony.lat;
             const ceremonyLng = venueForCeremony.lng;
 
-            // Wait 350ms for the venue card sheet to fully animate closed
-            // before firing the ceremony. requestAnimationFrame was 16ms —
-            // too fast; the sheet was still visible/animating when the
-            // ceremony's bloom started, causing the flash to overlay the
-            // card. 350ms matches iOS native sheet dismiss duration.
+            // 500ms gives BOTH animations time to complete: CaptureSurface
+            // exit (~300ms) + venue card sheet dismiss (~350-450ms). When
+            // ceremony fires, both surfaces are gone, map is clean and
+            // ready for the cinematic.
             setTimeout(() => {
               setActivePaintVenue({
                 id: ceremonyVenueId,
@@ -1224,7 +1222,7 @@ export default function App() {
               setPaintedHueId(hueId as VibeHueId);
               setPaintedMomentNumber(momentNumber);
               setPaintCeremonyOpen(true);
-            }, 350);
+            }, 500);
           } else {
             console.warn('[App] missing lat/lng for ceremony — skipping fly');
           }
