@@ -26,11 +26,10 @@ import { MoversChip } from '../Market/MoversDrawer';
 import { MarketPanel } from '../Market/MarketPanel';
 import { MarketTicker } from '../Market/MarketTicker';
 
-/** True between noon and 3am local — boosts heat-field intensity.
- *  Window opens at noon so the map feels alive for daytime demos. */
+/** True between 5pm and 3am local — boosts heat-field intensity. */
 function isNightHours(): boolean {
   const hour = new Date().getHours();
-  return hour >= 12 || hour < 3;
+  return hour >= 17 || hour < 3;
 }
 
 /** Great-circle distance in km between two (lat, lng) pairs. Used by

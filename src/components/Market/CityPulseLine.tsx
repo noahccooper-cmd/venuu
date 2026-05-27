@@ -25,11 +25,10 @@ function formatTimeShort(): string {
   }).replace(/\s/g, '').toLowerCase();
 }
 
-/** Noon through 2am — when the bars are open and the city is alive.
- *  Window opens at noon so the city pulse feels alive for daytime demos. */
+/** 5pm through 2am — when the bars are open and the city is alive. */
 function isWithinNightlifeHours(): boolean {
   const h = new Date().getHours();
-  return h >= 12 || h <= 2;
+  return h >= 17 || h <= 2;
 }
 
 function describePulse(avgDelta: number): { label: string; tone: string } {
@@ -47,7 +46,7 @@ function describePulse(avgDelta: number): { label: string; tone: string } {
  *
  * Always renders something (Phase 5.1 update): when there's no
  * confident data we show a "watching" line with day + time +
- * "bars open soon" / "reading the city…" depending on the hour.
+ * "bars open at 5p" / "reading the city…" depending on the hour.
  * The bar's job is to make the city feel observed, not to disappear
  * when nothing's happening.
  */
@@ -118,7 +117,7 @@ export function CityPulseLine({ city }: CityPulseLineProps) {
         <span className="city-pulse-line__time">{timeStr}</span>
         <span className="city-pulse-line__separator" aria-hidden>·</span>
         <span className="city-pulse-line__verdict">
-          {isNightlifeHour ? 'reading the city…' : 'bars open soon · watching'}
+          {isNightlifeHour ? 'reading the city…' : 'bars open at 5p · watching'}
         </span>
       </div>
     </div>
