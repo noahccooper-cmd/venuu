@@ -83,6 +83,9 @@ interface VennySheetProps {
    *  route line + numbered stop markers on the map and (typically)
    *  collapses the sheet height so the route is visible. */
   onActivatePlan?: (plan: Plan | null) => void;
+  /** Called when user taps LETS GO on the inline plan card. Parent
+   *  enters plan mode (dismisses Venny, opens PlanSheet, dims venues). */
+  onLetsGo?: () => void;
   /** When non-null, drives the auto-snap-to-MINI behavior on the
    *  transition to a fresh plan. Otherwise unused by the sheet's
    *  size logic (user controls size via drag handle). */
@@ -117,6 +120,7 @@ function VennySheetInner({
   onHighlight,
   onFlyToVenue,
   onActivatePlan,
+  onLetsGo,
   activePlan,
   initialMessage,
   onInitialMessageHandled,
@@ -708,6 +712,7 @@ function VennySheetInner({
                   planStates={planStates}
                   onSavePlan={handleSavePlan}
                   onSharePlan={handleSharePlan}
+                  onLetsGo={onLetsGo}
                   visitedStopIndices={visitedStopIndices}
                 />
               ))}
@@ -841,6 +846,7 @@ function MessageBubble({
   planStates,
   onSavePlan,
   onSharePlan,
+  onLetsGo,
   visitedStopIndices,
 }: {
   message: VennyMessage;
@@ -849,6 +855,7 @@ function MessageBubble({
   planStates: Record<string, PlanSaveState>;
   onSavePlan: (planMsgId: string, plan: Plan) => void;
   onSharePlan: (plan: Plan) => void;
+  onLetsGo?: () => void;
   visitedStopIndices?: number[];
 }) {
   const isUser = message.role === 'user';
@@ -942,6 +949,7 @@ function MessageBubble({
                   plan={block.plan}
                   onSave={() => onSavePlan(block.planMsgId, block.plan)}
                   onShare={() => onSharePlan(block.plan)}
+                  onActivate={() => { onLetsGo?.(); }}
                   saved={state === 'saved'}
                   saving={state === 'saving'}
                   visitedStopIndices={visitedStopIndices}

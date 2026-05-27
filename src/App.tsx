@@ -368,7 +368,10 @@ export default function App() {
   // compose_plan returned a plan → render route line on the map, clear
   // any leftover Venny highlight (the plan stops are the highlight now),
   // and switch to the tonight tab so the map is visible.
-  const handleActivatePlan = useCallback((plan: VennyPlan | null) => {
+  // Preview: compose_plan returned, render route line on map. No
+  // plan mode entry yet — user can still save, share, or tap LETS GO.
+  // VennySheet remains visible.
+  const handlePreviewPlan = useCallback((plan: VennyPlan | null) => {
     setActivePlan(plan);
     if (plan) {
       setTab('tonight');
@@ -380,6 +383,30 @@ export default function App() {
       setHighlightedVenueIds([]);
     }
   }, []);
+
+  // ENTER PLAN MODE — user tapped LETS GO. Dismiss Venny, fire the
+  // cinematic plan mode (PlanSheet at card state, MiniVennyPill visible,
+  // venues outside the plan dim down in Fix 8).
+  const handleActivatePlan = useCallback(() => {
+    if (!activePlan) return;
+
+    void hapticLight();
+    setVennyOpen(false);
+
+    // If we don't yet have a saved planId (user hasn't tapped Save),
+    // generate a temp id so PlanSheet mounts. Save can still happen
+    // later from PlanSheet, swapping the temp id for the real one.
+    const planId = activePlanId ?? `temp-${Date.now()}`;
+    if (!activePlanId) {
+      setActivePlanId(planId);
+    }
+
+    setActivePlanSheet({
+      planId,
+      state: 'card',
+      focusStopIndex: 0,
+    });
+  }, [activePlan, activePlanId]);
 
   // Tap a numbered route marker on the main map. Behaviour depends
   // on whether a plan sheet is already mounted for this plan:
@@ -1139,7 +1166,8 @@ export default function App() {
         focusedVenueName={focusedVenue?.venue.name ?? null}
         onHighlight={handleVennyHighlight}
         onFlyToVenue={handleVennyFlyToVenue}
-        onActivatePlan={handleActivatePlan}
+        onActivatePlan={handlePreviewPlan}
+        onLetsGo={handleActivatePlan}
         activePlan={activePlan}
         initialMessage={vennyInitialMessage}
         onInitialMessageHandled={() => setVennyInitialMessage(null)}
