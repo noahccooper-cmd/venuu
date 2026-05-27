@@ -58,16 +58,13 @@ interface PlanCardProps {
   plan: Plan;
   onSave: () => void;
   onShare: () => void;
-  /** Fires when the user taps LETS GO — parent enters plan mode
-   *  (cinematic activation: Venny dismisses, PlanSheet opens). */
-  onActivate: () => void;
   saved: boolean;
   saving: boolean;
   /** Indices of stops the proximity detector has confirmed visited. */
   visitedStopIndices?: number[];
 }
 
-function PlanCardInner({ plan, onSave, onShare, onActivate, saved, saving, visitedStopIndices }: PlanCardProps) {
+function PlanCardInner({ plan, onSave, onShare, saved, saving, visitedStopIndices }: PlanCardProps) {
   const visitedSet = new Set(visitedStopIndices ?? []);
   const totalCost = typeof plan.total_estimated_cost === 'number' ? plan.total_estimated_cost : null;
   const totalDuration = typeof plan.total_duration_min === 'number' ? plan.total_duration_min : null;
@@ -274,41 +271,6 @@ function PlanCardInner({ plan, onSave, onShare, onActivate, saved, saving, visit
           {hours != null && (mins ? ` · ${hours}h ${mins}m` : ` · ${hours}h`)}
         </span>
       </div>
-
-      {/* LETS GO — primary CTA. Activates plan mode (cinematic takeover) */}
-      <button
-        type="button"
-        onClick={onActivate}
-        aria-label="Activate plan"
-        style={{
-          width: '100%',
-          padding: '14px 20px',
-          marginBottom: 10,
-          borderRadius: 12,
-          border: 'none',
-          background: 'linear-gradient(135deg, #FF8200 0%, #FF6B1A 100%)',
-          color: '#000',
-          fontFamily: 'Satoshi, sans-serif',
-          fontSize: 16,
-          fontWeight: 700,
-          letterSpacing: 0.5,
-          cursor: 'pointer',
-          WebkitTapHighlightColor: 'transparent',
-          boxShadow: '0 4px 16px rgba(255, 130, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.1) inset',
-          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-        }}
-        onMouseDown={(e) => {
-          e.currentTarget.style.transform = 'scale(0.98)';
-        }}
-        onMouseUp={(e) => {
-          e.currentTarget.style.transform = 'scale(1)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = 'scale(1)';
-        }}
-      >
-        LETS GO
-      </button>
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button
