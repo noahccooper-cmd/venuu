@@ -15,7 +15,7 @@ const tabs: { key: Tab; label: string; icon: typeof MapPin }[] = [
 
 export function BottomNav({ active, onChange }: BottomNavProps) {
   return (
-    <nav data-nav="bottom" className="fixed bottom-0 left-0 right-0 z-50 bg-[#0A0A0F] flex items-center justify-around"
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#0A0A0F] flex items-center justify-around"
       style={{
         height: 'calc(64px + env(safe-area-inset-bottom, 0px))',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
