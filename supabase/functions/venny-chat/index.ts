@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getCityKnowledge } from './knowledge.ts';
 
 /**
  * venny-chat
@@ -1062,7 +1063,9 @@ Compose the plan as the exact JSON schema in your system prompt. ${extraNote}`;
         // Append the rated-arcs block to the planner system prompt so
         // Sonnet has the user's positively-rated history as composition
         // signal. Empty string when the user has no qualifying ratings.
-        system: SONNET_PLANNER_SYSTEM_PROMPT + ratedArcsBlock,
+        system: SONNET_PLANNER_SYSTEM_PROMPT
+          + (getCityKnowledge(ctx.city) ? '\n\n' + getCityKnowledge(ctx.city) : '')
+          + ratedArcsBlock,
         messages: [{ role: 'user', content: composerPrompt(extraNote) }],
       }),
     });
@@ -1730,7 +1733,11 @@ Deno.serve(async (req) => {
       // Build the structured <user_memory> block and prepend it to the
       // system prompt on every turn — Haiku reads it fresh each call.
       const userMemory = await buildUserMemoryBlock(supabase, userId, profileId, city, focusedVenueName);
-      const system = SYSTEM_PROMPT + marketAwareness + '\n\n' + userMemory;
+      const cityKnowledge = getCityKnowledge(city);
+      const system = SYSTEM_PROMPT
+        + (cityKnowledge ? '\n\n' + cityKnowledge : '')
+        + marketAwareness
+        + '\n\n' + userMemory;
 
       // priorHistory already contains the user message we just stored.
       const messages = priorHistory;
