@@ -704,7 +704,7 @@ async function tool_search_venues(input: any, ctx: ToolCtx) {
   let query = ctx.supabase
     .from('venues')
     .select(`
-      id, name, city, category, vibe, description, cover_charge, capacity, lat, lng, venue_notes,
+      id, name, city, category, vibe_tagline, description, cover_charge, capacity, lat, lng, venue_notes,
       headcount_estimates ( estimate, capacity_pct, state_label, confidence_pct )
     `)
     .eq('city', ctx.city)
@@ -733,7 +733,7 @@ async function tool_search_venues(input: any, ctx: ToolCtx) {
   const rows = (data as any[]).filter(v => {
     if (category && (v.category ?? '').toLowerCase() !== category) return false;
     if (vibesDisliked.length) {
-      const blob = `${v.name} ${v.vibe ?? ''} ${v.category ?? ''} ${v.venue_notes ?? ''}`.toLowerCase();
+      const blob = `${v.name} ${v.vibe_tagline ?? ''} ${v.category ?? ''} ${v.venue_notes ?? ''}`.toLowerCase();
       if (vibesDisliked.some(d => d && blob.includes(d))) return false;
     }
     return true;
@@ -774,7 +774,7 @@ async function tool_search_venues(input: any, ctx: ToolCtx) {
     const est = (v.headcount_estimates ?? [])[0] ?? null;
     const state = est?.state_label ?? 'Unknown';
     const blob =
-      `${v.name} ${v.vibe ?? ''} ${v.category ?? ''} ${v.description ?? ''}`.toLowerCase();
+      `${v.name} ${v.vibe_tagline ?? ''} ${v.category ?? ''} ${v.description ?? ''}`.toLowerCase();
     let vibeScore = 0;
     for (const tag of vibeTags) {
       if (typeof tag === 'string' && blob.includes(tag.toLowerCase())) vibeScore += 1;
@@ -835,7 +835,7 @@ async function tool_search_venues(input: any, ctx: ToolCtx) {
 
 function buildWhyMatch(v: any, est: any, state: string, vibeTags: string[]): string {
   const bits: string[] = [];
-  const blob = `${v.name} ${v.vibe ?? ''} ${v.category ?? ''} ${v.description ?? ''}`.toLowerCase();
+  const blob = `${v.name} ${v.vibe_tagline ?? ''} ${v.category ?? ''} ${v.description ?? ''}`.toLowerCase();
   const matched = vibeTags.find((t: string) => typeof t === 'string' && blob.includes(t.toLowerCase()));
   if (matched) bits.push(`matches "${matched}"`);
   if (state === 'Surging') bits.push('surging right now');
@@ -940,7 +940,7 @@ async function tool_compose_plan(input: any, ctx: ToolCtx) {
   // 1. Fetch candidate venues. Prefer the IDs Haiku already shortlisted
   //    via search_venues; fall back to a broader city pull otherwise.
   const baseSelect =
-    'id, name, lat, lng, category, vibe, description, cover_charge, capacity, ' +
+    'id, name, lat, lng, category, vibe_tagline, description, cover_charge, capacity, ' +
     'headcount_estimates ( estimate, capacity_pct, state_label, confidence_pct )';
   let query = ctx.supabase
     .from('venues')
@@ -971,7 +971,7 @@ async function tool_compose_plan(input: any, ctx: ToolCtx) {
         lat: typeof v.lat === 'number' ? v.lat : null,
         lng: typeof v.lng === 'number' ? v.lng : null,
         category: v.category ?? null,
-        vibe: v.vibe ?? null,
+        vibe: v.vibe_tagline ?? null,
         description: typeof v.description === 'string' ? v.description.slice(0, 200) : null,
         has_description: typeof v.description === 'string' && v.description.length > 0,
         cover_charge: v.cover_charge ?? null,
