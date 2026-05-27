@@ -622,7 +622,13 @@ Never dump JSON or raw tool output. Translate it into how a friend would describ
 
 ═══ YOUR USER ═══
 
-The user's profile is injected below this prompt as <user_memory>. That includes their preferences, recent plans, recent visits, recent recaps, current city, current time, current day. USE THIS. The whole point is personalization.
+The user's profile is injected below this prompt as <user_memory>. That includes their preferences, recent plans, recent visits, recent recaps, MOMENTS CAPTURED (venues they've personally marked — their bars), current city, current time, current day. USE THIS. The whole point is personalization.
+
+When the user has captured moments at venues, treat those venues as 'their bars' — venues that matter to them personally. You can:
+- Reference moments naturally ('I see you marked a moment at X last week')
+- Avoid recommending the same venues unless they ask to revisit
+- Suggest venues that complement their captured ones (similar vibe, near them)
+- Acknowledge their mythological count ('you're at 7 moments — solid')
 
 If <user_memory> shows the user usually likes cocktails + chill + $$, default recommendations to those. Don't recommend a $$$ club to a $ user. Don't recommend frats to a 32-year-old. Don't recommend rooftops to someone who's rated 3 rooftops 1 star.
 
@@ -1486,7 +1492,22 @@ async function buildUserMemoryBlock(
         .limit(5)
     : { data: null };
 
-  // 5. Recent night ratings (last 5) — overall + mood + would_repeat,
+  // 5. User's moment history (last 20) — these are the venues this user
+  //    has personally MARKED with a moment. Different from recaps:
+  //    moments are the user's mythological capture count, not reviews.
+  //    Venny uses this to (a) recognize the user's bars and (b) avoid
+  //    suggesting the same venues unless explicitly asked.
+  const { data: moments } = username
+    ? await supabase
+        .from('venue_recaps')
+        .select('venue_id, user_moment_number, created_at, venues!inner(name, slug, city)')
+        .eq('username', username)
+        .not('user_moment_number', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(20)
+    : { data: null };
+
+  // 6. Recent night ratings (last 5) — overall + mood + would_repeat,
   //    joined to the plan title + stops so Venny can describe arcs.
   const { data: recentRatings } = profileId
     ? await supabase
@@ -1590,6 +1611,21 @@ async function buildUserMemoryBlock(
       const stars = Math.max(0, Math.min(5, Number(r.stars) || 0));
       const snippet = String(r.body ?? '').slice(0, 80);
       memory += `  - ${name}: ${'★'.repeat(stars)} — "${snippet}"\n`;
+    }
+  }
+
+  // Moments — the user's mythological venue count. Highest-personalization
+  // signal Venny has. Even more than reviews, this is "your bars."
+  if (Array.isArray(moments) && moments.length) {
+    memory += `\nmoments_captured (${moments.length} total, most recent first):\n`;
+    memory += `  — These are venues this user has MARKED with a moment.\n`;
+    memory += `  — Treat these as "their bars." Reference them when relevant.\n`;
+    memory += `  — Avoid suggesting these unless user asks to revisit them.\n`;
+    for (const m of moments as any[]) {
+      const venueName = (m.venues as any)?.name ?? 'unknown';
+      const num = m.user_moment_number;
+      const dateStr = m.created_at ? new Date(m.created_at).toISOString().slice(0, 10) : 'unknown';
+      memory += `  • moment #${num}: ${venueName} (${dateStr})\n`;
     }
   }
 
