@@ -15,6 +15,10 @@ interface VibeCanvasLayerProps {
   map: MapboxMap | null;
   mapLoaded: boolean;
   points: VibeCanvasPoint[];
+  /** Set of venue IDs the user has captured. The shader uses
+   *  this to amplify saturation + add pearl tint to user-marked
+   *  venues. Empty = no amplification, default state. */
+  userVenueIds?: Set<string>;
 }
 
 const LAYER_ID = 'vibe-canvas-mural';
@@ -56,6 +60,7 @@ uniform int u_numVenues;
 // Per venue: xy = clip-space position, z = clip-space radius, w = saturation
 uniform vec4 u_venuePos[${MAX_VENUES}];
 uniform float u_venueHue[${MAX_VENUES}];  // hue in radians
+uniform float u_venueUserMarked[${MAX_VENUES}];  // 0.0 or 1.0
 
 varying vec2 v_clipPos;
 
@@ -72,6 +77,7 @@ void main() {
   float sumSin = 0.0;
   float sumWeight = 0.0;
   float sumSaturation = 0.0;
+  float sumUserMark = 0.0;  // aggregate user-mark intensity at this pixel
 
   for (int i = 0; i < ${MAX_VENUES}; i++) {
     if (i >= u_numVenues) break;
@@ -82,11 +88,19 @@ void main() {
     float radSq = v.z * v.z;
     if (radSq < 0.000001) continue;
     float weight = exp(-distSq / radSq * u_steepness);
+
+    // User-mark amplification: marked venues contribute MORE to
+    // the local hue field, making their territory feel bigger.
+    // The mythology: your marks expand your reach on the map.
+    float userMark = u_venueUserMarked[i];  // 0.0 or 1.0
+    weight *= (1.0 + userMark * 0.35);  // marked venues +35% radius weight
+
     float hueRad = u_venueHue[i];
     sumCos += cos(hueRad) * weight;
     sumSin += sin(hueRad) * weight;
     sumWeight += weight;
     sumSaturation += v.w * weight;
+    sumUserMark += userMark * weight;  // aggregate user-mark intensity
   }
 
   if (sumWeight < 0.001) discard;
@@ -97,6 +111,10 @@ void main() {
   // Per-venue earned saturation, weighted the same way as hue. Range
   // 0.55 (canonical) → 0.95 (heavily painted), blended across overlaps.
   float perVenueSaturation = sumSaturation / max(sumWeight, 0.001);
+
+  float userMarkIntensity = sumUserMark / max(sumWeight, 0.001);
+  // Boost saturation in user-marked regions (subtle, ~+15%)
+  perVenueSaturation = mix(perVenueSaturation, min(1.0, perVenueSaturation * 1.18), userMarkIntensity);
 
   // Density lightness: more venues contributing → darker, richer district;
   // a single venue dominating → brighter so it pops. sumWeight ranges
@@ -113,6 +131,12 @@ void main() {
   float finalSaturation = perVenueSaturation * u_saturation;
   // H = vibe identity (circular-mean hue), S = earned × zoom, L = density.
   vec3 rgb = hsl2rgb(hueNorm, finalSaturation, lightness);
+
+  // Pearl tint overlay in user-marked regions. RGB(1.0, 0.973, 0.906)
+  // is the venuu-pearl cream-gold in 0-1 space. Subtle blend (12% at
+  // peak user-mark intensity) so the underlying hue still dominates.
+  vec3 pearlTint = vec3(1.0, 0.973, 0.906);
+  rgb = mix(rgb, pearlTint, userMarkIntensity * 0.12);
 
   // Per-venue floor: guarantees minimum presence at wide zoom even when
   // many venues overlap into few pixels.
@@ -156,11 +180,17 @@ function multMatVec(m: Float32Array | number[], v: [number, number, number, numb
   ];
 }
 
-export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLayerProps) {
+export default function VibeCanvasLayer({
+  map, mapLoaded, points, userVenueIds,
+}: VibeCanvasLayerProps) {
   const layerAddedRef = useRef(false);
   const programRef = useRef<WebGLProgram | null>(null);
   const bufferRef = useRef<WebGLBuffer | null>(null);
   const pointsRef = useRef<VibeCanvasPoint[]>([]);
+  // Mirror userVenueIds so the imperative GL render closure can read it
+  // without re-mounting the custom layer on each set change.
+  const userVenueIdsRef = useRef<Set<string>>(userVenueIds ?? new Set());
+  userVenueIdsRef.current = userVenueIds ?? new Set();
   const previousHuesRef = useRef<Map<string, { rad: number; sat: number; updatedAt: number; targetRad?: number; targetSat?: number }>>(new Map());
 
   // Sync points + track per-venue hue transitions for 3s easing
@@ -272,6 +302,8 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         const easeMap = previousHuesRef.current;
         const venuePosData = new Float32Array(MAX_VENUES * 4);
         const venueHueData = new Float32Array(MAX_VENUES);
+        const venueUserMarkedData = new Float32Array(MAX_VENUES);
+        const markedIds = userVenueIdsRef.current;
         let needsRepaint = false;
         // Smooth zoom interpolant 0 → 1 across the transitional zoom band
         const zoomT = Math.max(0, Math.min(1,
@@ -329,6 +361,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
           venuePosData[i * 4 + 2] = radiusClip;
           venuePosData[i * 4 + 3] = renderSat;
           venueHueData[i] = renderRad;
+          venueUserMarkedData[i] = markedIds.has(p.venue_id) ? 1.0 : 0.0;
         }
 
         gl.useProgram(program);
@@ -348,6 +381,7 @@ export default function VibeCanvasLayer({ map, mapLoaded, points }: VibeCanvasLa
         gl.uniform1i(gl.getUniformLocation(program, 'u_numVenues'), visiblePoints.length);
         gl.uniform4fv(gl.getUniformLocation(program, 'u_venuePos'), venuePosData);
         gl.uniform1fv(gl.getUniformLocation(program, 'u_venueHue'), venueHueData);
+        gl.uniform1fv(gl.getUniformLocation(program, 'u_venueUserMarked'), venueUserMarkedData);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
 

@@ -77,6 +77,10 @@ interface TonightPageProps {
   /** Plan sheet state — drives map camera padding so the focused
    *  stop stays visible above the sheet. */
   sheetState?: 'pill' | 'card' | 'full' | null;
+  /** Set of venue IDs the current user has captured. Forwarded to
+   *  MapView for heat-map weighting (pearl border + glow + breathing
+   *  on the user's own marked venues). */
+  userVenueIds?: Set<string>;
 }
 
 export function TonightPage({
@@ -107,6 +111,7 @@ export function TonightPage({
   onPlanStopTap,
   focusedStopIndex,
   sheetState,
+  userVenueIds,
 }: TonightPageProps) {
   // City rollups for the globe-view dot layer + headline counter.
   const { aggregates: cityAggregates, totalPeopleOut } = useCityAggregates();
@@ -466,6 +471,7 @@ export function TonightPage({
         focusedStopIndex={focusedStopIndex ?? null}
         sheetState={sheetState ?? null}
         selectedVenueId={selectedVenue?.id ?? null}
+        userVenueIds={userVenueIds ?? new Set()}
       />
 
       {currentVenue && (

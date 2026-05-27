@@ -70,6 +70,9 @@ interface LiveVenueBubbleProps {
     wknd_early?: number;
     wknd_peak?: number;
   } | null;
+  /** True if the current user has captured a moment at this venue.
+   *  Adds a small pearl ✦ in the corner — the eternal mark. */
+  userMarked?: boolean;
 }
 
 interface StateVisuals {
@@ -250,7 +253,7 @@ function useTrendClass(trend: string | null | undefined): string {
   return '';
 }
 
-function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected, onTap, introBloomDelay, highlighted }: LiveVenueBubbleProps) {
+function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected, onTap, introBloomDelay, highlighted, userMarked }: LiveVenueBubbleProps) {
   const useBloom = (introBloomDelay ?? 0) >= 0 && introBloomDelay !== undefined && introBloomDelay > -1;
   // Only opt into the bloom class when a delay was explicitly provided
   // AND non-negative. Once the parent stops passing the prop the class
@@ -510,6 +513,35 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* User mark indicator — pearlescent ✦ in the corner showing
+          "I've captured a moment here." Foundation for v1.1
+          unlock/completion mechanics. */}
+      {userMarked && (
+        <div
+          style={{
+            position: 'absolute',
+            top: -4,
+            right: -4,
+            width: 14,
+            height: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: 'var(--font-cursive)',
+            fontSize: 12,
+            color: 'var(--venuu-pearl)',
+            textShadow: `
+              0 0 4px rgba(255, 248, 231, 0.95),
+              0 0 10px rgba(255, 252, 239, 0.65)
+            `,
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        >
+          ✦
+        </div>
+      )}
 
       {/* Inline keyframes — see header docstring for why these aren't shared with index.css. */}
       <style>{LVB_KEYFRAMES}</style>
@@ -817,6 +849,7 @@ function getVenueInitial(name?: string): string {
 function MarketLiveVenueBubbleInner({
   estimate, isSelected, onTap, highlighted, mapZoom, venueName,
   marketView, isSpotlight, movementMagnitude, showName, vibeHueBaseline,
+  userMarked,
 }: LiveVenueBubbleProps) {
   const stateLabel = normalizeState(estimate?.state_label);
   const confidence = estimate?.confidence_pct ?? 0;
@@ -1103,6 +1136,35 @@ function MarketLiveVenueBubbleInner({
           / tight-zoom heuristics. */}
       {showName && venueName && (
         <span className={`lvb-name-label lvb-name-label--${tier}`}>{venueName}</span>
+      )}
+
+      {/* User mark indicator — pearlescent ✦ in the corner showing
+          "I've captured a moment here." Foundation for v1.1
+          unlock/completion mechanics. */}
+      {userMarked && (
+        <div
+          style={{
+            position: 'absolute',
+            top: -4,
+            right: -4,
+            width: 14,
+            height: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: 'var(--font-cursive)',
+            fontSize: 12,
+            color: 'var(--venuu-pearl)',
+            textShadow: `
+              0 0 4px rgba(255, 248, 231, 0.95),
+              0 0 10px rgba(255, 252, 239, 0.65)
+            `,
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        >
+          ✦
+        </div>
       )}
 
       <style>{LVB_KEYFRAMES}</style>

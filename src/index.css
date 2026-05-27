@@ -5269,3 +5269,28 @@ body[data-sheet-state="pill"] .map-side-pill {
     filter: brightness(1.08) drop-shadow(0 0 14px rgba(255, 252, 239, 0.95));
   }
 }
+
+/* User-marked venue breathing — subtle 7-second pulse on
+   captured venues. Drives the "alive in my memory" feeling
+   for the heat map weighting feature. */
+@-webkit-keyframes user-marked-breathe {
+  0%, 100% {
+    filter: brightness(1) drop-shadow(0 0 6px rgba(255, 248, 231, 0.4));
+  }
+  50% {
+    filter: brightness(1.05) drop-shadow(0 0 14px rgba(255, 252, 239, 0.65));
+  }
+}
+@keyframes user-marked-breathe {
+  0%, 100% {
+    filter: brightness(1) drop-shadow(0 0 6px rgba(255, 248, 231, 0.4));
+  }
+  50% {
+    filter: brightness(1.05) drop-shadow(0 0 14px rgba(255, 252, 239, 0.65));
+  }
+}
+
+.user-marked-venue {
+  -webkit-animation: user-marked-breathe 7s ease-in-out infinite;
+  animation: user-marked-breathe 7s ease-in-out infinite;
+}

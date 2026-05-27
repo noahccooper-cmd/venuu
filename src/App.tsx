@@ -22,6 +22,7 @@ import { VennySheet } from './components/Venny/VennySheet';
 import PaintCeremony from './components/Paint/PaintCeremony';
 import CaptureSurface from './components/Capture/CaptureSurface';
 import MomentToast from './components/Moment/MomentToast';
+import { useMyVenueIds } from './hooks/useMyVenueIds';
 import type { VibeHueId } from './lib/hueMath';
 import type { Plan as VennyPlan } from './components/Venny/PlanCard';
 import { SignInSheet } from './components/Auth/SignInSheet';
@@ -155,6 +156,10 @@ export default function App() {
     () => profile?.username ?? localStorage.getItem('venue_username') ?? 'Guest',
     [profile?.username],
   );
+  // The set of venues the current user has captured. Drives
+  // heat map weighting — venues in this set render with enhanced
+  // glow in MapView, WebGL shader, and LiveVenueBubble overlays.
+  const userVenueIds = useMyVenueIds(username ?? null);
   const { venues, error: venuesError, refetch: refetchVenues } = useVenues(city);
   const cityAggregatesData = useCityAggregates();
   const tonightMapRef = useRef<MapboxMap | null>(null);
@@ -996,6 +1001,7 @@ export default function App() {
           onPlanStopTap={handlePlanStopTap}
           focusedStopIndex={activePlanSheet?.focusStopIndex ?? null}
           sheetState={activePlanSheet?.state ?? null}
+          userVenueIds={userVenueIds}
         />
       </div>
 

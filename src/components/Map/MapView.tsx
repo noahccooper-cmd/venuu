@@ -119,6 +119,28 @@ function getCountFontSize(count: number): string {
   return '19px';
 }
 
+/** Heat-map weighting: stamp pearl border + halo + breathing class onto
+ *  a venue bubble that the current user has captured. Idempotent — safe
+ *  to call repeatedly. The pearl rgba fingerprint (255, 248, 231) lets
+ *  us detect prior application and avoid re-stacking shadows. */
+function applyUserMarkedEnhancement(bubbleEl: HTMLDivElement, isMarked: boolean) {
+  if (isMarked) {
+    bubbleEl.dataset.userMarked = 'true';
+    bubbleEl.classList.add('user-marked-venue');
+    bubbleEl.style.border = '2px solid rgba(255, 248, 231, 0.85)';
+    const existing = bubbleEl.style.boxShadow || '';
+    // Pearl rgba fingerprint detects prior application — skip stacking
+    // if the helper already ran on this current boxShadow value.
+    if (!existing.includes('255, 248, 231')) {
+      const pearl = '0 0 24px rgba(255, 248, 231, 0.45), 0 0 8px rgba(255, 252, 239, 0.7)';
+      bubbleEl.style.boxShadow = existing ? `${existing}, ${pearl}` : pearl;
+    }
+  } else if (bubbleEl.dataset.userMarked === 'true') {
+    delete bubbleEl.dataset.userMarked;
+    bubbleEl.classList.remove('user-marked-venue');
+  }
+}
+
 /** Featured bubbles glow in the venue's signature vibe hue. Maps the
  *  peak-band hue id (1-14, from vibe_hue_baseline JSONB) → HSL degrees
  *  via the hue lookup. Falls back to a violet 290° when no baseline. */
@@ -272,6 +294,11 @@ interface MapViewProps {
    *  VenueSheet is open). Threaded to HeatFieldLayer to drive the
    *  tap-bleed expansion in the halos layer. Null → no bleed. */
   selectedVenueId?: string | null;
+  /** Set of venue IDs the current user has captured. Venues in
+   *  this set render with enhanced glow + pearl border + subtle
+   *  breathing animation. Drives the "your marks shine brighter
+   *  to me" daily monument feature. Empty set = no enhancement. */
+  userVenueIds?: Set<string>;
 }
 
 /* ── Events GeoJSON builder ──────────── */
@@ -349,7 +376,7 @@ function drawLineProgress(coords: [number, number][], t: number): [number, numbe
 
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState }: MapViewProps) {
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, userVenueIds }: MapViewProps) {
   // Side pills (share-globe / globe / follow-me) fade out and slide
   // down while the plan sheet covers the bottom of the map. They
   // remain visible at PILL state (sheet is at the top) and when no
@@ -430,6 +457,11 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const onPlanStopTapRef = useRef(onPlanStopTap);
   onPlanStopTapRef.current = onPlanStopTap;
   const eventsRef = useRef(events);
+  // Mirror of userVenueIds in a ref so the imperative marker-styling
+  // hot path can read it without re-running the syncMarkers effect
+  // every time the user captures a new moment.
+  const userVenueIdsRef = useRef<Set<string>>(userVenueIds ?? new Set());
+  userVenueIdsRef.current = userVenueIds ?? new Set();
   const onVenueClickRef = useRef(onVenueClick);
   const onEventClickRef = useRef(onEventClick);
   const onPriceTapRef = useRef(onPriceTap);
@@ -1357,6 +1389,12 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         labelEl.style.color = '#F5F0EB';
       }
 
+      // Heat-map weighting: pearl enhancement for venues the current
+      // user has captured. Layers on top of whatever stage the venue
+      // is at (featured, fraternity, plain). Re-applied by the
+      // heat-map sync below whenever stage changes.
+      applyUserMarkedEnhancement(bubbleEl, userVenueIdsRef.current.has(venue.id));
+
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         onVenueClickRef.current(venue);
@@ -1509,6 +1547,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           movementMagnitude={movementMagnitude}
           showName={showName}
           vibeHueBaseline={v.vibe_hue_baseline ?? null}
+          userMarked={userVenueIdsRef.current.has(v.id)}
         />
       );
 
@@ -1539,7 +1578,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.currentStage = -1; // force the legacy visuals sync to repaint
       }
     });
-  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds, marketZoom, marketViewActive, spotlightVenueId, maxAbsDelta, topMoverIds, userLocation]);
+  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds, marketZoom, marketViewActive, spotlightVenueId, maxAbsDelta, topMoverIds, userLocation, userVenueIds]);
 
   // ── Venny plan route — orange polyline + glow + numbered markers ──
   // Adds a dedicated 'venny-route' source/layer pair and a set of DOM
@@ -1990,6 +2029,10 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           entry.bubbleEl.classList.remove('active-glow');
         }
 
+        // Re-apply user-marked pearl enhancement — the stage repaint
+        // above clobbered border + boxShadow, so layer it back on.
+        applyUserMarkedEnhancement(entry.bubbleEl, userVenueIdsRef.current.has(venueId));
+
         entry.currentStage = visuals.stage;
       }
 
@@ -2021,6 +2064,9 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
             entry.ringEl.style.border = `2px solid ${visuals.color}`;
           }
         }
+        // Re-apply user-marked pearl enhancement (event-charged path
+        // overwrote boxShadow + border above).
+        applyUserMarkedEnhancement(entry.bubbleEl, userVenueIdsRef.current.has(venueId));
       }
 
       // Update count text with animated ticker + font size
@@ -2070,6 +2116,21 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       }
     });
   }, [venues, mapLoaded]);
+
+  // ── User-marked enhancement sync ──
+  // Re-walks every existing marker whenever the user's captured-venue
+  // set changes (e.g. they just captured a new moment). The helper is
+  // idempotent + cheap, so this is fine to run on every set update.
+  // Skips markers with the React live overlay since those handle their
+  // own user-mark via LiveVenueBubble's `userMarked` prop.
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const ids = userVenueIds ?? new Set<string>();
+    markersRef.current.forEach((entry, venueId) => {
+      if (entry.hasLiveOverlay) return;
+      applyUserMarkedEnhancement(entry.bubbleEl, ids.has(venueId));
+    });
+  }, [userVenueIds, mapLoaded, venues]);
 
   // ── Cover price tags on venue markers ──
   useEffect(() => {
