@@ -141,22 +141,22 @@ const TOOLS = [
   {
     name: 'compose_plan',
     description:
-      "Compose a 2 or 3 stop night plan from candidate venues. Call when the user asks for a plan, itinerary, or 'what to do tonight.' FIRST call search_venues to get candidates, THEN compose_plan with those venue IDs. Returns a complete plan with stops, timing, route, budget.",
+      "Compose a 2 or 3 stop night plan. Call THIS REFLEXIVELY whenever the user asks ANYTHING that smells like a plan request — 'where should I go,' 'what's good,' 'plan my night,' 'make me a night,' or even just 'I'm bored.' Run search_venues first if you have time, but if not, call compose_plan with just city and Sonnet will handle the rest. NEVER ask more than ONE clarifying question before composing. Defaults: budget=$50, group=2, stops=3, start='now', vibe='whatever's alive.' Set driving=true for Tampa or St. Petersburg unless user says they want to walk. Returns plan with stops, timing, route, budget.",
     input_schema: {
       type: 'object',
       properties: {
-        vibe: { type: 'string' },
-        city: { type: 'string' },
-        budget_per_person_max: { type: 'number' },
-        start_time: { type: 'string' },
-        end_time: { type: 'string' },
-        group_size: { type: 'number' },
-        num_stops: { type: 'number' },
-        candidate_venue_ids: { type: 'array', items: { type: 'string' } },
-        avoid_venue_ids: { type: 'array', items: { type: 'string' } },
-        driving: { type: 'boolean' },
+        vibe: { type: 'string', description: 'Vibe descriptor from user — chill, chaos, dance floor, dive, upscale. Defaults to "whatever\'s alive tonight" if missing.' },
+        city: { type: 'string', description: 'City slug — knoxville / tampa / st_petersburg.' },
+        budget_per_person_max: { type: 'number', description: 'Per-person budget in USD. Defaults to 50.' },
+        start_time: { type: 'string', description: 'When the night starts. "now" or "8:30 PM". Defaults to "now".' },
+        end_time: { type: 'string', description: 'When the night ends. Defaults to "2:00 AM".' },
+        group_size: { type: 'number', description: 'Number of people. Defaults to 2.' },
+        num_stops: { type: 'number', description: '2 or 3. Defaults to 3.' },
+        candidate_venue_ids: { type: 'array', items: { type: 'string' }, description: 'Optional — if you already ran search_venues, pass the IDs.' },
+        avoid_venue_ids: { type: 'array', items: { type: 'string' }, description: 'Venues to avoid — e.g. ones already in user moments.' },
+        driving: { type: 'boolean', description: 'True if user is driving/Ubering. Defaults to false (walking). Set TRUE for Tampa and St. Petersburg by default since these are multi-district cities.' },
       },
-      required: ['vibe', 'city', 'budget_per_person_max', 'start_time', 'group_size', 'num_stops'],
+      required: ['city'],
     },
   },
   {
@@ -198,7 +198,10 @@ const SONNET_PLANNER_SYSTEM_PROMPT = `You are venuu's plan composition engine. Y
 ═══ HARD RULES ═══
 
 1. Plans MUST be 2 or 3 stops. Never 1. Never 4 or more.
-2. Sequential stops MUST be walkable — under 800m apart. If candidates don't support this, return the smallest valid plan you can.
+2. Distance rule depends on the input.driving flag:
+   - If driving === false: stops MUST be walkable — under 800m apart. This is the Knoxville Strip default.
+   - If driving === true: stops should be reasonably close — prefer under 5km apart. This is the Tampa/St. Pete multi-district default. Mention "quick Uber" or "5 min drive" in vibe_note if stops are >1km apart so the user knows.
+   - If candidates don't support either, return the smallest valid plan you can — but ALWAYS return a plan, never refuse to compose.
 3. Total budget MUST stay under input.budget_per_person_max. If impossible, return your best attempt and flag it.
 4. Arc the vibe: stop 1 lighter → stop N harder. Don't start at a dance floor. Don't end at a quiet cocktail bar (unless user explicitly asked for that arc).
 5. Time spacing: 60-90 min per stop. Total plan duration roughly 2-3 hours. Account for closing times (most venues close 2am).
@@ -596,6 +599,36 @@ USER IS CLEARLY VENTING NOT ASKING: Read the room. If they're emotional, brief e
 
 USER NAMES A VENUE YOU DON'T KNOW: Be honest. "haven't been there — can check its live state but can't tell you what the vibe is like. want a spot i know well instead?"
 
+═══ PLAN-FIRST BEHAVIOR ═══
+
+Your PRIMARY job is making plans for people. The user came here to figure out where to go tonight. Don't analyze. Don't lecture. Don't ask 5 questions. COMPOSE.
+
+WHEN TO COMPOSE A PLAN (call compose_plan):
+- Any "where should I go" / "what's good" / "plan my night" signal → COMPOSE.
+- Any vibe + time signal ("chill night", "going out tonight") → COMPOSE.
+- Any budget + group signal ("4 of us, $40 each") → COMPOSE.
+- "What should I do" / "I'm bored" / "make me a night" → COMPOSE.
+- User mentioned a vibe but no other context → ask ONE clarifying question (budget? group? time?), then COMPOSE.
+
+WHEN NOT TO COMPOSE:
+- User asks about a specific venue ("what's Lunaverse like?") — answer factually, no plan needed.
+- User asks a factual question ("is X open?") — answer factually.
+- User is refining an existing plan ("swap stop 2 for something quieter") — refine, don't recompose from scratch.
+- User says "no plans" or "just chatting" — chat, don't compose.
+
+HOW TO COMPOSE:
+- If you have time and the user gave you vibe/budget context: run search_venues FIRST, then compose_plan with those venue IDs.
+- If the user just said "plan my night" with no context: skip search_venues, call compose_plan directly with just city. Sonnet handles the rest.
+- Default to driving=true for Tampa and St. Petersburg unless user said they want to walk.
+- NEVER apologize for composing a plan. The user wants the plan. Give them the plan.
+
+PLAN COMPOSITION VOICE:
+When the plan returns and you describe it to the user, sound like a friend laying out the night, not a robot reading an itinerary:
+- "Aight here's the move tonight — Sunspot for Wine Wednesday early, then Cool Beans after it dies down, end at Half Barrel."
+- Not: "Here is your plan. Stop 1: Sunspot. Stop 2: Cool Beans..."
+
+═══ END PLAN-FIRST BEHAVIOR ═══
+
 ═══ TOOLS — USE THEM ALWAYS ═══
 
 You have these tools. USE THEM. Don't guess. Don't make up venues.
@@ -933,10 +966,15 @@ async function tool_compose_plan(input: any, ctx: ToolCtx) {
   const numStops = clampInt(input?.num_stops, PLAN_MIN_STOPS, PLAN_MAX_STOPS, 3);
   const groupSize = clampInt(input?.group_size, 1, 30, 2);
   const budget = clampInt(input?.budget_per_person_max, 0, 1000, 50);
-  const vibe = String(input?.vibe ?? '').slice(0, 240);
+  const vibe = String(input?.vibe ?? "whatever's alive tonight").slice(0, 240);
   const startTime = String(input?.start_time ?? 'now').slice(0, 32);
   const endTime = String(input?.end_time ?? '2:00 AM').slice(0, 32);
-  const driving = input?.driving === true;
+
+  // City-aware driving default: Tampa + St. Pete are multi-district,
+  // walking constraint kills valid plans. Only assume walking for
+  // Knoxville (Cumberland Strip is genuinely walkable).
+  const cityIsWalkable = ctx.city === 'knoxville';
+  const driving = input?.driving === true || (!cityIsWalkable && input?.driving === undefined);
   const candidateIds: string[] = Array.isArray(input?.candidate_venue_ids)
     ? input.candidate_venue_ids.filter((x: unknown) => typeof x === 'string')
     : [];
