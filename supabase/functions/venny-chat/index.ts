@@ -1532,7 +1532,7 @@ async function buildUserMemoryBlock(
         .select(`
           rating,
           created_at,
-          venues(name, vibe, city)
+          venues(name, vibe_tagline, city)
         `)
         .eq('user_id', profileId)
         .order('created_at', { ascending: false })

@@ -5,6 +5,7 @@ import { hapticLight, hapticMedium, hapticSuccess } from '../../lib/haptics';
 import { VenueResultCard, type VenueResult } from './VenueResultCard';
 import { PlanCard, type Plan } from './PlanCard';
 import type { CityKey } from '../../lib/constants';
+import { getWelcomeMessage, getSuggestions } from '../../lib/vennyKnowledge';
 
 /**
  * VennySheet — bottom sheet that wraps Venny's chat surface.
@@ -396,12 +397,17 @@ function VennySheetInner({
   }, [open, initialMessage, historyLoaded, sending, send, onInitialMessageHandled]);
 
   // ── Suggested prompts (filter chips) ─────────────────────────────
-  const suggestions = useMemo(() => ([
-    'where’s busy right now?',
-    'cheap covers tonight',
-    'chill cocktail spot',
-    'where should I go next?',
-  ]), []);
+  // City-specific suggestions from vennyKnowledge — Knoxville gets
+  // "Where should freshmen go?" etc., other cities fall back to generic.
+  const suggestions = useMemo(() => getSuggestions(city), [city]);
+
+  // Welcome message — random selection per session per city. useMemo
+  // keyed on city keeps the message stable across re-renders so it
+  // doesn't reshuffle mid-empty-state.
+  const welcomeMessage = useMemo(
+    () => getWelcomeMessage(city, 'friend'),
+    [city],
+  );
 
   const handleSuggestionTap = useCallback((text: string) => {
     hapticLight();
@@ -689,8 +695,7 @@ function VennySheetInner({
                   color: 'rgba(255,255,255,0.5)',
                   lineHeight: 1.5,
                 }}>
-                  I'm Venny — your nightlife co-pilot.<br />
-                  Ask me what's busy, where to start, or what fits your vibe.
+                  {welcomeMessage}
                 </div>
               )}
 
