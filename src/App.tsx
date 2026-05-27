@@ -21,6 +21,7 @@ import { VennyBar } from './components/Venny/VennyBar';
 import { VennySheet } from './components/Venny/VennySheet';
 import PaintCeremony from './components/Paint/PaintCeremony';
 import CaptureSurface from './components/Capture/CaptureSurface';
+import MomentToast from './components/Moment/MomentToast';
 import type { VibeHueId } from './lib/hueMath';
 import type { Plan as VennyPlan } from './components/Venny/PlanCard';
 import { SignInSheet } from './components/Auth/SignInSheet';
@@ -125,6 +126,11 @@ export default function App() {
   } | null>(null);
   const [paintedHueId, setPaintedHueId] = useState<VibeHueId | null>(null);
   const [paintedMomentNumber, setPaintedMomentNumber] = useState<number | null>(null);
+  /** Closing toast after ceremony — {momentNumber, venueName} when active */
+  const [momentToast, setMomentToast] = useState<{
+    momentNumber: number;
+    venueName: string;
+  } | null>(null);
   // PHASE 3 (49c) — production CaptureSurface, opened by VenueCard
   // dispatching `venuu:request-capture` or by a paint_prompt push.
   const [captureSurfaceOpen, setCaptureSurfaceOpen] = useState(false);
@@ -1142,12 +1148,32 @@ export default function App() {
         map={tonightMapRef.current}
         momentNumber={paintedMomentNumber}
         onComplete={() => {
+          // Capture toast data BEFORE clearing the painted state
+          if (paintedMomentNumber != null && activePaintVenue != null) {
+            setMomentToast({
+              momentNumber: paintedMomentNumber,
+              venueName: activePaintVenue.name,
+            });
+          }
+          // Clear ceremony state
           setPaintCeremonyOpen(false);
           setPaintedHueId(null);
           setPaintedMomentNumber(null);
           setActivePaintVenue(null);
         }}
       />
+
+      {/* Closing toast — appears after PaintCeremony completes,
+          auto-dismisses after 3 seconds. Pearlescent ✦ + moment word
+          receipt at top of map. */}
+      {momentToast && (
+        <MomentToast
+          key={`${momentToast.venueName}-${momentToast.momentNumber}`}
+          momentNumber={momentToast.momentNumber}
+          venueName={momentToast.venueName}
+          onDismissed={() => setMomentToast(null)}
+        />
+      )}
 
       {/* 49c — production WebRTC capture surface. Entry points:
        *  1) venue-card "✦ capture {venue}" CTA → venuu:request-capture
@@ -1183,10 +1209,12 @@ export default function App() {
             const ceremonyLat = venueForCeremony.lat;
             const ceremonyLng = venueForCeremony.lng;
 
-            // Wait one frame so the venue card begins dismissing before
-            // ceremony fires. Without this, ceremony's flyTo happens while
-            // the card is still occluding the bottom half of the map.
-            requestAnimationFrame(() => {
+            // Wait 350ms for the venue card sheet to fully animate closed
+            // before firing the ceremony. requestAnimationFrame was 16ms —
+            // too fast; the sheet was still visible/animating when the
+            // ceremony's bloom started, causing the flash to overlay the
+            // card. 350ms matches iOS native sheet dismiss duration.
+            setTimeout(() => {
               setActivePaintVenue({
                 id: ceremonyVenueId,
                 name: ceremonyVenueName,
@@ -1196,7 +1224,7 @@ export default function App() {
               setPaintedHueId(hueId as VibeHueId);
               setPaintedMomentNumber(momentNumber);
               setPaintCeremonyOpen(true);
-            });
+            }, 350);
           } else {
             console.warn('[App] missing lat/lng for ceremony — skipping fly');
           }
