@@ -1806,6 +1806,83 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     };
   }, [mapLoaded, activePlan, focusedStopIndex, sheetState]);
 
+  // ── Plan Mode entry — fit map to route bounds ──────────────────
+  // Fires once when sheetState transitions from null/undefined → set,
+  // which is the LETS GO moment. Uses a previous-state ref so manual
+  // sheet drags (pill ↔ card ↔ full) don't re-trigger the cinematic
+  // fit. Pads aggressively so PlanModeHeader (top) and PlanSheet at
+  // full state (bottom) don't occlude the route.
+  const prevSheetStateRef = useRef<typeof sheetState>(null);
+  useEffect(() => {
+    const prev = prevSheetStateRef.current;
+    prevSheetStateRef.current = sheetState;
+
+    if (!mapLoaded || !activePlan || !sheetState) return;
+    // Only fire on null → non-null transition (plan mode entry)
+    if (prev != null) return;
+
+    const map = mapRef.current;
+    if (!map) return;
+
+    const stops = (activePlan.stops ?? []).filter(s =>
+      typeof s.lat === 'number' && typeof s.lng === 'number'
+    );
+    if (stops.length < 2) return;
+
+    // Build bounds from all stops + user location if available
+    const bounds = new mapboxgl.LngLatBounds();
+    stops.forEach(s => bounds.extend([s.lng as number, s.lat as number]));
+    if (userLocation) {
+      bounds.extend([userLocation.lng, userLocation.lat]);
+    }
+
+    try {
+      map.fitBounds(bounds, {
+        padding: {
+          top: 140,    // PlanModeHeader space
+          bottom: 320, // PlanSheet at full state
+          left: 60,
+          right: 60,
+        },
+        duration: 1200,
+        essential: true,
+      });
+    } catch {
+      // Map sometimes refuses fitBounds during entrance animations
+    }
+  }, [sheetState, mapLoaded, activePlan, userLocation]);
+
+  // ── Plan-stop tagging ──────────────────────────────────────────
+  // When activePlan is set AND we're in plan mode (sheetState != null),
+  // tag the matching venue bubbles with `.plan-stop-venue` so the
+  // CSS `.plan-mode-active .venue-bubble:not(.plan-stop-venue)` rule
+  // dims non-plan venues while keeping plan stops at full opacity.
+  useEffect(() => {
+    if (!mapLoaded) return;
+
+    const planStopIds = new Set<string>(
+      sheetState != null && activePlan
+        ? (activePlan.stops ?? [])
+            .map(s => s.venue_id)
+            .filter((id): id is string => typeof id === 'string')
+        : []
+    );
+
+    document.querySelectorAll<HTMLElement>('[data-venue-id]').forEach((el) => {
+      const venueId = el.dataset.venueId;
+      if (!venueId) return;
+      // The class is applied to the marker root; the .venue-bubble
+      // child inherits the opacity from being a descendant under
+      // the selector when we put the class on the bubble itself.
+      const bubble = el.querySelector<HTMLElement>('.venue-bubble') ?? el;
+      if (planStopIds.has(venueId)) {
+        bubble.classList.add('plan-stop-venue');
+      } else {
+        bubble.classList.remove('plan-stop-venue');
+      }
+    });
+  }, [sheetState, activePlan, mapLoaded, venues]);
+
   // ── Filter pill visibility — show/hide markers via CSS, never delete them ──
   useEffect(() => {
     if (!mapLoaded) return;

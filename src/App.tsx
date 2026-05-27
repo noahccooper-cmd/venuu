@@ -14,6 +14,7 @@ import { useShareGlobe } from './hooks/useShareGlobe';
 import { CinematicIntro } from './components/Intro/CinematicIntro';
 import { Header } from './components/Layout/Header';
 import { BottomNav, type Tab } from './components/Layout/BottomNav';
+import { PlanModeHeader } from './components/PlanMode/PlanModeHeader';
 import { TonightPage } from './pages/TonightPage';
 import { PortalPage } from './pages/PortalPage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
@@ -114,6 +115,42 @@ export default function App() {
     focusStopIndex?: number;
   } | null>(null);
   const [endNightCeremony, setEndNightCeremony] = useState<{ planId: string } | null>(null);
+
+  // Plan Mode — derive the "current stop" from proximity detection
+  // (visitedStopIndices) and the user's manual focus (activePlanSheet.focusStopIndex).
+  // Auto-progresses as user walks through; manual override possible.
+  const currentStopIndex = useMemo(() => {
+    if (!activePlanSheet || !activePlan) return 0;
+
+    // If user manually focused a stop via PlanSheet tap, use that
+    if (typeof activePlanSheet.focusStopIndex === 'number') {
+      return activePlanSheet.focusStopIndex;
+    }
+
+    // Otherwise: first non-visited stop is "current"
+    const stops = activePlan.stops ?? [];
+    for (let i = 0; i < stops.length; i++) {
+      if (!visitedStopIndices.includes(i)) return i;
+    }
+    return Math.max(0, stops.length - 1);
+  }, [activePlanSheet, activePlan, visitedStopIndices]);
+
+  // Plan Mode body class — drives global CSS shifts (venue dimming,
+  // bottom nav hide). Added when activePlanSheet exists, removed
+  // when it clears.
+  useEffect(() => {
+    const inPlanMode = activePlanSheet != null;
+
+    if (inPlanMode) {
+      document.body.classList.add('plan-mode-active');
+    } else {
+      document.body.classList.remove('plan-mode-active');
+    }
+
+    return () => {
+      document.body.classList.remove('plan-mode-active');
+    };
+  }, [activePlanSheet]);
 
   // Moments flow state. PaintCeremony state is reused across both
   // the legacy (now-removed) PaintScreen path and the new CaptureSurface
@@ -385,27 +422,31 @@ export default function App() {
   }, []);
 
   // ENTER PLAN MODE — user tapped LETS GO. Dismiss Venny, fire the
-  // cinematic plan mode (PlanSheet at card state, MiniVennyPill visible,
-  // venues outside the plan dim down in Fix 8).
+  // cinematic plan mode (PlanSheet at full state, PlanModeHeader fades
+  // in, map fits to route, venues dim, BottomNav hides).
   const handleActivatePlan = useCallback(() => {
     if (!activePlan) return;
 
     void hapticLight();
     setVennyOpen(false);
 
-    // If we don't yet have a saved planId (user hasn't tapped Save),
-    // generate a temp id so PlanSheet mounts. Save can still happen
-    // later from PlanSheet, swapping the temp id for the real one.
-    const planId = activePlanId ?? `temp-${Date.now()}`;
-    if (!activePlanId) {
-      setActivePlanId(planId);
-    }
+    // Sequenced choreography:
+    // t=0:   Venny slides down
+    // t=120: PlanSheet opens at FULL state for cinematic entry
+    // t=200: Map fits to route bounds (handled by MapView reacting
+    //        to sheetState transitioning from null → full)
+    setTimeout(() => {
+      const planId = activePlanId ?? `temp-${Date.now()}`;
+      if (!activePlanId) {
+        setActivePlanId(planId);
+      }
 
-    setActivePlanSheet({
-      planId,
-      state: 'card',
-      focusStopIndex: 0,
-    });
+      setActivePlanSheet({
+        planId,
+        state: 'full',  // ← Full cinematic entry, not card
+        focusStopIndex: 0,
+      });
+    }, 120);
   }, [activePlan, activePlanId]);
 
   // Tap a numbered route marker on the main map. Behaviour depends
@@ -1057,6 +1098,25 @@ export default function App() {
       )}
 
       <PushBanner />
+      {/* Plan Mode Header — only visible when activePlanSheet is open.
+       *  Custom top header with exit, plan title, current stop, and
+       *  progress dots. Drives the "this is a different app mode" feel. */}
+      {activePlanSheet && activePlan && activePlan.stops && activePlan.stops.length > 0 && (
+        <PlanModeHeader
+          planTitle={activePlan.title ?? 'Tonight'}
+          currentStopName={activePlan.stops[currentStopIndex]?.venue_name ?? null}
+          currentStopIndex={currentStopIndex}
+          totalStops={activePlan.stops.length}
+          onExit={() => {
+            void hapticLight();
+            setActivePlanSheet(null);
+            // Don't clear activePlan — route stays as preview so user
+            // can re-enter plan mode by tapping LETS GO again. Only
+            // clear activePlan if they dismiss it from Venny.
+          }}
+        />
+      )}
+
       {/* Bottom nav stays visible — the plan sheet snaps to PILL or
        *  CARD heights that leave the nav reachable. FULL covers it
        *  naturally; the user drags down to expose it again. */}
