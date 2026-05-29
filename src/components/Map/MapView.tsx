@@ -9,6 +9,7 @@ import { HUE_BY_ID, type VibeHueId } from '../../lib/hueMath';
 import { mapboxToken, mapboxReady } from '../../lib/supabase';
 import { getShortName, formatCount, getCoverLabel } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
+import { vibeColor } from '../../lib/eventDisplay';
 import { formatWalkDuration, formatWalkDistance } from '../../lib/directions';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
 import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
@@ -42,6 +43,22 @@ function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): nu
   const x = Math.sin(dLat / 2) ** 2
           + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+// Compact pin-time format: "FRI 9PM", "JUN 26", etc.
+function formatPinTime(iso: string): string {
+  const start = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((start.getTime() - now.getTime()) / 86400000);
+  const time = start.toLocaleTimeString('en-US', {
+    hour: 'numeric', hour12: true,
+  }).replace(' ', '').toUpperCase();
+  if (diffDays < 7) {
+    const dow = start.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+    return `${dow} ${time}`;
+  }
+  const mon = start.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  return `${mon} ${start.getDate()}`;
 }
 
 /** Venue augmented with the latest fused estimate from the prediction engine. */
@@ -299,35 +316,120 @@ interface MapViewProps {
    *  breathing animation. Drives the "your marks shine brighter
    *  to me" daily monument feature. Empty set = no enhancement. */
   userVenueIds?: Set<string>;
+  /** Current map mode — gates event-layer visibility + venue dimming. */
+  mapMode?: 'vibe' | 'events';
+  /** Event id whose pin should glow gold (set when a lineup card is
+   *  tapped or a pin is tapped). Drives a one-shot core highlight. */
+  glowEventId?: string | null;
 }
 
 /* ── Events GeoJSON builder ──────────── */
 
-const EVENT_LAYERS = ['events-label', 'events-core', 'events-ring', 'events-pulse', 'events-glow', 'events-aura', 'events-ping1', 'events-ping2', 'events-ping3'] as const;
+const EVENT_LAYERS = [
+  'events-tap-target',
+  'events-core', 'events-ring', 'events-pulse',
+  'events-glow', 'events-aura',
+  'events-ping1', 'events-ping2', 'events-ping3',
+  'events-label', 'events-sublabel',
+  'events-count-bg', 'events-count-badge',
+  'events-marquee-star',
+] as const;
 
+/**
+ * Group events by venue (standalone events get their own group keyed by
+ * event id) and emit ONE feature per group. The "primary" event drives
+ * the pin's color, label, and click target: marquee events win, then
+ * the earliest start_time. event_count powers the count badge.
+ */
 function buildEventsGeoJSON(events: VenueEvent[], venues: Venue[]): GeoJSON.FeatureCollection {
   const venueMap = new Map(venues.map(v => [v.id, v]));
-  return {
-    type: 'FeatureCollection',
-    features: events.map(evt => {
-      let lng = evt.longitude;
-      let lat = evt.latitude;
-      if (evt.venue_id) {
-        const v = venueMap.get(evt.venue_id);
-        if (v) { lng = v.lng; lat = v.lat; }
+
+  // Build a tenant→hub map: which venues are tenants of a hub?
+  // In events mode, tenant events get attributed to their hub.
+  const tenantToHub = new Map<string, string>();
+  for (const v of venues) {
+    if (v.tenant_of) {
+      tenantToHub.set(v.id, v.tenant_of);
+    }
+  }
+
+  const groups = new Map<string, VenueEvent[]>();
+  for (const evt of events) {
+    // Group key: prefer venue_id for network venues; for external
+    // venues (Ritz Ybor, Benchmark Arena, etc.) fall back to lat/lng
+    // rounded to 4 decimals (~10m) so events at the same physical
+    // venue cluster into one feature instead of stacking.
+    //
+    // Resolve hub attribution: if the event is at a tenant venue,
+    // promote it to the parent hub for display purposes.
+    const effectiveVenueId = evt.venue_id
+      ? (tenantToHub.get(evt.venue_id) ?? evt.venue_id)
+      : null;
+
+    const lngStr = evt.longitude != null ? evt.longitude.toFixed(4) : 'null';
+    const latStr = evt.latitude != null ? evt.latitude.toFixed(4) : 'null';
+    const key = effectiveVenueId
+      ? `v:${effectiveVenueId}`
+      : `loc:${lngStr},${latStr}`;
+    const arr = groups.get(key);
+    if (arr) arr.push(evt);
+    else groups.set(key, [evt]);
+  }
+
+  const features: GeoJSON.Feature[] = [];
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => {
+      if (!!a.marquee !== !!b.marquee) return a.marquee ? -1 : 1;
+      return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+    });
+    const primary = sorted[0];
+
+    let lng = primary.longitude;
+    let lat = primary.latitude;
+    let venueName = '';
+    let isFrat = false;
+    let isHub = false;
+    // Resolve the effective venue (hub for tenants) so the pin renders
+    // at the hub's coords/name and carries its is_hub flag.
+    const primaryEffectiveVenueId = primary.venue_id
+      ? (tenantToHub.get(primary.venue_id) ?? primary.venue_id)
+      : null;
+    if (primaryEffectiveVenueId) {
+      const v = venueMap.get(primaryEffectiveVenueId);
+      if (v) {
+        lng = v.lng;
+        lat = v.lat;
+        venueName = v.name;
+        isFrat = v.category === 'fraternity';
+        isHub = !!v.is_hub;
       }
-      const isFrat = evt.venue_id ? venueMap.get(evt.venue_id)?.category === 'fraternity' : false;
-      return {
-        type: 'Feature' as const,
-        geometry: { type: 'Point' as const, coordinates: [lng, lat] },
-        properties: {
-          id: evt.id,
-          label: `\u26A1 ${evt.title}\n${getEventTimeLabel(evt.start_time, evt.expires_at).text}`,
-          isFratEvent: isFrat ? 1 : 0,
-        },
-      };
-    }),
-  };
+    }
+
+    const color = isFrat ? '#7EB8FF' : vibeColor(primary.vibe_tags);
+    const hasMarquee = group.some(e => e.marquee);
+
+    features.push({
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [lng, lat] },
+      properties: {
+        id: primary.id,
+        primary_event_id: primary.id,
+        venue_name: venueName,
+        venue_display: (venueName || primary.title).toUpperCase(),
+        event_count: group.length,
+        has_marquee: hasMarquee ? 1 : 0,
+        color,
+        // Second line text: if multi-event, "{N} EVENTS"; else relative time
+        sub_label: group.length > 1
+          ? `${group.length} EVENTS`
+          : formatPinTime(primary.start_time),
+        label: `\u26A1 ${primary.title}\n${getEventTimeLabel(primary.start_time, primary.expires_at).text}`,
+        isFratEvent: isFrat ? 1 : 0,
+        is_hub: isHub ? 1 : 0,
+      },
+    });
+  }
+  return { type: 'FeatureCollection', features };
 }
 
 /**
@@ -376,7 +478,7 @@ function drawLineProgress(coords: [number, number][], t: number): [number, numbe
 
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, userVenueIds }: MapViewProps) {
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, userVenueIds, mapMode = 'vibe', glowEventId = null }: MapViewProps) {
   // Side pills (share-globe / globe / follow-me) fade out and slide
   // down while the plan sheet covers the bottom of the map. They
   // remain visible at PILL state (sheet is at the top) and when no
@@ -884,6 +986,21 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         },
       });
 
+      // Invisible hit-target layer — larger radius than the visible pulse
+      // so taps that land slightly off a pin still register. Sits beneath
+      // the visible layers; click is bound to it below.
+      map.addLayer({
+        id: 'events-tap-target',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        paint: {
+          'circle-radius': 36,
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-opacity': 0.001, // not 0 — Mapbox may optimize 0 away
+        },
+      });
+
       // Layer 0: wide aura (very faint, animated at different speed)
       map.addLayer({
         id: 'events-aura',
@@ -892,7 +1009,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         minzoom: 11,
         paint: {
           'circle-radius': ['case', ['==', ['get', 'isFratEvent'], 1], 45, 50],
-          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#00D4FF'],
+          'circle-color': ['get', 'color'],
           'circle-opacity': ['case', ['==', ['get', 'isFratEvent'], 1], 0.06, 0.03],
           'circle-blur': 1,
         },
@@ -906,7 +1023,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         minzoom: 11,
         paint: {
           'circle-radius': 35,
-          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#00D4FF'],
+          'circle-color': ['get', 'color'],
           'circle-opacity': 0.08,
           'circle-blur': 1,
         },
@@ -920,7 +1037,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         minzoom: 11,
         paint: {
           'circle-radius': 25,
-          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#00D4FF'],
+          'circle-color': ['get', 'color'],
           'circle-opacity': 0.15,
         },
       });
@@ -933,7 +1050,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         minzoom: 11,
         paint: {
           'circle-radius': 15,
-          'circle-color': ['case', ['==', ['get', 'isFratEvent'], 1], '#7EB8FF', '#0088FF'],
+          'circle-color': ['get', 'color'],
           'circle-opacity': 0.3,
         },
       });
@@ -954,38 +1071,142 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         },
       });
 
-      // Layer 5: event title + time label — solid pill background above marker
+      // Layer 5a: venue name — primary line, bold uppercase white with
+      // thick dark halo for max readability over any map background
       map.addLayer({
         id: 'events-label',
         type: 'symbol',
         source: 'events-source',
         minzoom: 11,
         layout: {
-          'text-field': ['get', 'label'],
+          'text-field': ['get', 'venue_display'],
           'text-font': ['Arial Unicode MS Bold'],
-          'text-size': 13,
-          'text-offset': [0, -4.2],
-          'text-anchor': 'bottom',
-          'text-max-width': 14,
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-          'text-line-height': 1.3,
-          'text-letter-spacing': 0.02,
-          // Pill background via 1px SDF image stretched to text bounds
-          'icon-image': 'event-pill-bg',
-          'icon-text-fit': 'both',
-          'icon-text-fit-padding': [6, 12, 6, 12],
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
+          'text-size': 14,                       // 12.5 → 14
+          'text-offset': [0, 2],                 // slightly further from pin
+          'text-anchor': 'top',
+          'text-max-width': 10,
+          'text-allow-overlap': false,           // false so labels don't overlap each other
+          'text-ignore-placement': false,
+          'text-padding': 8,                      // push apart
+          'text-letter-spacing': 0.1,             // tighter premium tracking
+          'text-line-height': 1.1,
+          'text-transform': 'uppercase',
         },
         paint: {
           'text-color': '#FFFFFF',
-          'text-halo-color': 'rgba(79,195,247,0.35)',
-          'text-halo-width': 1,
-          'icon-color': 'rgba(0,0,0,0.88)',
-          'icon-opacity': 1,
+          'text-halo-color': '#0A0A0F',
+          'text-halo-width': 3,                   // 2.2 → 3 (max readability)
+          'text-halo-blur': 0.5,
         },
       });
+
+      // Layer 5b: sub-label — gold accent line under the venue name
+      // ("7 EVENTS" or "FRI 9PM" depending on count)
+      map.addLayer({
+        id: 'events-sublabel',
+        type: 'symbol',
+        source: 'events-source',
+        minzoom: 11,
+        layout: {
+          'text-field': ['get', 'sub_label'],
+          'text-font': ['Arial Unicode MS Bold'],
+          'text-size': 10,
+          'text-offset': [0, 3.6],          // further below the pin
+          'text-anchor': 'top',
+          'text-letter-spacing': 0.14,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': [
+            // Marquee venues get gold; non-marquee get vibe color
+            'case',
+            ['==', ['get', 'has_marquee'], 1], '#FFB800',
+            ['get', 'color'],
+          ],
+          'text-halo-color': '#0A0A0F',
+          'text-halo-width': 1.8,
+          'text-halo-blur': 0.3,
+        },
+      });
+
+      // Layer 6a: count badge background — solid gold circle, top-right of pin
+      map.addLayer({
+        id: 'events-count-bg',
+        type: 'circle',
+        source: 'events-source',
+        minzoom: 11,
+        filter: ['>', ['get', 'event_count'], 1],
+        paint: {
+          'circle-radius': 11,
+          'circle-color': '#FFB800',
+          'circle-translate': [16, -16],     // top-right offset (pixels)
+          'circle-stroke-color': '#0A0A0F',
+          'circle-stroke-width': 1.5,
+        },
+      });
+
+      // Layer 6b: count badge text — black bold number inside the gold pill
+      map.addLayer({
+        id: 'events-count-badge',
+        type: 'symbol',
+        source: 'events-source',
+        minzoom: 11,
+        filter: ['>', ['get', 'event_count'], 1],
+        layout: {
+          'text-field': ['to-string', ['get', 'event_count']],
+          'text-font': ['Arial Unicode MS Bold'],
+          'text-size': 12,
+          'text-offset': [1.45, -1.45],      // matches circle-translate above
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#0A0A0F',
+        },
+      });
+
+      // Layer 6c: marquee star overlay — small gold ★ above-left of the pin
+      // for events flagged as marquee (Tame Impala, J. Cole, AltSocial, etc.)
+      map.addLayer({
+        id: 'events-marquee-star',
+        type: 'symbol',
+        source: 'events-source',
+        minzoom: 11,
+        filter: ['==', ['get', 'has_marquee'], 1],
+        layout: {
+          'text-field': '★',
+          'text-font': ['Arial Unicode MS Bold'],
+          'text-size': 16,
+          'text-offset': [-1.4, -1.4],
+          'text-anchor': 'center',
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#FFB800',
+          'text-halo-color': '#0A0A0F',
+          'text-halo-width': 1.5,
+          'text-halo-blur': 0.3,
+        },
+      });
+
+      // Navy tint overlay for events mode — a full-bleed semi-transparent
+      // navy fill inserted beneath the event layers (before events-ping1,
+      // the bottom-most one) so it tints the base map without washing out
+      // the pulses. Toggled via the visibility-gating useEffect.
+      map.addLayer({
+        id: 'events-mode-tint',
+        type: 'background',
+        paint: {
+          'background-color': '#1a2447',
+          'background-opacity': 0.10,
+        },
+        layout: {
+          visibility: 'none',
+        },
+      }, 'events-ping1');
 
       // ── User location dot ──
       map.addSource('user-location', {
@@ -2361,6 +2582,163 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     return () => { map.off('dragstart', handleDrag); };
   }, [mapLoaded, onUserDragMap]);
 
+  // ── Gate event-layer visibility on mapMode ──────────────────
+  // When mapMode === 'vibe' (default), every event-related Mapbox layer
+  // is hidden — events don't exist in vibe mode. When the user toggles to
+  // 'events', the layers become visible and the animation loop below
+  // drives their pulses. The navy tint sits first so it renders beneath.
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const visibility = mapMode === 'events' ? 'visible' : 'none';
+    const eventLayerIds = ['events-mode-tint', ...EVENT_LAYERS];
+    for (const layerId of eventLayerIds) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', visibility);
+      }
+    }
+  }, [mapMode, mapLoaded]);
+
+  // ── Dim venue bubbles in events mode ────────────────────────
+  // The transformation: in events mode, hub venues stay full opacity
+  // (gold-starred heroes), tenant venues hide entirely (the hub takes
+  // their pixel), and every non-host venue recedes to ~8% — faint
+  // context dots only. Heat field + navy tint deepen the world shift.
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const dim = mapMode === 'events';
+
+    markersRef.current.forEach((entry, venueId) => {
+      const venue = venues.find(v => v.id === venueId);
+      const isHub = !!venue?.is_hub;
+      const isTenant = !!venue?.tenant_of;
+
+      if (entry.bubbleEl) {
+        entry.bubbleEl.style.transition = 'opacity 400ms cubic-bezier(0.32, 0.72, 0, 1), filter 400ms cubic-bezier(0.32, 0.72, 0, 1), transform 400ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 400ms ease';
+
+        // Opacity per role
+        let opacity = 1;
+        if (dim) {
+          if (isTenant) opacity = 0;          // M.Bird hides — Armature takes its spot
+          else if (isHub) opacity = 1;        // Hubs at full opacity
+          else opacity = 0.25;                // Non-host visible as context (was 0.08)
+        }
+        entry.bubbleEl.style.opacity = String(opacity);
+
+        // Saturation
+        entry.bubbleEl.style.filter = (dim && !isHub)
+          ? 'saturate(0.4)'
+          : 'saturate(1)';
+
+        // Scale + glow for hubs in events mode
+        if (dim && isHub) {
+          entry.bubbleEl.style.transform = 'translate(-50%, -50%) scale(1.6)';
+          entry.bubbleEl.style.boxShadow = '0 0 0 3px rgba(255, 184, 0, 0.5), 0 0 24px rgba(255, 184, 0, 0.6), 0 0 48px rgba(255, 184, 0, 0.3)';
+        } else {
+          entry.bubbleEl.style.transform = 'translate(-50%, -50%) scale(1)';
+          entry.bubbleEl.style.boxShadow = '';
+        }
+
+        // Pointer-events
+        entry.bubbleEl.style.pointerEvents = (dim && isTenant) ? 'none' : 'auto';
+      }
+
+      if (entry.countEl) {
+        entry.countEl.style.transition = 'opacity 350ms ease';
+        entry.countEl.style.opacity = dim ? '0' : '1';
+      }
+
+      if (entry.labelEl) {
+        entry.labelEl.style.transition = 'opacity 350ms ease';
+        let labelOpacity = '1';
+        if (dim) {
+          if (isTenant) labelOpacity = '0';
+          else if (isHub) labelOpacity = '1';
+          else labelOpacity = '0.4';          // Non-host labels readable but secondary
+        }
+        entry.labelEl.style.opacity = labelOpacity;
+      }
+
+      if (entry.coverEl) {
+        entry.coverEl.style.transition = 'opacity 350ms ease';
+        entry.coverEl.style.opacity = dim ? '0' : '1';
+      }
+    });
+
+    // Navy tint — gentle mood shift at 12% (was 18% — avoid color soup)
+    if (map.getLayer('events-mode-tint')) {
+      map.setPaintProperty('events-mode-tint', 'background-opacity', dim ? 0.12 : 0);
+    }
+  }, [mapMode, mapLoaded, venues]);
+
+  // ── Tenant→Hub label morph in events mode ─────────────────
+  // When in events mode, hub venues' labels display the HUB name.
+  // When in vibe mode, they display the venue's normal name.
+  // This drives the cinematic "M.Bird becomes Armature Works" moment.
+  useEffect(() => {
+    if (!mapLoaded) return;
+    markersRef.current.forEach((entry, venueId) => {
+      const venue = venues.find(v => v.id === venueId);
+      if (!venue) return;
+      if (!entry.labelEl) return;
+
+      if (mapMode === 'events' && venue.is_hub) {
+        // Hub in events mode: show its name in caps with venuu star.
+        // Four 1px black shadows form a text-stroke so the gold label
+        // stays readable against ANY map background.
+        entry.labelEl.textContent = `✦ ${venue.name.toUpperCase()}`;
+        entry.labelEl.style.color = '#FFD700';
+        entry.labelEl.style.textShadow = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 6px rgba(0,0,0,0.9), 0 0 12px rgba(255, 215, 0, 0.45)';
+        entry.labelEl.style.fontWeight = '900';
+        entry.labelEl.style.letterSpacing = '0.1em';
+        entry.labelEl.style.fontSize = '16px';
+        entry.labelEl.style.lineHeight = '1.1';
+        entry.labelEl.style.whiteSpace = 'nowrap';
+        entry.labelEl.style.zIndex = '50';
+      } else {
+        // Restore normal label in vibe mode
+        // (uses getShortName helper that already exists)
+        const normalLabel = (typeof getShortName === 'function')
+          ? getShortName(venue.name)
+          : venue.name;
+        entry.labelEl.textContent = normalLabel;
+        entry.labelEl.style.color = '';
+        entry.labelEl.style.textShadow = '';
+        entry.labelEl.style.fontWeight = '';
+        entry.labelEl.style.letterSpacing = '';
+        entry.labelEl.style.fontSize = '';
+        entry.labelEl.style.lineHeight = '';
+        entry.labelEl.style.whiteSpace = '';
+        entry.labelEl.style.zIndex = '';
+      }
+    });
+  }, [mapMode, mapLoaded, venues]);
+
+  // ── Gold pin glow for the bonded event ──────────────────────
+  // When a lineup card or pin is tapped, the matching pin's core dot
+  // turns gold and grows briefly. Driven by glowEventId from the
+  // parent (cleared on a timer there). Matches on primary_event_id so
+  // a grouped pin highlights when any of its events is the target.
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const map = mapRef.current;
+    if (!map || !map.getLayer('events-core')) return;
+    if (glowEventId) {
+      map.setPaintProperty('events-core', 'circle-color',
+        ['case', ['==', ['get', 'primary_event_id'], glowEventId], '#FFB800', '#00FF88']);
+      map.setPaintProperty('events-core', 'circle-radius',
+        ['case', ['==', ['get', 'primary_event_id'], glowEventId], 16, 10]);
+    } else {
+      map.setPaintProperty('events-core', 'circle-color', '#00FF88');
+      map.setPaintProperty('events-core', 'circle-radius', 10);
+    }
+  }, [glowEventId, mapLoaded]);
+
   // ── Unified animation loop — optimized for 30fps paint updates + 60fps particle ──
   useEffect(() => {
     if (!mapRef.current || !mapLoaded) return;
@@ -2558,6 +2936,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
     map.on('click', 'events-core', handleEventLayerClick);
     map.on('click', 'events-ring', handleEventLayerClick);
+    map.on('click', 'events-tap-target', handleEventLayerClick);
 
     const setCursor = () => { map.getCanvas().style.cursor = 'pointer'; };
     const resetCursor = () => { map.getCanvas().style.cursor = ''; };
@@ -2567,6 +2946,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     return () => {
       map.off('click', 'events-core', handleEventLayerClick);
       map.off('click', 'events-ring', handleEventLayerClick);
+      map.off('click', 'events-tap-target', handleEventLayerClick);
       map.off('mouseenter', 'events-core', setCursor);
       map.off('mouseleave', 'events-core', resetCursor);
     };
@@ -2724,6 +3104,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           mapLoaded={mapLoaded}
           geojson={heatGeojson}
           mode={isNightHours() ? 'night' : 'day'}
+          dimmed={mapMode === 'events'}
         />
       )}
 

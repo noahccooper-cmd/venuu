@@ -29,6 +29,8 @@ interface HeatFieldLayerProps {
   mapLoaded: boolean;
   geojson: FeatureCollection<Point, HeatPointProps>;
   mode: 'day' | 'night';
+  /** When true, heat field renders at minimum opacity (events mode). */
+  dimmed?: boolean;
 }
 
 const BASE_LAYER_ID = 'heat-field-base-layer';
@@ -177,7 +179,7 @@ const HALO_LAYER_SPEC: any = {
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-export function HeatFieldLayer({ map, mapLoaded, geojson, mode }: HeatFieldLayerProps) {
+export function HeatFieldLayer({ map, mapLoaded, geojson, mode, dimmed = false }: HeatFieldLayerProps) {
   const layersAddedRef = useRef(false);
   const burstUntilRef = useRef(0);
 
@@ -257,7 +259,12 @@ export function HeatFieldLayer({ map, mapLoaded, geojson, mode }: HeatFieldLayer
       // actually fade out — a guarded flat-number write froze it mid-fade
       // (the old persistent street-zoom wash). Halos are owned entirely by
       // their layout zoom expression now, so the breath never touches them.
-      const baseOpacity = evalLinearStops(BASE_OPACITY_STOPS, zoom) * breathe * burst * nightBoost;
+      // Events mode knocks the heat field down to 15% of its normal animated
+      // opacity — a whisper of vibe, not the full color soup. Real fix vs the
+      // old map.setPaintProperty('heat-field', ...) no-op, since this component
+      // owns the animation loop and the actual layer is 'heat-field-base-layer'.
+      const dimFactor = dimmed ? 0.15 : 1;
+      const baseOpacity = evalLinearStops(BASE_OPACITY_STOPS, zoom) * breathe * burst * nightBoost * dimFactor;
 
       try {
         map.setPaintProperty(BASE_LAYER_ID, 'heatmap-opacity', Math.min(1.0, baseOpacity));
@@ -267,7 +274,7 @@ export function HeatFieldLayer({ map, mapLoaded, geojson, mode }: HeatFieldLayer
     }, 100);
 
     return () => window.clearInterval(interval);
-  }, [map, mapLoaded, mode]);
+  }, [map, mapLoaded, mode, dimmed]);
 
   return null;
 }
