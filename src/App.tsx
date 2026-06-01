@@ -30,6 +30,7 @@ import { NicknameScreen } from './components/Auth/NicknameScreen';
 import { ProfileOverlay } from './components/Profile/ProfileOverlay';
 import { ProfileScreen } from './components/Profile/ProfileScreen';
 import { PlanSheet } from './components/PlanSheet/PlanSheet';
+import { PlanModeHeader } from './components/PlanMode/PlanModeHeader';
 import { EndNightCeremony } from './components/PlanExecution/EndNightCeremony';
 import type { LiveStopState } from './components/PlanExecution/StopCard';
 import { MiniVennyPill } from './components/PlanExecution/MiniVennyPill';
@@ -114,6 +115,10 @@ export default function App() {
     focusStopIndex?: number;
   } | null>(null);
   const [endNightCeremony, setEndNightCeremony] = useState<{ planId: string } | null>(null);
+  // Plan Mode (Step 4) — the header's current-stop index, sourced from
+  // PlanSheet's venuu-plan-sheet-stops-updated broadcast (NOT recomputed
+  // here — PlanSheet stays the single source of truth). Seeded on entry.
+  const [planModeStopIndex, setPlanModeStopIndex] = useState(0);
 
   // Moments flow state. PaintCeremony state is reused across both
   // the legacy (now-removed) PaintScreen path and the new CaptureSurface
@@ -719,9 +724,29 @@ export default function App() {
       // can't resurrect activePlan on the map.
       if (!activePlanSheet || detail.planId !== activePlanSheet.planId) return;
       setActivePlan(prev => (prev ? { ...prev, stops: detail.stops! } : prev));
+      // Step 4 — feed the PlanModeHeader's current stop from PlanSheet's
+      // owned pointer. Never recomputed here, so the header reflects
+      // PlanSheet's single source of truth (defect #2 stays out).
+      if (typeof detail.current_stop_index === 'number') {
+        setPlanModeStopIndex(detail.current_stop_index);
+      }
     };
     window.addEventListener('venuu-plan-sheet-stops-updated', handler as EventListener);
     return () => window.removeEventListener('venuu-plan-sheet-stops-updated', handler as EventListener);
+  }, [activePlanSheet]);
+
+  // Plan Mode (Step 4) — toggle the body class the dimming/nav-hide CSS
+  // keys off. Also seed the header's stop index on entry (the stops-
+  // updated listener keeps it in sync after PlanSheet's first broadcast).
+  // Keyed on the Step-2-fixed activePlanSheet lifecycle — no new state.
+  useEffect(() => {
+    if (activePlanSheet) {
+      document.body.classList.add('plan-mode-active');
+      setPlanModeStopIndex(activePlanSheet.focusStopIndex ?? 0);
+    } else {
+      document.body.classList.remove('plan-mode-active');
+    }
+    return () => document.body.classList.remove('plan-mode-active');
   }, [activePlanSheet]);
 
   // Listen for push-notification CustomEvents with paint_prompt type.
@@ -1071,6 +1096,22 @@ export default function App() {
             data-sheet-state={activePlanSheet.state}
             aria-hidden
           />
+          {/* Plan Mode header — fixed top bar. Current stop comes from
+           *  PlanSheet's broadcast (planModeStopIndex), never recomputed.
+           *  Clamp guards the all-resolved edge (index == stops.length). */}
+          {activePlan && (activePlan.stops?.length ?? 0) > 0 && (() => {
+            const stops = activePlan.stops ?? [];
+            const idx = Math.min(Math.max(planModeStopIndex, 0), stops.length - 1);
+            return (
+              <PlanModeHeader
+                planTitle={activePlan.title ?? 'Tonight'}
+                currentStopName={stops[idx]?.venue_name ?? null}
+                currentStopIndex={idx}
+                totalStops={stops.length}
+                onExit={() => setActivePlanSheet(null)}
+              />
+            );
+          })()}
           <PlanSheet
             planId={activePlanSheet.planId}
             sheetState={activePlanSheet.state}
