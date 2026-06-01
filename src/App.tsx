@@ -500,7 +500,10 @@ export default function App() {
       end_time: planRow.end_time ?? null,
     };
     setActivePlan(vennyPlan);
-    queueMicrotask(() => setActivePlanId(planId));
+    // Direct set — safe now that the [activePlan] effect no longer
+    // clears activePlanId. (Previously a queueMicrotask deferred this
+    // to win the ordering against that clear; the race is gone.)
+    setActivePlanId(planId);
 
     const initialSheetState = options?.state ?? 'card';
     const focusIdx = options?.focusStopIndex ?? planRow.current_stop_index ?? 0;
@@ -623,12 +626,14 @@ export default function App() {
     };
   }, []);
 
-  // Reset visited-stop tracker whenever the user activates a fresh
-  // plan. Also clear the saved-plan id so we don't accidentally
-  // persist visited_at onto a stale plan row.
+  // Reset the visited-stop tracker whenever activePlan changes. We do
+  // NOT clear activePlanId here: a saved plan's id must survive a
+  // recompose / re-preview so the save-first plan-mode entry (Step 3)
+  // can rely on it. activePlanId is cleared only at genuine teardown —
+  // handleCeremonyComplete (end-night) and the activePlanSheet-dismiss
+  // effect below (mid-plan close).
   useEffect(() => {
     setVisitedStopIndices([]);
-    setActivePlanId(null);
   }, [activePlan]);
 
   // Listen for the proximity detector's ENTER events on plan stops
