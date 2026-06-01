@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo, useState, type MutableRefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useMemo, useState, type MutableRefObject } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import mapboxgl from 'mapbox-gl';
 import { Globe, Share2 } from 'lucide-react';
@@ -10,6 +10,7 @@ import { mapboxToken, mapboxReady } from '../../lib/supabase';
 import { getShortName, formatCount, getCoverLabel } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
 import { vibeColor } from '../../lib/eventDisplay';
+import { hapticMedium, hapticLight } from '../../lib/haptics';
 import { formatWalkDuration, formatWalkDistance } from '../../lib/directions';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
 import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
@@ -232,6 +233,9 @@ interface MarkerEntry {
   liveEl: HTMLDivElement;
   coverEl: HTMLDivElement;
   priceTagEl: HTMLDivElement;
+  beaconShaftEl?: HTMLDivElement;
+  beaconHaloEl?: HTMLDivElement;
+  beaconSparkEl?: HTMLDivElement;
   /** Mount point for the React-rendered LiveVenueBubble overlay. */
   reactMount: HTMLDivElement;
   /** React root that owns the LiveVenueBubble inside reactMount. */
@@ -321,18 +325,30 @@ interface MapViewProps {
   /** Event id whose pin should glow gold (set when a lineup card is
    *  tapped or a pin is tapped). Drives a one-shot core highlight. */
   glowEventId?: string | null;
+  /** Venue ids lit by the active scrubber chip. Lit beacons burn gold,
+   *  other beacons go dormant, non-beacons stay context dots. */
+  litEventVenueIds?: Set<string>;
+  /** Selected scrubber window's date range (epoch ms). Null = no specific
+   *  chip selected (entry / broad state) → every event treated as in-range.
+   *  Drives the gold/blue temporal model. */
+  selectedRangeStart?: number | null;
+  selectedRangeEnd?: number | null;
+  /** Active scrubber window context for the beacon label count line,
+   *  e.g. "THIS WEEK" → "3 EVENTS THIS WEEK". Empty string for none. */
+  eventWindowLabel?: string;
 }
 
 /* ── Events GeoJSON builder ──────────── */
 
 const EVENT_LAYERS = [
   'events-tap-target',
-  'events-core', 'events-ring', 'events-pulse',
+  // Atmospheric radar rings — kept (not venue-duplicating visuals).
+  'events-ring', 'events-pulse',
   'events-glow', 'events-aura',
   'events-ping1', 'events-ping2', 'events-ping3',
-  'events-label', 'events-sublabel',
-  'events-count-bg', 'events-count-badge',
-  'events-marquee-star',
+  // Removed: 'events-core', 'events-count-bg', 'events-count-badge',
+  // 'events-marquee-star' — the clean DOM beacons replace these (green
+  // core + count pill + star). They're also hidden at definition.
 ] as const;
 
 /**
@@ -478,7 +494,7 @@ function drawLineProgress(coords: [number, number][], t: number): [number, numbe
 
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, userVenueIds, mapMode = 'vibe', glowEventId = null }: MapViewProps) {
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, userVenueIds, mapMode = 'vibe', glowEventId = null, litEventVenueIds = undefined, selectedRangeStart = null, selectedRangeEnd = null, eventWindowLabel = '' }: MapViewProps) {
   // Side pills (share-globe / globe / follow-me) fade out and slide
   // down while the plan sheet covers the bottom of the map. They
   // remain visible at PILL state (sheet is at the top) and when no
@@ -567,6 +583,16 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const onVenueClickRef = useRef(onVenueClick);
   const onEventClickRef = useRef(onEventClick);
   const onPriceTapRef = useRef(onPriceTap);
+  // Tracks the prior mapMode so the cinematic ignition fires ONLY on the
+  // vibe→events flip (not on every events-mode re-render / scrub).
+  const prevMapModeRef = useRef(mapMode);
+  // True while the threshold ignition is running. During this window the
+  // beacon effect HOLDS un-ignited lit beacons dark; per-beacon timers add
+  // ids to igniteSetRef and bump igniteSeq to reveal them one by one.
+  const ignitingRef = useRef(false);
+  const igniteSetRef = useRef<Set<string>>(new Set());
+  const igniteTimersRef = useRef<number[]>([]);
+  const [igniteSeq, setIgniteSeq] = useState(0);
   venuesRef.current = venues;
   countsRef.current = counts;
   eventsRef.current = events;
@@ -701,6 +727,39 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       markersVisible = false;
       markersVisibleRef.current = false;
     }
+
+    // Hide Mapbox's built-in POI/place text so basemap venue names
+    // (e.g. "Armature Works", "The Ritz Ybor" baked into the tiles)
+    // don't show underneath venuu's gold beacon labels. We only hide
+    // POI/place symbol layers — road labels are left intact so streets
+    // stay named.
+    const hideBasemapPoiLabels = () => {
+      const style = map.getStyle();
+      if (!style || !style.layers) return;
+      for (const layer of style.layers) {
+        if (layer.type !== 'symbol') continue;
+        const id = layer.id.toLowerCase();
+        // Never touch road labels.
+        if (id.includes('road')) continue;
+        if (
+          id.includes('poi') ||
+          id.includes('place') ||
+          id.includes('label') ||
+          id.includes('town') ||
+          id.includes('village') ||
+          id.includes('settlement')
+        ) {
+          try {
+            map.setLayoutProperty(layer.id, 'visibility', 'none');
+          } catch {
+            // Layer may not exist on this style — ignore.
+          }
+        }
+      }
+    };
+
+    // Re-hide whenever the style reloads (style swap re-adds basemap layers).
+    map.on('style.load', hideBasemapPoiLabels);
 
     map.on('load', () => {
       // ── Globe-view fog: deep purple atmosphere with magenta rim ──
@@ -1061,6 +1120,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         type: 'circle',
         source: 'events-source',
         minzoom: 11,
+        layout: { 'visibility': 'none' },   // retired — DOM core replaces it
         paint: {
           'circle-radius': 10,
           'circle-color': '#00FF88',
@@ -1079,6 +1139,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         source: 'events-source',
         minzoom: 11,
         layout: {
+          'visibility': 'none',
           'text-field': ['get', 'venue_display'],
           'text-font': ['Arial Unicode MS Bold'],
           'text-size': 14,                       // 12.5 → 14
@@ -1108,6 +1169,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         source: 'events-source',
         minzoom: 11,
         layout: {
+          'visibility': 'none',
           'text-field': ['get', 'sub_label'],
           'text-font': ['Arial Unicode MS Bold'],
           'text-size': 10,
@@ -1137,6 +1199,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         source: 'events-source',
         minzoom: 11,
         filter: ['>', ['get', 'event_count'], 1],
+        layout: { 'visibility': 'none' },   // retired — count lives in DOM label
         paint: {
           'circle-radius': 11,
           'circle-color': '#FFB800',
@@ -1154,6 +1217,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         minzoom: 11,
         filter: ['>', ['get', 'event_count'], 1],
         layout: {
+          'visibility': 'none',   // retired — count lives in DOM label
           'text-field': ['to-string', ['get', 'event_count']],
           'text-font': ['Arial Unicode MS Bold'],
           'text-size': 12,
@@ -1176,6 +1240,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         minzoom: 11,
         filter: ['==', ['get', 'has_marquee'], 1],
         layout: {
+          'visibility': 'none',   // retired — DOM beaconSparkEl replaces it
           'text-field': '★',
           'text-font': ['Arial Unicode MS Bold'],
           'text-size': 16,
@@ -1200,7 +1265,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         id: 'events-mode-tint',
         type: 'background',
         paint: {
-          'background-color': '#1a2447',
+          'background-color': '#05060a',   // near-black (hint of blue), not navy
           'background-opacity': 0.10,
         },
         layout: {
@@ -1315,6 +1380,9 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           'circle-opacity': 0.5,
         },
       });
+
+      // Hide basemap POI/place text once the style is loaded.
+      hideBasemapPoiLabels();
 
       setMapLoaded(true);
     });
@@ -1517,10 +1585,24 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         onPriceTapRef.current?.(venue.id, venue.name);
       });
 
+      // Events-mode beacon depth: vertical light-shaft, pulsing halo ring,
+      // and (marquee only) a floating spark. All start hidden (opacity 0
+      // via CSS); the lit-state effect adds .on to ignite them on scrub.
+      const beaconShaftEl = document.createElement('div');
+      beaconShaftEl.className = 'beacon-shaft';
+      const beaconHaloEl = document.createElement('div');
+      beaconHaloEl.className = 'beacon-halo';
+      const beaconSparkEl = document.createElement('div');
+      beaconSparkEl.className = 'beacon-spark';
+      beaconSparkEl.textContent = '✦';
+
       el.appendChild(glowEl);
       el.appendChild(particlesEl);
       el.appendChild(ring2El);
       el.appendChild(ringEl);
+      el.appendChild(beaconHaloEl);
+      el.appendChild(beaconShaftEl);
+      el.appendChild(beaconSparkEl);
       el.appendChild(bubbleEl);
       el.appendChild(labelEl);
       el.appendChild(featuredLabelEl);
@@ -1634,6 +1716,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
       markersRef.current.set(venue.id, {
         marker, el, bubbleEl, glowEl, particlesEl, ringEl, ring2El, countEl, labelEl, featuredBadgeEl, featuredLabelEl, liveEl, coverEl, priceTagEl,
+        beaconShaftEl, beaconHaloEl, beaconSparkEl,
         reactMount, reactRoot, hasLiveOverlay: false,
         currentStage: 0, currentCount: 0, isFeatured, isFraternity: venue.category === 'fraternity', hasEvent: false,
       });
@@ -1766,7 +1849,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           marketView={marketViewActive}
           isSpotlight={isVenueSpotlight}
           movementMagnitude={movementMagnitude}
-          showName={showName}
+          showName={mapMode === 'events' ? false : showName}
           vibeHueBaseline={v.vibe_hue_baseline ?? null}
           userMarked={userVenueIdsRef.current.has(v.id)}
         />
@@ -1786,7 +1869,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         // top:18px which lands inside the bubble's footprint. Push the
         // label down so the venue name clears the bottom edge with a
         // small breathing gap. Reset on the reverse path.
-        entry.labelEl.style.top = '38px';
+        if (mapMode !== 'events') { entry.labelEl.style.top = '38px'; }
         entry.hasLiveOverlay = true;
       } else if (!usable && entry.hasLiveOverlay) {
         // Hand back to legacy: hide the React mount and let the existing
@@ -2139,7 +2222,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           setAnim(entry.bubbleEl, 'featured-breathe 3s ease-in-out infinite, featured-halo-pulse 5s ease-in-out infinite');
           entry.bubbleEl.style.fontSize = visuals.fontSize;
           // Adjust label for featured size
-          entry.labelEl.style.top = `${featuredSize / 2 + 6}px`;
+          if (mapMode !== 'events') { entry.labelEl.style.top = `${featuredSize / 2 + 6}px`; }
           entry.featuredLabelEl.style.top = `${featuredSize / 2 + 20}px`;
         } else if (entry.isFraternity) {
           // Fraternity: marble white with gold glow
@@ -2240,7 +2323,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
         // Adjust label position based on bubble size (non-featured)
         if (!entry.isFeatured) {
-          entry.labelEl.style.top = `${visuals.size / 2 + 6}px`;
+          if (mapMode !== 'events') { entry.labelEl.style.top = `${visuals.size / 2 + 6}px`; }
         }
 
         // Inner glow class for active bubbles
@@ -2601,67 +2684,386 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     }
   }, [mapMode, mapLoaded]);
 
-  // ── Dim venue bubbles in events mode ────────────────────────
-  // The transformation: in events mode, hub venues stay full opacity
-  // (gold-starred heroes), tenant venues hide entirely (the hub takes
-  // their pixel), and every non-host venue recedes to ~8% — faint
-  // context dots only. Heat field + navy tint deepen the world shift.
+  // ── Cinematic threshold: one-by-one beacon ignition on vibe→events ──
+  // Fires ONLY on the flip INTO events. A useLayoutEffect (runs BEFORE the
+  // browser paints, and before the passive beacon effect) so we can SNAP
+  // every lit beacon dark pre-paint — no one-frame flash of vibe discs.
+  // Then per-beacon timers reveal them nearest-center first, each flaring
+  // in. The tint deepens in step; a haptic double-tap marks the crossing.
+  useLayoutEffect(() => {
+    console.log('[IGNITE] effect ran. prevMapModeRef=', prevMapModeRef.current, 'mapMode=', mapMode, 'mapLoaded=', mapLoaded);
+    const flippedIn =
+      prevMapModeRef.current === 'vibe' && mapMode === 'events' && mapLoaded;
+    console.log('[IGNITE] flippedIn=', flippedIn);
+    prevMapModeRef.current = mapMode;   // always update, even on early return
+    if (!flippedIn) return;
+
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Begin the hold: the beacon effect (which runs right after this in the
+    // same flush) will keep every LIT beacon dark until its timer fires.
+    ignitingRef.current = true;
+    igniteSetRef.current = new Set();
+
+    // a. Haptic double-tap — the physical "thunk" of crossing into night.
+    hapticMedium();
+    const hapticT = window.setTimeout(() => { hapticLight(); }, 70);
+    igniteTimersRef.current = [hapticT];
+
+    // b. Screen-center at flip-time.
+    const rect = map.getContainer().getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
+    // c. Rank the LIT beacons (the stars that come out) by distance from
+    // center. Dormant embers / context dots aren't part of the ignition —
+    // they're the quiet sky the stars appear over.
+    const litCheck = (id: string) =>
+      !litEventVenueIds || litEventVenueIds.size === 0 || litEventVenueIds.has(id);
+    const beaconVenueIds = new Set<string>();
+    for (const ev of events ?? []) { if (ev.venue_id) beaconVenueIds.add(ev.venue_id); }
+    const ranked: { entry: MarkerEntry; venueId: string; dist: number }[] = [];
+    markersRef.current.forEach((entry, venueId) => {
+      if (!beaconVenueIds.has(venueId) || !litCheck(venueId)) return;
+      const venue = venues.find(v => v.id === venueId);
+      if (!venue) return;
+      try {
+        const p = map.project([venue.lng, venue.lat]);
+        ranked.push({ entry, venueId, dist: Math.hypot(p.x - centerX, p.y - centerY) });
+      } catch { /* projection failed — skip */ }
+    });
+    ranked.sort((a, b) => a.dist - b.dist);   // nearest-center first
+    console.log('[IGNITE] ranked lit beacons=', ranked.length);
+
+    // c2. SNAP every lit beacon dark RIGHT NOW (pre-paint, transition off) so
+    // the first painted frame is a dark sky — no lingering vibe discs, and no
+    // 400ms fade for the timers to catch mid-way. The flare owns each reveal.
+    ranked.forEach(({ entry }) => {
+      const b = entry.bubbleEl;
+      if (b) {
+        b.style.transition = 'none';
+        b.style.opacity = '0';
+        b.classList.remove('is-beacon', 'is-special-beacon', 'beacon-flare-in');
+      }
+      entry.beaconShaftEl?.classList.remove('on');
+      entry.beaconHaloEl?.classList.remove('on');
+      entry.beaconSparkEl?.classList.remove('on');
+    });
+
+    // d. Reveal beacons ONE BY ONE — each at its own moment (160ms apart).
+    // The timer marks the venue ignited + flares its core, then bumps the
+    // sequence so the beacon effect lights it with the full lit treatment.
+    const CADENCE = 160;
+    ranked.forEach(({ entry, venueId }, i) => {
+      const t = window.setTimeout(() => {
+        console.log('[IGNITE] reveal i=', i, 'at', i * 160, 'ms');
+        igniteSetRef.current.add(venueId);
+        const b = entry.bubbleEl;
+        if (b) {
+          // Drop the leftover vibe-mode inline animation — inline beats class
+          // selectors, so without this the .beacon-flare-in animation can't run.
+          b.style.animation = '';
+          b.classList.remove('beacon-flare-in');
+          void b.offsetWidth;                 // reflow so the flare can replay
+          b.classList.add('beacon-flare-in');
+          const ft = window.setTimeout(() => b.classList.remove('beacon-flare-in'), 700);
+          igniteTimersRef.current.push(ft);
+        }
+        setIgniteSeq(s => s + 1);              // re-run beacon effect → light it
+      }, i * CADENCE);
+      igniteTimersRef.current.push(t);
+    });
+
+    // e. End the hold after the last beacon has arrived (+buffer), so normal
+    // operation (scrubbing = instant) resumes.
+    const total = (ranked.length ? (ranked.length - 1) * CADENCE : 0) + 500;
+    const endT = window.setTimeout(() => {
+      ignitingRef.current = false;
+      igniteSetRef.current = new Set();
+      // Restore normal transitions so scrubbing days animates again (we'd
+      // snapped held cores to transition:none during the hold).
+      markersRef.current.forEach(e => { if (e.bubbleEl) e.bubbleEl.style.transition = ''; });
+      setIgniteSeq(s => s + 1);                // reconcile to steady state
+    }, total);
+    igniteTimersRef.current.push(endT);
+
+    // f. Ramp the tint to its deep near-black value over ~2.6s, in step with
+    // the heat fade. ignitingRef keeps the beacon effect from snapping it.
+    let raf = 0;
+    const start = performance.now();
+    const FROM = 0, TO = 0.62, DUR = 2600;   // slow sink into deep darkness
+    const step = (now: number) => {
+      const t = Math.min((now - start) / DUR, 1);
+      const eased = 1 - Math.pow(1 - t, 3);   // easeOutCubic
+      if (map.getLayer('events-mode-tint')) {
+        try { map.setPaintProperty('events-mode-tint', 'background-opacity', FROM + (TO - FROM) * eased); } catch { /* style swap */ }
+      }
+      if (t < 1) { raf = requestAnimationFrame(step); }
+    };
+    raf = requestAnimationFrame(step);
+
+    return () => {
+      igniteTimersRef.current.forEach(id => clearTimeout(id));
+      igniteTimersRef.current = [];
+      if (raf) cancelAnimationFrame(raf);
+      ignitingRef.current = false;
+      igniteSetRef.current = new Set();
+    };
+  }, [mapMode, mapLoaded]);
+
+  // ── Events mode: beacons + context dots (the constellation) ──
+  // Vibe mode untouched. Venues that host a (curated) event become
+  // beacons — hot gold core, pulsing glow, scaled up (marquee bigger).
+  // Everything else recedes to a faint context dot. Tenants defer to
+  // their hub. Vibe decoration (rings/glow/particles) is suppressed.
   useEffect(() => {
     if (!mapLoaded) return;
     const map = mapRef.current;
     if (!map) return;
+    console.log('[BEACON] effect ran. ignitingRef=', ignitingRef.current, 'igniteSet.size=', igniteSetRef.current.size);
 
     const dim = mapMode === 'events';
 
+    // `events` is already the curated slice in events mode.
+    const beaconInfo = new Map<string, { marquee: boolean }>();
+    // Venues hosting a recurring "special" — they burn cyan, not gold.
+    const specialVenueIds = new Set<string>();
+    // Per-venue event count — drives shaft height + core glow (magnitude).
+    const counts = new Map<string, number>();
+    // Per-venue "has an event inside the selected date range" — the future
+    // gold/blue temporal signal. Null range (entry/broad) = treat all events
+    // as in-range so every beacon reads active.
+    const activeOnSelectedDate = new Map<string, boolean>();
+    for (const ev of events ?? []) {
+      if (!ev.venue_id) continue;
+      const prev = beaconInfo.get(ev.venue_id);
+      beaconInfo.set(ev.venue_id, { marquee: !!(prev?.marquee || (ev as any).marquee === true) });
+      if ((ev as any).event_type === 'special') specialVenueIds.add(ev.venue_id);
+      counts.set(ev.venue_id, (counts.get(ev.venue_id) ?? 0) + 1);
+      const startMs = new Date(ev.start_time).getTime();
+      const inRange =
+        selectedRangeStart == null || selectedRangeEnd == null
+          ? true
+          : !Number.isNaN(startMs) && startMs >= selectedRangeStart && startMs < selectedRangeEnd;
+      if (inRange) activeOnSelectedDate.set(ev.venue_id, true);
+    }
+
+    // Hubs whose tenant is a currently-LIT special (e.g. Armature Works
+    // when M. Bird's Thursday special is the active window). The hub steps
+    // aside so the tenant's cyan beacon owns the shared rooftop coordinate.
+    const litCheck = (id: string) =>
+      !litEventVenueIds || litEventVenueIds.size === 0 || litEventVenueIds.has(id);
+    const hubsEclipsedBySpecial = new Set<string>();
+    for (const v of venues) {
+      if (v.tenant_of && specialVenueIds.has(v.id) && beaconInfo.has(v.id) && litCheck(v.id)) {
+        hubsEclipsedBySpecial.add(v.tenant_of);
+      }
+    }
+
     markersRef.current.forEach((entry, venueId) => {
       const venue = venues.find(v => v.id === venueId);
-      const isHub = !!venue?.is_hub;
       const isTenant = !!venue?.tenant_of;
+      const beacon = beaconInfo.get(venueId);
+      const isSpecial = specialVenueIds.has(venueId);
+      // A tenant normally hides under its hub — but a tenant with its OWN
+      // special (e.g. M. Bird under Armature Works) earns its own beacon.
+      const isBeacon = !!beacon && (!isTenant || isSpecial);
+      const isLit = isBeacon && (!litEventVenueIds || litEventVenueIds.size === 0 || litEventVenueIds.has(venueId));
+      const isDormant = isBeacon && !isLit;
+      // Verified active-on-selected-date signal — drives the PULSE split and the
+      // halo colour (pulse + gold halo on active; static blue halo on dormant).
+      const isActiveOnDate = activeOnSelectedDate.get(venueId) === true;
+      const isMarquee = !!beacon?.marquee;
+      // This hub yields its spot to a lit-special tenant sharing its point.
+      const isEclipsedHub = !!venue?.is_hub && hubsEclipsedBySpecial.has(venueId);
+      // During the cinematic ignition, a lit beacon stays DARK until its
+      // timer adds it to igniteSetRef — that's how they appear one by one.
+      const ignitionHolding =
+        ignitingRef.current && isLit && !igniteSetRef.current.has(venueId);
+      const container = entry.bubbleEl?.parentElement ?? null;
+
+      // Suppress vibe decoration (rings/glow/particles) in events mode —
+      // generic so it needs no knowledge of each child's class name.
+      if (container) {
+        for (const child of Array.from(container.children) as HTMLElement[]) {
+          if (child === entry.bubbleEl || child === entry.labelEl || child === entry.coverEl) continue;
+          // Beacon depth elements own their own opacity via the .on class —
+          // don't let this generic dim loop pin them to inline opacity:0.
+          if (child === entry.beaconShaftEl || child === entry.beaconHaloEl || child === entry.beaconSparkEl) continue;
+          child.style.transition = 'opacity 400ms cubic-bezier(0.32, 0.72, 0, 1)';
+          child.style.opacity = dim ? '0' : '';
+        }
+      }
+
+      // ── Magnitude: ONE formula drives all lit-beacon sizing ──────
+      // Every lit beacon is the SAME kind of light; event count only
+      // makes it stand taller (shaft) and a touch larger (core). Gold and
+      // cyan share this identically — color is their only difference.
+      const eventCount = counts.get(venueId) ?? 1;
+      const mag = Math.min(eventCount / 6, 1);              // 1 ev → low, 6+ → max
+      const coreScale = 1 + mag * 0.4 + (isMarquee ? 0.15 : 0); // ~1.07 → ~1.55
+      const shaftHeight = 46 + mag * 46;                    // 46px base → ~92px
+      const glowScale = 1 + mag * 0.8;                      // gentle, ~1 → 1.8
 
       if (entry.bubbleEl) {
-        entry.bubbleEl.style.transition = 'opacity 400ms cubic-bezier(0.32, 0.72, 0, 1), filter 400ms cubic-bezier(0.32, 0.72, 0, 1), transform 400ms cubic-bezier(0.32, 0.72, 0, 1), box-shadow 400ms ease';
+        const b = entry.bubbleEl;
+        b.style.transition = 'opacity 400ms cubic-bezier(0.32,0.72,0,1), filter 400ms cubic-bezier(0.32,0.72,0,1), transform 400ms cubic-bezier(0.32,0.72,0,1), box-shadow 400ms ease, background 400ms ease';
 
-        // Opacity per role
-        let opacity = 1;
-        if (dim) {
-          if (isTenant) opacity = 0;          // M.Bird hides — Armature takes its spot
-          else if (isHub) opacity = 1;        // Hubs at full opacity
-          else opacity = 0.25;                // Non-host visible as context (was 0.08)
-        }
-        entry.bubbleEl.style.opacity = String(opacity);
+        // Events-mode appearance (core / dot / ember) is owned entirely by
+        // the CSS classes below — we only drive transform/opacity/pointer
+        // inline. No inline width/height/background here so the classes win.
+        const setEventClasses = (
+          beacon: boolean, special: boolean, dormant: boolean, context: boolean,
+        ) => {
+          b.classList.toggle('is-beacon', beacon);
+          b.classList.toggle('is-special-beacon', special);
+          b.classList.toggle('is-dormant-beacon', dormant);
+          b.classList.toggle('is-context-dot', context);
+        };
 
-        // Saturation
-        entry.bubbleEl.style.filter = (dim && !isHub)
-          ? 'saturate(0.4)'
-          : 'saturate(1)';
-
-        // Scale + glow for hubs in events mode
-        if (dim && isHub) {
-          entry.bubbleEl.style.transform = 'translate(-50%, -50%) scale(1.6)';
-          entry.bubbleEl.style.boxShadow = '0 0 0 3px rgba(255, 184, 0, 0.5), 0 0 24px rgba(255, 184, 0, 0.6), 0 0 48px rgba(255, 184, 0, 0.3)';
+        if (!dim) {
+          // Vibe mode: strip all four classes → normal disc returns.
+          setEventClasses(false, false, false, false);
+          b.style.opacity = '1';
+          b.style.filter = '';
+          b.style.transform = 'translate(-50%, -50%) scale(1)';
+          b.style.boxShadow = '';
+          b.style.pointerEvents = 'auto';
+        } else if (isEclipsedHub) {
+          setEventClasses(false, false, false, false);
+          b.style.opacity = '0';
+          b.style.pointerEvents = 'none';
+        } else if (isTenant && !isBeacon) {
+          setEventClasses(false, false, false, false);
+          b.style.opacity = '0';
+          b.style.pointerEvents = 'none';
+        } else if (ignitionHolding) {
+          // Pre-ignition: this lit beacon waits dark until its timer fires.
+          // Snap to dark (transition:none) so it never fades through visible —
+          // otherwise an early reveal catches it mid-fade and it reads as
+          // "appeared with the rest." The flare owns the reveal.
+          setEventClasses(false, false, false, false);
+          b.style.transition = 'none';
+          b.style.opacity = '0';
+          b.style.pointerEvents = 'auto';
+        } else if (isLit) {
+          // Active on the selected date → GOLD core + pulse. The lit set is
+          // exactly the venues with an event in the selected range, so
+          // isLit == active-on-date (the verified activeOnSelectedDate signal).
+          // Colour is now temporal (active=gold), no longer category (isSpecial).
+          setEventClasses(true, false, false, false);
+          // Clear the leftover vibe inline animation so the class animations
+          // own this core: .beacon-flare-in (wins by source order) during the
+          // 0.7s burst, then .is-beacon's venuuBeaconPulse as steady state.
+          b.style.animation = '';
+          b.style.opacity = '1';
+          b.style.filter = 'none';
+          b.style.transform = `translate(-50%, -50%) scale(${coreScale})`;
+          b.style.boxShadow = '';            // class owns the glow
+          b.style.pointerEvents = 'auto';
+        } else if (isDormant) {
+          // Has events but NONE on the selected date → BLUE, still (no pulse).
+          // FULL beacon form: SAME magnitude size as gold (coreScale) + a blue
+          // halo below, so it reads as a beacon, never a dot. Only the COLOUR
+          // and the pulse differ from gold — never the size or shape.
+          setEventClasses(false, true, false, false);
+          b.style.opacity = '0.75';
+          b.style.filter = '';
+          b.style.transform = `translate(-50%, -50%) scale(${coreScale})`;
+          b.style.boxShadow = '';            // class owns the resting blue look
+          b.style.pointerEvents = 'auto';
         } else {
-          entry.bubbleEl.style.transform = 'translate(-50%, -50%) scale(1)';
-          entry.bubbleEl.style.boxShadow = '';
+          setEventClasses(false, false, false, true);
+          b.style.opacity = '0.32';
+          b.style.filter = '';
+          b.style.transform = 'translate(-50%, -50%) scale(0.6)';
+          b.style.boxShadow = '';            // class owns the faint dot
+          b.style.pointerEvents = 'auto';
         }
-
-        // Pointer-events
-        entry.bubbleEl.style.pointerEvents = (dim && isTenant) ? 'none' : 'auto';
       }
+
+      // Beacon depth. The HALO marks "this is a beacon" → shown for BOTH active
+      // and dormant beacons so neither collapses into a dot. The SHAFT (height =
+      // magnitude) + SPARK stay active-only. Events mode is `dim`.
+      const showBeacon = dim && isBeacon && !isEclipsedHub && !ignitionHolding; // active OR dormant
+      const showDepth  = dim && isLit && !isEclipsedHub && !ignitionHolding;    // active only (shaft/spark)
+
+      // Core pulse — ONLY active-on-date beacons pulse (live); dormant rest still.
+      if (entry.bubbleEl) {
+        entry.bubbleEl.classList.toggle('is-pulsing', showBeacon && isActiveOnDate);
+      }
+
+      // Glow intensity tracks magnitude for any shown beacon (gold or blue).
+      if (entry.bubbleEl) {
+        if (showBeacon) entry.bubbleEl.style.setProperty('--glow-scale', String(glowScale));
+        else entry.bubbleEl.style.removeProperty('--glow-scale');
+      }
+
+      if (entry.beaconShaftEl) {
+        entry.beaconShaftEl.classList.toggle('on', showDepth);
+        entry.beaconShaftEl.classList.toggle('marquee', showDepth && isMarquee);
+        entry.beaconShaftEl.classList.toggle('special', false);
+        entry.beaconShaftEl.style.height = showDepth ? `${shaftHeight}px` : '';
+      }
+      if (entry.beaconHaloEl) {
+        // Halo on every shown beacon → keeps dormant ones in full beacon form.
+        // Gold (active) vs blue (dormant) via `.special`; pulse + marquee
+        // enhancement only on active.
+        entry.beaconHaloEl.classList.toggle('on', showBeacon);
+        entry.beaconHaloEl.classList.toggle('marquee', showDepth && isMarquee);
+        entry.beaconHaloEl.classList.toggle('special', showBeacon && !isActiveOnDate);
+        entry.beaconHaloEl.classList.toggle('pulsing', showBeacon && isActiveOnDate);
+      }
+      if (entry.beaconSparkEl) {
+        entry.beaconSparkEl.classList.toggle('on', showDepth && isMarquee);
+        entry.beaconSparkEl.classList.toggle('special', false);
+      }
+
+      // A dimmed tenant (e.g. M.Bird) sits atop its hub beacon at the same
+      // coordinate — kill the whole marker wrapper's hit area in events mode
+      // so taps fall through to the Armature hub underneath. Tenants only.
+      if (isTenant && !isBeacon && entry.el) entry.el.style.pointerEvents = dim ? 'none' : '';
 
       if (entry.countEl) {
         entry.countEl.style.transition = 'opacity 350ms ease';
-        entry.countEl.style.opacity = dim ? '0' : '1';
+        entry.countEl.style.opacity = dim ? '0' : '1';   // event count lives in the label
       }
 
       if (entry.labelEl) {
         entry.labelEl.style.transition = 'opacity 350ms ease';
-        let labelOpacity = '1';
+        if (!dim) entry.labelEl.style.opacity = venue?.is_hub ? '0' : '1';
+        else if (isEclipsedHub) entry.labelEl.style.opacity = '0';
+        else if (isTenant && !isBeacon) entry.labelEl.style.opacity = '0';
+        else if (isLit) entry.labelEl.style.opacity = '1';
+        else if (isDormant) entry.labelEl.style.opacity = '0.5';
+        else entry.labelEl.style.opacity = '0.32';
+      }
+
+      // Force-hide secondary name elements in events mode with visibility +
+      // pointer-events, not just opacity — an overlay sync elsewhere can flip
+      // reactMount's display back on, which opacity alone wouldn't suppress.
+      if (entry.featuredLabelEl) {
         if (dim) {
-          if (isTenant) labelOpacity = '0';
-          else if (isHub) labelOpacity = '1';
-          else labelOpacity = '0.4';          // Non-host labels readable but secondary
+          entry.featuredLabelEl.style.opacity = '0';
+          entry.featuredLabelEl.style.visibility = 'hidden';
+          entry.featuredLabelEl.style.pointerEvents = 'none';
+        } else {
+          entry.featuredLabelEl.style.opacity = '';
+          entry.featuredLabelEl.style.visibility = '';
+          entry.featuredLabelEl.style.pointerEvents = '';
         }
-        entry.labelEl.style.opacity = labelOpacity;
+      }
+      if (entry.reactMount) {
+        if (dim) {
+          entry.reactMount.style.opacity = '0';
+          entry.reactMount.style.visibility = 'hidden';
+          entry.reactMount.style.pointerEvents = 'none';
+        } else {
+          entry.reactMount.style.opacity = '';
+          entry.reactMount.style.visibility = '';
+          entry.reactMount.style.pointerEvents = '';
+        }
       }
 
       if (entry.coverEl) {
@@ -2670,44 +3072,88 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       }
     });
 
-    // Navy tint — gentle mood shift at 12% (was 18% — avoid color soup)
-    if (map.getLayer('events-mode-tint')) {
-      map.setPaintProperty('events-mode-tint', 'background-opacity', dim ? 0.12 : 0);
+    // Navy tint — deep near-black for events mode (0.62) so the ground
+    // reads dark and cinematic. Skipped while the threshold ramp owns the
+    // tint, so this steady-state set doesn't snap and fight the ramp.
+    if (map.getLayer('events-mode-tint') && !ignitingRef.current) {
+      map.setPaintProperty('events-mode-tint', 'background-opacity', dim ? 0.62 : 0);
     }
-  }, [mapMode, mapLoaded, venues]);
+  }, [mapMode, mapLoaded, venues, events, litEventVenueIds, selectedRangeStart, selectedRangeEnd, igniteSeq]);
 
-  // ── Tenant→Hub label morph in events mode ─────────────────
-  // When in events mode, hub venues' labels display the HUB name.
-  // When in vibe mode, they display the venue's normal name.
-  // This drives the cinematic "M.Bird becomes Armature Works" moment.
+  // ── Beacon labels in events mode (✦ NAME · N EVENTS) ────────
   useEffect(() => {
     if (!mapLoaded) return;
+
+    // Toggle a body class so the CSS that hides the duplicate white
+    // featured label (.venue-featured-label) activates in events mode.
+    if (mapMode === 'events') {
+      document.body.classList.add('events-active');
+    } else {
+      document.body.classList.remove('events-active');
+    }
+
+    const counts = new Map<string, number>();
+    const specialVenueIds = new Set<string>();
+    // Mirror of the styling effect's active-on-date signal so labels colour
+    // gold (active) vs blue (dormant-on-date) in step with the cores. Null
+    // range (entry/broad) → every event in-range → all labels gold.
+    const activeOnSelectedDate = new Map<string, boolean>();
+    for (const ev of events ?? []) {
+      if (!ev.venue_id) continue;
+      counts.set(ev.venue_id, (counts.get(ev.venue_id) ?? 0) + 1);
+      if ((ev as any).event_type === 'special') specialVenueIds.add(ev.venue_id);
+      const startMs = new Date(ev.start_time).getTime();
+      const inRange =
+        selectedRangeStart == null || selectedRangeEnd == null
+          ? true
+          : !Number.isNaN(startMs) && startMs >= selectedRangeStart && startMs < selectedRangeEnd;
+      if (inRange) activeOnSelectedDate.set(ev.venue_id, true);
+    }
+
     markersRef.current.forEach((entry, venueId) => {
       const venue = venues.find(v => v.id === venueId);
       if (!venue) return;
       if (!entry.labelEl) return;
 
-      if (mapMode === 'events' && venue.is_hub) {
-        // Hub in events mode: show its name in caps with venuu star.
-        // Four 1px black shadows form a text-stroke so the gold label
-        // stays readable against ANY map background.
-        entry.labelEl.textContent = `✦ ${venue.name.toUpperCase()}`;
-        entry.labelEl.style.color = '#FFD700';
-        entry.labelEl.style.textShadow = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 6px rgba(0,0,0,0.9), 0 0 12px rgba(255, 215, 0, 0.45)';
+      const count = counts.get(venueId) ?? 0;
+      const isSpecial = specialVenueIds.has(venueId);
+      // A special tenant (e.g. M. Bird) earns a beacon label like any hub.
+      const isBeacon = count > 0 && (!venue.tenant_of || isSpecial);
+
+      // Active on the selected date → gold label; has events but not on this
+      // date → blue (dormant), matching the core's gold/blue temporal split.
+      const isActiveOnDate = activeOnSelectedDate.get(venueId) === true;
+
+      if (mapMode === 'events' && isBeacon) {
+        const labelHue = isActiveOnDate ? '#FFD700' : '#48e0ff';
+        const countHue = isActiveOnDate ? '#ffcf4a' : '#9beeff';
+        const glowHue = isActiveOnDate ? 'rgba(255,215,0,0.4)' : 'rgba(72,224,255,0.4)';
+        const base = venue.is_hub
+          ? venue.name.toUpperCase()
+          : (typeof getShortName === 'function' ? getShortName(venue.name) : venue.name).toUpperCase();
+        while (entry.labelEl.firstChild) { entry.labelEl.removeChild(entry.labelEl.firstChild); }
+        // Count lives in the label (not on the beacon): "2 EVENTS" / "9 EVENTS".
+        // Window suffix intentionally dropped for a cleaner read.
+        const countLine =
+          `${count} EVENT${count > 1 ? 'S' : ''}`;
+        entry.labelEl.innerHTML =
+          `<div style="font-weight:900;font-size:14px;letter-spacing:0.08em;line-height:1.1;">✦ ${base}</div>`
+          + `<div style="font-weight:700;font-size:9px;letter-spacing:0.18em;color:${countHue};margin-top:2px;">${countLine}</div>`;
+        entry.labelEl.style.color = labelHue;
+        entry.labelEl.style.textShadow = `0 1px 3px rgba(0,0,0,0.95), 0 0 10px ${glowHue}`;
         entry.labelEl.style.fontWeight = '900';
-        entry.labelEl.style.letterSpacing = '0.1em';
-        entry.labelEl.style.fontSize = '16px';
-        entry.labelEl.style.lineHeight = '1.1';
         entry.labelEl.style.whiteSpace = 'nowrap';
         entry.labelEl.style.zIndex = '50';
+        entry.labelEl.style.textAlign = 'center';
+        entry.labelEl.style.letterSpacing = '';
+        entry.labelEl.style.fontSize = '';
+        entry.labelEl.style.lineHeight = '';
+        entry.labelEl.style.setProperty('color', labelHue, 'important');
+        entry.labelEl.style.setProperty('top', '42px', 'important');
       } else {
-        // Restore normal label in vibe mode
-        // (uses getShortName helper that already exists)
-        const normalLabel = (typeof getShortName === 'function')
-          ? getShortName(venue.name)
-          : venue.name;
+        const normalLabel = (typeof getShortName === 'function') ? getShortName(venue.name) : venue.name;
         entry.labelEl.textContent = normalLabel;
-        entry.labelEl.style.color = '';
+        entry.labelEl.style.color = 'white';
         entry.labelEl.style.textShadow = '';
         entry.labelEl.style.fontWeight = '';
         entry.labelEl.style.letterSpacing = '';
@@ -2715,9 +3161,20 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.labelEl.style.lineHeight = '';
         entry.labelEl.style.whiteSpace = '';
         entry.labelEl.style.zIndex = '';
+        entry.labelEl.style.textAlign = '';
+      }
+
+      // Featured label: hidden entirely in events mode; in vibe mode restore
+      // the original creation rule — shown only for featured venues that have
+      // a featured_label, hidden for everyone else.
+      if (entry.featuredLabelEl) {
+        entry.featuredLabelEl.style.display =
+          mapMode === 'events'
+            ? 'none'
+            : (venue.featured && venue.featured_label ? 'block' : 'none');
       }
     });
-  }, [mapMode, mapLoaded, venues]);
+  }, [mapMode, mapLoaded, venues, events, selectedRangeStart, selectedRangeEnd, eventWindowLabel]);
 
   // ── Gold pin glow for the bonded event ──────────────────────
   // When a lineup card or pin is tapped, the matching pin's core dot

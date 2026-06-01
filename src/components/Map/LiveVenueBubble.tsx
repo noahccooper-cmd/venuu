@@ -168,20 +168,22 @@ function getCountPrefix(sourceBreakdown: Record<string, unknown> | null | undefi
  * value into source_breakdown that tells us which signal track the
  * estimate came from:
  *
+ *   manual_curve       — operator-authored capacity curve (PRIMARY baseline)
  *   besttime_live      — live busyness from BestTime, last 90 min
  *   besttime_forecast  — current-hour BestTime forecast curve
  *   bouncer_override   — manual headcount click in the last 60 min
  *   category_default   — fallback heuristic (no real signal)
  *   no_data            — sentinel for "we have absolutely nothing"
  *
- * The first three are the algorithm actually doing work; the last two
- * are guesses. We render bubbles only for the first three so the map
+ * The first four are the algorithm actually doing work; the last two
+ * are guesses. We render bubbles only for those four so the map
  * doesn't lie about venues we have no data for.
  */
 const ALGORITHM_SOURCES = new Set([
   'besttime_live',
   'besttime_forecast',
   'bouncer_override',
+  'manual_curve',
 ]);
 
 function hasAlgorithmData(estimate: HeadcountEstimate | null | undefined): boolean {

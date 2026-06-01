@@ -110,7 +110,9 @@ export function HostHubCard({ hubId, userId, visible, onClose, onCardTap }: Host
           backdropFilter: 'blur(4px)',
           WebkitBackdropFilter: 'blur(4px)',
           opacity: visible ? 1 : 0,
-          transition: 'opacity 350ms ease',
+          visibility: visible ? 'visible' : 'hidden',
+          pointerEvents: visible ? 'auto' : 'none',
+          transition: 'opacity 350ms ease, visibility 350ms ease',
         }}
       />
 
@@ -129,7 +131,8 @@ export function HostHubCard({ hubId, userId, visible, onClose, onCardTap }: Host
           borderTop: '1px solid rgba(255, 184, 0, 0.3)',
           boxShadow: '0 -12px 40px rgba(0, 0, 0, 0.6), 0 -2px 0 rgba(255, 184, 0, 0.4)',
           transform: visible ? 'translateY(0)' : 'translateY(100%)',
-          transition: 'transform 400ms cubic-bezier(0.32, 0.72, 0, 1)',
+          visibility: visible ? 'visible' : 'hidden',
+          transition: 'transform 400ms cubic-bezier(0.32, 0.72, 0, 1), visibility 400ms ease',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',

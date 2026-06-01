@@ -282,7 +282,7 @@ body {
   font-family: 'Satoshi', sans-serif;
   font-size: 11px;
   font-weight: 600;
-  color: white;
+  color: transparent;
   text-align: center;
   white-space: nowrap;
   text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.7);
@@ -5293,4 +5293,199 @@ body[data-sheet-state="pill"] .map-side-pill {
 .user-marked-venue {
   -webkit-animation: user-marked-breathe 7s ease-in-out infinite;
   animation: user-marked-breathe 7s ease-in-out infinite;
+}
+
+/* ── Events mode — body-level UI hiding ──────────────────────
+ * When the user taps the EVENTS toggle, App.tsx adds the
+ * events-mode-active class to <body>. Body-level overlays fade
+ * out so the event pulses own the visual hierarchy. Class names
+ * map to the real component roots: CityPulseLine (.city-pulse-line),
+ * MiniVennyPill (.mini-venny), TheDrop (.drop-pill-wrapper),
+ * MarketTicker (.market-ticker).
+ */
+body.events-mode-active .city-pulse-line,
+body.events-mode-active .mini-venny,
+body.events-mode-active .drop-pill-wrapper,
+body.events-mode-active .market-ticker,
+body.events-mode-active .map-pulse-line-wrapper,
+body.events-mode-active .movers-chip {
+  opacity: 0 !important;
+  transform: translateY(40px) !important;
+  pointer-events: none !important;
+  transition: opacity 350ms cubic-bezier(0.32, 0.72, 0, 1),
+              transform 350ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+}
+
+body:not(.events-mode-active) .city-pulse-line,
+body:not(.events-mode-active) .mini-venny,
+body:not(.events-mode-active) .drop-pill-wrapper,
+body:not(.events-mode-active) .market-ticker,
+body:not(.events-mode-active) .map-pulse-line-wrapper,
+body:not(.events-mode-active) .movers-chip {
+  transition: opacity 350ms cubic-bezier(0.32, 0.72, 0, 1),
+              transform 350ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes eventPillFade {
+  0%   { opacity: 0; transform: translateY(6px); }
+  18%  { opacity: 1; transform: translateY(0); }
+  82%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes hubShimmer {
+  0%   { background-position: 200% 0%; }
+  100% { background-position: -200% 0%; }
+}
+
+/* Events-mode beacon glow. Animates box-shadow only; scale + background
+   are set inline by MapView, so no transform/filter conflict. */
+@keyframes venuuBeaconPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(255, 207, 74, 0.55),
+                0 0 16px rgba(255, 184, 0, 0.85),
+                0 0 40px rgba(255, 138, 26, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(255, 207, 74, 0.70),
+                0 0 26px rgba(255, 184, 0, 1.00),
+                0 0 60px rgba(255, 138, 26, 0.60);
+  }
+}
+.venue-bubble.is-beacon {
+  width: 14px !important;
+  height: 14px !important;
+  background: radial-gradient(circle, #fff3cf 0%, #ffcf4a 55%, #ff8a1a 100%) !important;
+  box-shadow: 0 0 calc(14px * var(--glow-scale, 1)) rgba(255,207,74,0.95), 0 0 calc(30px * var(--glow-scale, 1)) rgba(255,138,26,0.6) !important;
+  border: none !important;
+  z-index: 30;
+}
+/* Pulse signals "active on the selected date" — added by JS only to active
+   beacons. Defined BEFORE .beacon-flare-in (below) so the 0.7s ignition flare
+   still wins during its burst, then this resumes as the steady pulse. */
+.venue-bubble.is-pulsing {
+  animation: venuuBeaconPulse 3.4s cubic-bezier(0.22,0.61,0.18,1) infinite;
+}
+
+/* Kill the duplicate white venue name in events mode */
+body.events-active .venue-featured-label {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+/* ===== Events-mode beacon depth ===== */
+.beacon-shaft {
+  position: absolute; left: 50%; bottom: 50%;
+  width: 3px; height: 0;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, transparent 0%, rgba(255,207,74,0.85) 100%);
+  border-radius: 3px;
+  opacity: 0; pointer-events: none; z-index: 2;
+  filter: blur(0.4px);
+  transition: opacity 0.9s cubic-bezier(0.22,0.61,0.18,1), height 0.9s cubic-bezier(0.22,0.61,0.18,1);
+}
+.beacon-halo {
+  position: absolute; left: 50%; top: 50%;
+  width: 150px; height: 150px;
+  transform: translate(-50%,-50%) scale(0.6);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,207,74,0.30) 0%, rgba(255,138,26,0.12) 42%, transparent 70%);
+  opacity: 0; pointer-events: none; z-index: 1;
+  transition: opacity 0.9s cubic-bezier(0.22,0.61,0.18,1), transform 0.9s cubic-bezier(0.22,0.61,0.18,1);
+}
+.beacon-spark {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%,-185%) scale(0.6);
+  color: #fff3cf; font-size: 13px;
+  text-shadow: 0 0 10px #ffcf4a;
+  opacity: 0; pointer-events: none; z-index: 40;
+  transition: opacity 0.9s cubic-bezier(0.22,0.61,0.18,1), transform 0.9s cubic-bezier(0.22,0.61,0.18,1);
+}
+/* lit state — applied via JS by adding these classes */
+.beacon-shaft.on { opacity: 1; height: 46px; }
+.beacon-halo.on { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+/* Halo pulses only for active-on-date beacons; dormant (blue) halos stay static. */
+.beacon-halo.on.pulsing { animation: beaconHaloPulse 3.4s cubic-bezier(0.22,0.61,0.18,1) infinite; }
+.beacon-spark.on { opacity: 1; transform: translate(-50%,-185%) scale(1); animation: beaconSparkFloat 3.4s cubic-bezier(0.22,0.61,0.18,1) infinite; }
+/* marquee — bigger, hotter */
+.beacon-halo.on.marquee { width: 188px; height: 188px; background: radial-gradient(circle, rgba(255,207,74,0.5) 0%, rgba(255,138,26,0.2) 40%, transparent 70%); }
+.beacon-shaft.on.marquee { height: 58px; width: 4px; }
+
+@keyframes beaconHaloPulse { 0%,100% { opacity: 0.85; } 50% { opacity: 1; transform: translate(-50%,-50%) scale(1.08); } }
+@keyframes beaconSparkFloat { 0%,100% { transform: translate(-50%,-185%) scale(1); } 50% { transform: translate(-50%,-205%) scale(1.06); } }
+
+/* DORMANT-ON-DATE — resting blue beacons: has events, none on the selected
+   date. FULL beacon form (same size as gold + a blue halo), just cyan #48e0ff
+   and never pulsing (no .is-beacon co-applied, plus an explicit animation:none).
+   The JS sets inline opacity ~0.75 + the magnitude coreScale, so gold (active)
+   reads brighter/alive while blue stays the same SIZE — only colour + pulse differ. */
+.venue-bubble.is-special-beacon {
+  width: 14px !important;
+  height: 14px !important;
+  background: radial-gradient(circle, #dffaff 0%, #48e0ff 60%, #1aa6c8 100%) !important;
+  box-shadow: 0 0 calc(14px * var(--glow-scale, 1)) rgba(72,224,255,0.7), 0 0 calc(28px * var(--glow-scale, 1)) rgba(72,224,255,0.32) !important;
+  border: none !important;
+  animation: none !important;
+}
+
+/* Context dots — non-event venues in events mode: tiny + faint */
+.venue-bubble.is-context-dot {
+  width: 6px !important;
+  height: 6px !important;
+  background: rgba(159,176,208,0.9) !important;
+  box-shadow: 0 0 6px rgba(150,165,195,0.25) !important;
+  border: none !important;
+  animation: none !important;
+}
+
+/* Dormant beacons — has events, none on selected day: dim ember, no glow */
+.venue-bubble.is-dormant-beacon {
+  width: 9px !important;
+  height: 9px !important;
+  background: radial-gradient(circle, #9fb0d0 0%, #5d6b8a 100%) !important;
+  box-shadow: 0 0 8px rgba(120,140,180,0.5) !important;
+  border: none !important;
+  animation: none !important;
+}
+.beacon-shaft.on.special { background: linear-gradient(180deg, transparent 0%, rgba(72,224,255,0.85) 100%); }
+.beacon-halo.on.special { background: radial-gradient(circle, rgba(72,224,255,0.34) 0%, rgba(72,224,255,0.12) 40%, transparent 68%); }
+.beacon-spark.on.special { color: #dffaff; text-shadow: 0 0 10px #48e0ff; }
+
+/* Threshold ignition — each beacon's core bursts in from nothing, overshoots,
+   then settles. Defined AFTER .is-beacon so the flare animation wins over the
+   pulse for its 0.7s, then the pulse resumes when the class is removed. */
+@keyframes beaconFlareIn {
+  0% { transform: translate(-50%,-50%) scale(0.2); opacity: 0; }
+  55% { transform: translate(-50%,-50%) scale(1.55); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+}
+.venue-bubble.beacon-flare-in {
+  animation: beaconFlareIn 0.7s cubic-bezier(0.22,0.61,0.18,1);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Plan Mode (Phase 2 Step 4.3) — global mode shift while a plan is
+   live. Keys off the `plan-mode-active` body class that App.tsx sets
+   when activePlanSheet is open (committed in 4.2, b5816d6). CSS-only:
+   the numbered route markers are SEPARATE DOM elements (planMarkersRef),
+   not .venue-bubble, so they stay bright and the route pops.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Dim regular venue bubbles so the route owns the map. `animation: none`
+   stops the venueAmbient opacity pulse (0.85↔1) which would otherwise
+   override the dim. Opacity transition is inherited from the base
+   .venue-bubble rule, so this animates in (and back out on exit). */
+.plan-mode-active .venue-bubble {
+  opacity: 0.3;
+  animation: none;
+  pointer-events: none;
+}
+
+/* Slide the bottom nav off-screen — plan mode is the focus. */
+.plan-mode-active .bottom-nav,
+.plan-mode-active [data-nav="bottom"] {
+  transform: translateY(120%);
+  transition: transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  pointer-events: none;
 }

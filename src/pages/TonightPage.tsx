@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { MapView } from '../components/Map/MapView';
+import { filterEventsByCurated } from '../lib/eventFilters';
 import { VenueSheet } from '../components/Map/VenueCard';
 import { EventCard } from '../components/Map/EventCard';
 import { TheDrop } from '../components/Map/TheDrop';
@@ -81,6 +82,25 @@ interface TonightPageProps {
    *  MapView for heat-map weighting (pearl border + glow + breathing
    *  on the user's own marked venues). */
   userVenueIds?: Set<string>;
+  /** Current map mode — forwarded to MapView to gate event layers. */
+  mapMode?: 'vibe' | 'events';
+  /** Events-mode pin tap → parent expands the lineup sheet + glows the
+   *  matching card. In vibe mode the standalone EventCard opens instead. */
+  onEventPinClick?: (event: VenueEvent) => void;
+  /** Event id whose map pin should glow gold — forwarded to MapView. */
+  glowEventId?: string | null;
+  /** Events-mode venue tap → parent opens the full hub card for that venue. */
+  onVenueHubOpen?: (venueId: string) => void;
+  /** Map background tap (not on a beacon) → parent collapses the lineup
+   *  sheet back to its pill state. */
+  onMapBackgroundTap?: () => void;
+  /** Venues lit by the active scrubber chip — drives the beacon sweep. */
+  litEventVenueIds?: Set<string>;
+  /** Selected scrubber window's date range (epoch ms); null = whole window. */
+  selectedRangeStart?: number | null;
+  selectedRangeEnd?: number | null;
+  /** Active scrubber window context for beacon labels ("THIS WEEK"). */
+  eventWindowLabel?: string;
 }
 
 export function TonightPage({
@@ -112,6 +132,15 @@ export function TonightPage({
   focusedStopIndex,
   sheetState,
   userVenueIds,
+  mapMode,
+  onEventPinClick,
+  glowEventId,
+  onVenueHubOpen,
+  onMapBackgroundTap,
+  litEventVenueIds,
+  selectedRangeStart,
+  selectedRangeEnd,
+  eventWindowLabel,
 }: TonightPageProps) {
   // City rollups for the globe-view dot layer + headline counter.
   const { aggregates: cityAggregates, totalPeopleOut } = useCityAggregates();
@@ -179,6 +208,10 @@ export function TonightPage({
     : null;
 
   const handleVenueClick = useCallback((venue: Venue) => {
+    if (mapMode === 'events') {
+      onVenueHubOpen?.(venue.id);
+      return;
+    }
     venue.category === 'fraternity' ? hapticMedium() : hapticLight();
     setSelectedVenue(venue);
     setSelectedEvent(null);
@@ -195,11 +228,18 @@ export function TonightPage({
         essential: true,
       });
     }
-  }, []);
+  }, [mapMode, onVenueHubOpen]);
 
   const handleEventClick = useCallback((event: VenueEvent) => {
     hapticMedium();
-    setSelectedEvent(event);
+    // In events mode the lineup sheet is the detail surface — let the
+    // parent expand it + glow the card rather than popping a standalone
+    // EventCard on top of the sheet.
+    if (mapMode === 'events') {
+      onEventPinClick?.(event);
+    } else {
+      setSelectedEvent(event);
+    }
     setSelectedVenue(null);
     if (mapInstanceRef.current) {
       const map = mapInstanceRef.current;
@@ -220,7 +260,7 @@ export function TonightPage({
         essential: true,
       });
     }
-  }, [venues]);
+  }, [venues, mapMode, onEventPinClick]);
 
   const handleClose = useCallback(() => {
     setSelectedVenue(null);
@@ -233,7 +273,9 @@ export function TonightPage({
   const handleMapTap = useCallback(() => {
     if (selectedVenue) setSelectedVenue(null);
     if (selectedEvent) setSelectedEvent(null);
-  }, [selectedVenue, selectedEvent]);
+    // Background tap also collapses the events-mode lineup sheet to pill.
+    onMapBackgroundTap?.();
+  }, [selectedVenue, selectedEvent, onMapBackgroundTap]);
 
   const handleFlyTo = useCallback((lng: number, lat: number) => {
     if (mapInstanceRef.current) {
@@ -413,6 +455,14 @@ export function TonightPage({
     };
   }, [activeRoute?.arrived, activeRoute?.destinationLng, activeRoute?.destinationLat, userLocation]);
 
+  // In events mode, slice the event set to the active time window so the
+  // map shows a curated subset rather than every event at once.
+  const filteredEvents = useMemo(() => {
+    if (mapMode !== 'events') return events;
+    // In events mode, only curated events surface on the map
+    return filterEventsByCurated(events);
+  }, [events, mapMode]);
+
   return (
     <div className="absolute inset-0" style={{ top: 'calc(44px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
       {!activeRoute && (
@@ -439,7 +489,7 @@ export function TonightPage({
         counts={counts}
         liveVenueIds={liveVenueIds}
         pulsedVenueId={pulsedVenueId}
-        events={events}
+        events={filteredEvents}
         coverPrices={coverPrices}
         userLocation={userLocation}
         route={activeRoute?.geometry ?? null}
@@ -450,6 +500,7 @@ export function TonightPage({
         followMode={followMode}
         onVenueClick={handleVenueClick}
         onEventClick={handleEventClick}
+        glowEventId={glowEventId}
         onMapTap={handleMapTap}
         onCityChange={onCityChange}
         onCityTapFromGlobe={onCityChange}
@@ -472,6 +523,11 @@ export function TonightPage({
         sheetState={sheetState ?? null}
         selectedVenueId={selectedVenue?.id ?? null}
         userVenueIds={userVenueIds ?? new Set()}
+        mapMode={mapMode}
+        litEventVenueIds={litEventVenueIds}
+        selectedRangeStart={selectedRangeStart}
+        selectedRangeEnd={selectedRangeEnd}
+        eventWindowLabel={eventWindowLabel}
       />
 
       {currentVenue && (

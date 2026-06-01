@@ -128,6 +128,15 @@ const BASE_LAYER_SPEC: any = {
   },
 };
 
+// The halo layer's zoom→opacity ramp as plain stops, so the loop can
+// drive it (and fade it out in events mode). Mirrors the spec values.
+const HALO_OPACITY_STOPS: ReadonlyArray<readonly [number, number]> = [
+  [10, 0], [12, 0.2], [13, 0.5], [14, 0.75], [15, 0.85], [17, 0.9], [19, 0.9],
+];
+// Events mode kills the vibe heat so beacons own the dark map.
+// Bump to ~0.06 for a faint trace instead of a full kill.
+const EVENTS_HEAT_FLOOR = 0;
+
 const HALO_LAYER_SPEC: any = {
   type: 'circle',
   source: HALO_SOURCE_ID,
@@ -182,6 +191,8 @@ const HALO_LAYER_SPEC: any = {
 export function HeatFieldLayer({ map, mapLoaded, geojson, mode, dimmed = false }: HeatFieldLayerProps) {
   const layersAddedRef = useRef(false);
   const burstUntilRef = useRef(0);
+  // events-mode heat fade ramp (1 = full heat, 0 = killed); eased in the loop
+  const dimRampRef = useRef(1);
 
   // ── Layer install / teardown ────────────────────────────────
   useEffect(() => {
@@ -241,38 +252,39 @@ export function HeatFieldLayer({ map, mapLoaded, geojson, mode, dimmed = false }
       const now = Date.now();
       const zoom = map.getZoom();
 
-      // 60-second sinusoidal breath, ±5% amplitude
+      // Smoothly ease the events-mode heat ramp toward its target so the
+      // toggle FADES the soup out (and back) instead of snapping.
+      const dimTarget = dimmed ? EVENTS_HEAT_FLOOR : 1;
+      // Gentle ease (~2.4s) so the heat melts away slowly, in step with the
+      // beacons rising — rather than fading out before they finish.
+      if (dimmed) {
+        dimRampRef.current = dimTarget;  // entering events → snap heat off instantly (clean cut)
+      } else {
+        dimRampRef.current += (dimTarget - dimRampRef.current) * 0.12;  // returning to vibe → smooth fade back in
+      }
+      const dimRamp = dimRampRef.current;
+
       const phase = (now % 60_000) / 60_000;
       const breathe = 0.95 + 0.10 * Math.sin(phase * Math.PI * 2);
-
-      // 15% burst that decays linearly over 600ms (no hard step)
       const remaining = burstUntilRef.current - now;
       const burst = remaining > 0 ? 1.0 + 0.15 * (remaining / 600) : 1.0;
-
-      // 10% intensity boost during nightlife hours
       const nightBoost = mode === 'night' ? 1.10 : 1.0;
 
-      // Breath owns heatmap opacity at ALL zooms: it multiplies the zoom
-      // fade ramp (BASE_OPACITY_STOPS, which reaches 0 by z15) by the breath
-      // scalar and writes every tick. setPaintProperty replaces the property
-      // atomically, so writing the full ramp here is what lets the fire
-      // actually fade out — a guarded flat-number write froze it mid-fade
-      // (the old persistent street-zoom wash). Halos are owned entirely by
-      // their layout zoom expression now, so the breath never touches them.
-      // Events mode knocks the heat field down to 15% of its normal animated
-      // opacity — a whisper of vibe, not the full color soup. Real fix vs the
-      // old map.setPaintProperty('heat-field', ...) no-op, since this component
-      // owns the animation loop and the actual layer is 'heat-field-base-layer'.
-      const dimFactor = dimmed ? 0.15 : 1;
-      const baseOpacity = evalLinearStops(BASE_OPACITY_STOPS, zoom) * breathe * burst * nightBoost * dimFactor;
+      const baseOpacity = evalLinearStops(BASE_OPACITY_STOPS, zoom) * breathe * burst * nightBoost * dimRamp;
+      const haloOpacity = evalLinearStops(HALO_OPACITY_STOPS, zoom) * dimRamp;
 
       try {
         map.setPaintProperty(BASE_LAYER_ID, 'heatmap-opacity', Math.min(1.0, baseOpacity));
+        // Halos = the per-venue vibe mural = the real "color soup." The old
+        // dimmed=0.15 fix only touched the base heatmap and missed these
+        // entirely. Driving them here lets events mode fade them out.
+        if (map.getLayer(HALO_LAYER_ID)) {
+          map.setPaintProperty(HALO_LAYER_ID, 'circle-opacity', Math.min(0.95, haloOpacity));
+        }
       } catch {
         // layer briefly gone during a style swap — next tick recovers
       }
     }, 100);
-
     return () => window.clearInterval(interval);
   }, [map, mapLoaded, mode, dimmed]);
 

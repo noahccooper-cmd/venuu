@@ -66,6 +66,10 @@ export interface Venue {
   loyalty_active: boolean;
   nfc_tag_id: string | null;
   nfc_required: boolean;
+  // ── Hub architecture (Commit 8) ──
+  is_hub?: boolean;
+  hub_subtitle?: string | null;
+  tenant_of?: string | null;
 }
 
 export interface Checkin {
@@ -176,6 +180,12 @@ export interface VenueEvent {
   tickets_sold: number;
   sale_starts_at: string | null;
   sale_ends_at: string | null;
+  // Events-mode curation fields (DB-backed; optional for older rows)
+  curated?: boolean;
+  marquee?: boolean;
+  going_count?: number;
+  vibe_tags?: string[] | null;
+  price_tier?: string | null;
 }
 
 export type EventTicketStatus = 'completed' | 'used' | 'refunded';
