@@ -5,7 +5,7 @@ import { hapticLight, hapticMedium, hapticSuccess } from '../../lib/haptics';
 import { VenueResultCard, type VenueResult } from './VenueResultCard';
 import { PlanCard, type Plan } from './PlanCard';
 import type { CityKey } from '../../lib/constants';
-import { getWelcomeMessage, getSuggestions } from '../../lib/vennyKnowledge';
+import { getWelcomeMessage } from '../../lib/vennyKnowledge';
 
 /**
  * VennySheet — bottom sheet that wraps Venny's chat surface.
@@ -396,11 +396,6 @@ function VennySheetInner({
     return () => window.clearTimeout(t);
   }, [open, initialMessage, historyLoaded, sending, send, onInitialMessageHandled]);
 
-  // ── Suggested prompts (filter chips) ─────────────────────────────
-  // City-specific suggestions from vennyKnowledge — Knoxville gets
-  // "Where should freshmen go?" etc., other cities fall back to generic.
-  const suggestions = useMemo(() => getSuggestions(city), [city]);
-
   // Welcome message — random selection per session per city. useMemo
   // keyed on city keeps the message stable across re-renders so it
   // doesn't reshuffle mid-empty-state.
@@ -730,35 +725,40 @@ function VennySheetInner({
               <div ref={messagesEndRef} style={{ height: 12 }} />
             </div>
 
-            {/* Suggestion chips (only when empty AND not at MINI) */}
+            {/* Primary action — one clear plan CTA (replaces the old
+             *  quick-prompt chips). Sends the canonical plan-intent through
+             *  the same handleSuggestionTap → send path the chips used, so
+             *  compose_plan fires exactly as before. Free-form questions go
+             *  through the composer below. Same empty-state visibility the
+             *  chips had (messages empty AND not at MINI). */}
             {messages.length === 0 && snapPoint !== 'mini' && (
               <div style={{
-                display: 'flex', gap: 8, overflowX: 'auto',
                 padding: '4px 16px 8px', flexShrink: 0,
-                WebkitOverflowScrolling: 'touch',
               }}>
-                {suggestions.map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => handleSuggestionTap(s)}
-                    style={{
-                      flexShrink: 0,
-                      padding: '8px 14px',
-                      borderRadius: 18,
-                      background: 'rgba(255, 130, 0, 0.08)',
-                      border: '1px solid rgba(255, 130, 0, 0.3)',
-                      color: '#FFB888',
-                      fontFamily: 'Satoshi, sans-serif',
-                      fontSize: 13, fontWeight: 500,
-                      cursor: 'pointer',
-                      WebkitTapHighlightColor: 'transparent',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {s}
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  onClick={() => handleSuggestionTap('Make me a plan for tonight')}
+                  style={{
+                    width: '100%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    padding: '12px 16px',
+                    borderRadius: 20,
+                    background: '#FF8200',
+                    border: 'none',
+                    color: 'white',
+                    fontFamily: 'Satoshi, sans-serif',
+                    fontSize: 15, fontWeight: 700,
+                    letterSpacing: '-0.01em',
+                    cursor: 'pointer',
+                    WebkitTapHighlightColor: 'transparent',
+                    boxShadow: '0 4px 16px rgba(255, 130, 0, 0.3)',
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M8 1.2 L9.35 5.9 L14 7.25 L9.35 8.6 L8 13.3 L6.65 8.6 L2 7.25 L6.65 5.9 Z" fill="white" />
+                  </svg>
+                  Make me a plan for tonight
+                </button>
               </div>
             )}
 
