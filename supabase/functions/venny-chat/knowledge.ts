@@ -1,7 +1,14 @@
 // supabase/functions/venny-chat/knowledge.ts
-// City-specific knowledge for Venny — Deno-compatible inline version.
-// Source of truth: src/lib/vennyKnowledge.ts (sync manually for now, refactor
-// to _shared/ in a future commit).
+// City-specific knowledge for Venny — Deno-compatible standalone version.
+//
+// The KNOXVILLE_KNOWLEDGE blob below is GENERATED — do NOT hand-edit it.
+// Canonical source of truth: src/lib/vennyKnowledge.ts. Edge Functions
+// (Deno) can't import from the app's src/ tree at deploy time, so the
+// blob is synced into this file by:
+//     node scripts/sync-venny-knowledge.cjs          (writes)
+//     node scripts/sync-venny-knowledge.cjs --check  (CI drift guard)
+// The getCityKnowledge wrapper below is intentionally edge-specific
+// (standalone CityKey, no CITIES import) and is NOT generated.
 
 type CityKey = 'knoxville' | 'tampa' | 'st_petersburg';
 

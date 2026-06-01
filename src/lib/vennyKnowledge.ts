@@ -2,6 +2,11 @@
 // City-specific knowledge for Venny AI assistant
 // Knoxville data: Mike's field intel + Noah's local knowledge
 // SEC cities: surface-level bar intel from public knowledge
+//
+// CANONICAL SOURCE of the KNOXVILLE_KNOWLEDGE blob. The venny-chat edge
+// function carries a generated copy (it can't import from src/ at deploy).
+// After editing the blob below, regenerate the edge copy:
+//     node scripts/sync-venny-knowledge.cjs
 
 import { CITIES, type CityKey } from './constants';
 
