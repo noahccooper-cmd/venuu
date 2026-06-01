@@ -560,6 +560,16 @@ export default function App() {
     });
   }, [tab]);
 
+  // ENTER PLAN MODE (Phase 2 Step 3 bridge) — user tapped LETS GO on a
+  // composed plan that VennySheet has already PERSISTED (save-first).
+  // Dismiss Venny and reuse the existing fresh-activation cinematic on
+  // the REAL night_plans id. Never receives a temp id — VennySheet's
+  // save-first contract guarantees a persisted row before this fires.
+  const handleEnterPlanMode = useCallback((planId: string) => {
+    setVennyOpen(false);
+    void handleOpenPlanSheet(planId, { state: 'card' });
+  }, [handleOpenPlanSheet]);
+
   const handleDismissPlanSheet = useCallback(() => {
     void hapticLight();
     setActivePlanSheet(null);
@@ -1150,6 +1160,7 @@ export default function App() {
         onInitialMessageHandled={() => setVennyInitialMessage(null)}
         visitedStopIndices={visitedStopIndices}
         onPlanSaved={(planId) => setActivePlanId(planId)}
+        onEnterPlanMode={handleEnterPlanMode}
       />
 
       <PaintCeremony

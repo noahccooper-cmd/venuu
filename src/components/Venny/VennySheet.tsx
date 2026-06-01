@@ -100,6 +100,10 @@ interface VennySheetProps {
   /** Fires when save_plan succeeds — parent gets the new
    *  night_plans.id so it can persist per-stop visited_at later. */
   onPlanSaved?: (planId: string) => void;
+  /** Fires when the user taps LETS GO and the plan is persisted —
+   *  parent dismisses Venny and mounts plan mode on the REAL
+   *  night_plans.id (save-first contract; never a temp id). */
+  onEnterPlanMode?: (planId: string) => void;
 }
 
 const CONV_STORAGE_KEY = 'venuu_venny_conversation_id';
@@ -122,6 +126,7 @@ function VennySheetInner({
   onInitialMessageHandled,
   visitedStopIndices,
   onPlanSaved,
+  onEnterPlanMode,
 }: VennySheetProps) {
   const [conversationId, setConversationId] = useState<string | null>(() => {
     try {
@@ -143,6 +148,12 @@ function VennySheetInner({
   /** Track the planMsgId of any plan we're currently waiting on save_plan
    *  to confirm, so the next save_plan tool_result event can flip it. */
   const pendingSavePlanIdRef = useRef<string | null>(null);
+  /** planMsgId of a plan the user tapped LETS GO on while it was still
+   *  unsaved — we enter plan mode once save_plan returns the real id. */
+  const pendingEnterRef = useRef<string | null>(null);
+  /** planMsgId → persisted night_plans.id, populated on save_plan
+   *  success so a later LETS GO enters immediately without re-saving. */
+  const savedPlanIds = useRef<Record<string, string>>({});
 
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -319,7 +330,8 @@ function VennySheetInner({
           } else if (toolName === 'save_plan') {
             // Flip the pending plan card to "saved" (or back to idle on
             // failure). pendingSavePlanIdRef is set when the user taps
-            // "save" — the SSE event arrives a couple turns later.
+            // "save" OR "LETS GO" (save-first) — the SSE event arrives a
+            // couple turns later.
             const out = output as Record<string, unknown> | undefined;
             const success = out?.success === true;
             const targetId = pendingSavePlanIdRef.current;
@@ -335,11 +347,24 @@ function VennySheetInner({
               // persist per-stop visited_at as the proximity detector
               // marks stops visited.
               const planId = typeof out?.plan_id === 'string' ? out.plan_id : null;
-              if (planId) onPlanSaved?.(planId);
+              if (planId) {
+                onPlanSaved?.(planId);
+                // Remember the persisted id for this card so a later
+                // LETS GO can enter immediately (no redundant save).
+                if (targetId) savedPlanIds.current[targetId] = planId;
+                // If this save was triggered by LETS GO, enter plan mode
+                // now — on the REAL night_plans id, never a temp id.
+                if (pendingEnterRef.current && pendingEnterRef.current === targetId) {
+                  pendingEnterRef.current = null;
+                  onEnterPlanMode?.(planId);
+                }
+              }
             } else {
               const msg = out?.message as string | undefined;
               setToast(msg ?? 'save failed');
               window.setTimeout(() => setToast(null), 3000);
+              // Don't enter plan mode on a failed save.
+              if (pendingEnterRef.current === targetId) pendingEnterRef.current = null;
             }
           }
         } else if (event.type === 'metadata') {
@@ -372,7 +397,7 @@ function VennySheetInner({
       setSending(false);
       abortRef.current = null;
     }
-  }, [sending, city, userId, conversationId, focusedVenueName, onHighlight, onActivatePlan]);
+  }, [sending, city, userId, conversationId, focusedVenueName, onHighlight, onActivatePlan, onPlanSaved, onEnterPlanMode]);
 
   // ── Auto-send a priming message once history is loaded.
   // Used by the profile's "Tell Venny your taste" banner — opening
@@ -504,6 +529,36 @@ function VennySheetInner({
     setPlanStates(prev => ({ ...prev, [planMsgId]: 'saving' }));
     send('save this plan');
   }, [userId, send]);
+
+  // LETS GO — enter plan mode. Save-first contract: plan mode only ever
+  // opens on a PERSISTED night_plans row (no temp ids, ever).
+  //   • already saved  → enter immediately on the stored real id
+  //   • save in flight  → just record intent; save_plan handler enters
+  //   • not saved       → trigger save, enter when save_plan returns
+  const handleLetsGo = useCallback((planMsgId: string, _plan: Plan) => {
+    const savedId = savedPlanIds.current[planMsgId];
+    if (savedId) {
+      hapticMedium();
+      onEnterPlanMode?.(savedId);
+      return;
+    }
+    if (!userId) {
+      setToast('sign in to start a plan');
+      window.setTimeout(() => setToast(null), 2400);
+      return;
+    }
+    if (planStates[planMsgId] === 'saving') {
+      // A save is already in flight (e.g. user tapped save then LETS GO)
+      // — just record the intent; the save_plan success handler enters.
+      pendingEnterRef.current = planMsgId;
+      return;
+    }
+    hapticLight();
+    pendingSavePlanIdRef.current = planMsgId;
+    pendingEnterRef.current = planMsgId;
+    setPlanStates(prev => ({ ...prev, [planMsgId]: 'saving' }));
+    send('save this plan');
+  }, [userId, send, onEnterPlanMode, planStates]);
 
   // Share: copy a plain-text summary to clipboard. Full snapshot share
   // is v1.3+; this is the minimum viable share button.
@@ -703,6 +758,7 @@ function VennySheetInner({
                   planStates={planStates}
                   onSavePlan={handleSavePlan}
                   onSharePlan={handleSharePlan}
+                  onLetsGo={handleLetsGo}
                   visitedStopIndices={visitedStopIndices}
                 />
               ))}
@@ -841,6 +897,7 @@ function MessageBubble({
   planStates,
   onSavePlan,
   onSharePlan,
+  onLetsGo,
   visitedStopIndices,
 }: {
   message: VennyMessage;
@@ -849,6 +906,7 @@ function MessageBubble({
   planStates: Record<string, PlanSaveState>;
   onSavePlan: (planMsgId: string, plan: Plan) => void;
   onSharePlan: (plan: Plan) => void;
+  onLetsGo: (planMsgId: string, plan: Plan) => void;
   visitedStopIndices?: number[];
 }) {
   const isUser = message.role === 'user';
@@ -942,6 +1000,7 @@ function MessageBubble({
                   plan={block.plan}
                   onSave={() => onSavePlan(block.planMsgId, block.plan)}
                   onShare={() => onSharePlan(block.plan)}
+                  onActivate={() => onLetsGo(block.planMsgId, block.plan)}
                   saved={state === 'saved'}
                   saving={state === 'saving'}
                   visitedStopIndices={visitedStopIndices}
