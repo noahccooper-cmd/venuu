@@ -9,6 +9,7 @@ import { PunchCard } from '../Loyalty/PunchCard';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
 import { recordSignal } from '../../lib/signals';
 import { openDirectionsTo } from '../../lib/directions';
+import { getVenueStatus } from '../../lib/venueHours';
 import type { Venue, Headcount, VenueEvent } from '../../lib/types';
 import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
 
@@ -561,34 +562,81 @@ export function VenueSheet({
           </>
         )}
 
-        {/* Live Count */}
-        {isLive ? (
-          <div className="sheet-live-section">
-            <div className="sheet-live-row">
-              <span className="sheet-live-pill"><span className="ld" /> LIVE</span>
-              <span className="sheet-live-count">{formatCount(count)}</span>
-              <span className="sheet-live-label">inside</span>
-              {peak > 0 && (
-                <span className="sheet-live-peak">Peak: {formatCount(peak)}</span>
+        {/* Open/Closed status + Live Count — gated by hours_json (venueHours engine) */}
+        {(() => {
+          const status = getVenueStatus((venue as { hours_json?: unknown }).hours_json as never);
+
+          // Small inline status pill (no CSS additions required).
+          const pill = (color: string, bg: string, label: string, detail?: string) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 12, fontWeight: 700, fontFamily: 'Satoshi, sans-serif',
+                color, background: bg, borderRadius: 8, padding: '4px 10px',
+              }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} /> {label}
+              </span>
+              {detail && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Satoshi, sans-serif' }}>
+                  {detail}
+                </span>
               )}
             </div>
-            {pct !== null && (
-              <div className="sheet-bar-row">
-                <div className="sheet-bar">
-                  <div
-                    className="sheet-bar-fill"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <span className="sheet-bar-pct">{pct}%</span>
+          );
+
+          // Closed right now — a closed bar should not display a headcount.
+          if (status.status === 'closed') {
+            return (
+              <div className="sheet-live-section empty">
+                {pill('#FF5A5A', 'rgba(255,90,90,0.12)', 'Closed', status.detail)}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="sheet-live-section empty">
-            <span className="sheet-no-data">No live count yet</span>
-          </div>
-        )}
+            );
+          }
+
+          // Event-driven venue (e.g. Jannus) — no fixed open/close.
+          if (status.status === 'varies') {
+            return (
+              <div className="sheet-live-section empty">
+                {pill('#FFB13D', 'rgba(255,177,61,0.12)', 'Hours vary', "check tonight's event")}
+              </div>
+            );
+          }
+
+          // Open (or hours unknown) — show the live headcount as before.
+          const openPill = status.status === 'open'
+            ? pill('#00FF88', 'rgba(0,255,136,0.10)', 'Open', status.detail)
+            : null;
+
+          return isLive ? (
+            <div className="sheet-live-section">
+              {openPill}
+              <div className="sheet-live-row">
+                <span className="sheet-live-pill"><span className="ld" /> LIVE</span>
+                <span className="sheet-live-count">{formatCount(count)}</span>
+                <span className="sheet-live-label">inside</span>
+                {peak > 0 && (
+                  <span className="sheet-live-peak">Peak: {formatCount(peak)}</span>
+                )}
+              </div>
+              {pct !== null && (
+                <div className="sheet-bar-row">
+                  <div className="sheet-bar">
+                    <div
+                      className="sheet-bar-fill"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="sheet-bar-pct">{pct}%</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="sheet-live-section empty">
+              {openPill}
+              <span className="sheet-no-data">No live count yet</span>
+            </div>
+          );
+        })()}
 
         {/* Get There — primary action */}
         {onGetThere && (
