@@ -43,7 +43,10 @@ const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 // stronger reasoner for vibe arc + walking-distance + budget.
 const ANTHROPIC_PLANNER_MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 1024;
-const PLANNER_MAX_TOKENS = 1500;
+// Headroom for the signed-in path: compose injects ratedArcsBlock +
+// user-memory context, which makes Sonnet's plan JSON longer. 1500 could
+// truncate mid-JSON → plan_parse_failed. 2500 leaves margin.
+const PLANNER_MAX_TOKENS = 2500;
 const TOOL_LOOP_GUARD = 6; // hard ceiling on tool-call iterations
 
 // Plan constraints — clamped server-side regardless of what Haiku asks.
@@ -961,6 +964,57 @@ function findWalkViolation(stops: any[]): number | null {
   return null;
 }
 
+// Best-effort repair of a truncated JSON object string (Sonnet hitting
+// max_tokens). Cuts back to the last structurally-complete boundary, drops
+// a trailing comma, then balances the still-open { and [ brackets. Returns
+// the parsed object on success, or null if it still can't parse. Never
+// throws — a failed salvage just returns null and compose fails cleanly.
+function trySalvageJson(s: string): unknown {
+  try {
+    let str = s.trim();
+    // Pass 1 — find the last "safe" cut point: a comma or closing bracket
+    // that sits outside any string literal.
+    let inStr = false;
+    let esc = false;
+    let lastSafe = -1;
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') inStr = true;
+      else if (c === ',' || c === '}' || c === ']') lastSafe = i;
+    }
+    if (lastSafe >= 0 && lastSafe < str.length - 1) str = str.slice(0, lastSafe + 1);
+    str = str.replace(/,\s*$/, '');
+    // Pass 2 — recompute open brackets after the cut and append closers in
+    // LIFO order. Bail if we end mid-string (can't safely close).
+    const opens: string[] = [];
+    inStr = false; esc = false;
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') inStr = true;
+      else if (c === '{') opens.push('}');
+      else if (c === '[') opens.push(']');
+      else if (c === '}' || c === ']') opens.pop();
+    }
+    if (inStr) return null;
+    str = str + opens.reverse().join('');
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
 async function tool_compose_plan(input: any, ctx: ToolCtx) {
   // Plans are ALWAYS 2 or 3 stops. Never 1, never 4+. Clamp aggressively.
   const numStops = clampInt(input?.num_stops, PLAN_MIN_STOPS, PLAN_MAX_STOPS, 3);
@@ -1094,7 +1148,7 @@ Compose the plan as the exact JSON schema in your system prompt. ${extraNote}`;
   }
 
   async function askSonnet(extraNote: string): Promise<any> {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const doFetch = () => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -1113,6 +1167,16 @@ Compose the plan as the exact JSON schema in your system prompt. ${extraNote}`;
         messages: [{ role: 'user', content: composerPrompt(extraNote) }],
       }),
     });
+
+    let res = await doFetch();
+    // Resilience — a momentary 429 (rate limit) or 5xx (overload) on the
+    // planner call shouldn't kill compose. Retry ONCE after a short
+    // backoff before surfacing the error.
+    if (!res.ok && (res.status === 429 || res.status >= 500)) {
+      console.warn(`[compose] sonnet ${res.status} — retrying once after 1.5s backoff`);
+      await new Promise(r => setTimeout(r, 1500));
+      res = await doFetch();
+    }
     if (!res.ok) {
       const errText = await res.text();
       throw new Error(`sonnet_${res.status}: ${errText.slice(0, 240)}`);
@@ -1131,7 +1195,29 @@ Compose the plan as the exact JSON schema in your system prompt. ${extraNote}`;
       const p = JSON.parse(cleaned);
       return { plan: p };
     } catch (err) {
-      return { plan: null, error: 'plan_parse_failed', raw: cleaned.slice(0, 400) + ' :: ' + String(err) };
+      // Truncation diagnostics — Sonnet hitting max_tokens leaves the JSON
+      // unterminated. stop_reason === 'max_tokens' confirms it; log length
+      // + tail so we can verify from the function logs.
+      const truncated = sonnetData?.stop_reason === 'max_tokens';
+      console.warn('[compose] plan_parse_failed', {
+        length: cleaned.length,
+        stop_reason: sonnetData?.stop_reason ?? null,
+        looksTruncated: truncated,
+        tail: cleaned.slice(-200),
+      });
+      // Best-effort salvage — close the truncated JSON and reparse before
+      // giving up. Degrades gracefully: a bad salvage just fails downstream
+      // stop-count validation rather than crashing.
+      const salvaged = trySalvageJson(cleaned);
+      if (salvaged) {
+        console.warn('[compose] plan_parse_failed — salvage reparse SUCCEEDED');
+        return { plan: salvaged };
+      }
+      return {
+        plan: null,
+        error: 'plan_parse_failed',
+        raw: `${truncated ? '[truncated@max_tokens] ' : ''}` + cleaned.slice(0, 400) + ' :: ' + String(err),
+      };
     }
   }
 
@@ -1239,10 +1325,15 @@ async function tool_save_plan(input: any, ctx: ToolCtx) {
       .eq('auth_id', ctx.userId)
       .maybeSingle();
     if (profileErr || !profile) {
+      // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture.
+      console.log('[SAVE-REPRO][server] profile resolution FAILED', { ctxUserId: ctx.userId, profileErr: profileErr?.message ?? null });
       return { success: false, error: 'profile_not_found', message: profileErr?.message ?? null };
     }
     profileId = (profile as any).id;
   }
+  // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture. The profiles.id
+  // the row will actually be written under (resolved from ctx.userId).
+  console.log('[SAVE-REPRO][server] resolved profileId for insert', { ctxUserId: ctx.userId, ctxProfileId: ctx.profileId, insertUserId: profileId });
 
   const row: Record<string, unknown> = {
     user_id: profileId,
@@ -1266,9 +1357,13 @@ async function tool_save_plan(input: any, ctx: ToolCtx) {
     .select('id')
     .single();
   if (error || !data) {
+    // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture.
+    console.log('[SAVE-REPRO][server] night_plans INSERT FAILED', { insertUserId: profileId, dbError: error?.message ?? null });
     return { success: false, error: 'insert_failed', message: error?.message ?? null };
   }
   const savedPlanId = (data as any).id as string;
+  // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture.
+  console.log('[SAVE-REPRO][server] night_plans INSERT OK', { savedPlanId, insertUserId: profileId });
 
   // Fire a plan_intent signal for every venue in this plan. Dedup is
   // (source_table='night_plans', source_row_id=plan_id, signal_type) —
@@ -1301,7 +1396,10 @@ async function tool_save_plan(input: any, ctx: ToolCtx) {
     }
   }
 
-  return { success: true, plan_id: savedPlanId };
+  // [SAVE-REPRO] TEMP DIAGNOSTIC — `inserted_user_id` added so the client
+  // can compare the profiles.id the row was written under against the
+  // profileId useMyPlans reads with. Remove after capture.
+  return { success: true, plan_id: savedPlanId, inserted_user_id: profileId };
 }
 
 // Helper — clamp + coerce a numeric tool input to an int range.
@@ -1743,6 +1841,57 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'invalid_json' }), {
       status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+  }
+
+  // ── Deterministic save path ──────────────────────────────────────
+  // The client calls this directly (action: 'save_plan') instead of
+  // routing "save this plan" through the chat stream. The save UI must
+  // never depend on Haiku choosing to emit a save_plan tool call. This
+  // branch reuses tool_save_plan UNCHANGED — only the invocation route
+  // is new: a plain awaited JSON response, no SSE, no model in the loop.
+  if (body?.action === 'save_plan') {
+    const saveUserId: string | null = body?.userId ?? null;
+    const saveCity: string = String(body?.city ?? 'knoxville');
+    const saveConversationIdIn: string | null = body?.conversationId ?? null;
+    const savePlan = body?.plan ?? null;
+    if (!savePlan || typeof savePlan !== 'object') {
+      return new Response(JSON.stringify({ success: false, error: 'missing_plan_data' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    try {
+      const conversationId = await ensureConversation(supabase, saveConversationIdIn, saveUserId, saveCity);
+      // Resolve profiles.id the same way the streaming handler does —
+      // night_plans.user_id references profiles.id, not auth.users.id.
+      let profileId: string | null = null;
+      if (saveUserId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('auth_id', saveUserId)
+          .maybeSingle();
+        profileId = (profile?.id as string | undefined) ?? null;
+      }
+      const toolCtx: ToolCtx = {
+        supabase,
+        userId: saveUserId,
+        profileId,
+        city: saveCity,
+        conversationId,
+        groupSize: null,
+      };
+      const result = await tool_save_plan({ plan_data: savePlan, title: savePlan?.title }, toolCtx);
+      return new Response(JSON.stringify({ ...result, conversation_id: conversationId }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[venny-chat][save_plan-direct] error:', msg);
+      return new Response(JSON.stringify({ success: false, error: 'exception', message: msg }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
   }
 
   const userMessage: string = String(body?.message ?? '').slice(0, 4000);

@@ -83,6 +83,18 @@ export function useMyPlans(profileId: string | null): UseMyPlansResult {
       .eq('user_id', profileId)
       .order('created_at', { ascending: false })
       .limit(10);
+    // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after root-cause capture.
+    // The read-back: which profileId we query night_plans.user_id with,
+    // how many rows RLS+id let us see, and any error. Compare this
+    // profileId against [SAVE-REPRO] save initiated userIdSentToServer:
+    // if they DIFFER, that's the drift bug (write under one id, read
+    // under another). If they MATCH but plansReturned is 0 with no
+    // error, the read-back is RLS-blocked.
+    console.log('[SAVE-REPRO] my_plans query', {
+      profileId,
+      plansReturned: data?.length ?? 0,
+      error: error ? (error as { message?: string }).message ?? String(error) : null,
+    });
     if (error) {
       console.warn('[my_plans] fetch failed:', error.message);
       setPlans([]);

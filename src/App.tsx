@@ -1020,15 +1020,15 @@ export default function App() {
 
   // ── activePlan lifecycle bound to activePlanSheet. When the
   //    sheet dismisses (close X, swipe-down past PILL, end-night
-  //    completion sequence, etc.) we clear activePlan + the saved-
-  //    plan id mirror so the map's route line + stop markers tear
-  //    down. handleCeremonyComplete already clears these — this
-  //    effect handles the path where the sheet dismisses WITHOUT
-  //    completion (mid-plan close).
+  //    completion sequence, etc.) we clear activePlan so the map's
+  //    route line + stop markers tear down.
+  //    NOTE: activePlanId deliberately SURVIVES a mid-plan close —
+  //    it's the signal the "Resume Plan" pill reads to offer hopping
+  //    back in. It's only cleared on genuine completion
+  //    (handleCeremonyComplete) or when a new plan replaces it.
   useEffect(() => {
     if (activePlanSheet) return;
     setActivePlan(null);
-    setActivePlanId(null);
   }, [activePlanSheet]);
 
   // ── Mirror sheet state onto the body so global CSS rules can
@@ -1280,6 +1280,11 @@ export default function App() {
           onPlanStopTap={handlePlanStopTap}
           focusedStopIndex={activePlanSheet?.focusStopIndex ?? null}
           sheetState={activePlanSheet?.state ?? null}
+          // Resume-pill signal: a plan id that survives a mid-plan close
+          // (sheet dismissed) so the user can hop back in. Null while the
+          // plan sheet is open (already in plan mode) or no active plan.
+          resumablePlanId={activePlanSheet ? null : activePlanId}
+          onResumePlan={() => { if (activePlanId) void handleOpenPlanSheet(activePlanId, { state: 'card' }); }}
           userVenueIds={userVenueIds}
           mapMode={mapMode}
           onEventPinClick={handleEventPinClick}

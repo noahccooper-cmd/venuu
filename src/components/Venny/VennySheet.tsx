@@ -11,8 +11,10 @@ import { getWelcomeMessage } from '../../lib/vennyKnowledge';
  * VennySheet — bottom sheet that wraps Venny's chat surface.
  *
  *   • Streams from supabase/functions/venny-chat over SSE.
- *   • Persists conversation_id in localStorage so the thread survives
- *     across opens within a session (one-per-user, server-side).
+ *   • Conversation id lives in component state only. The sheet stays
+ *     mounted all session, so close/reopen resumes the in-progress
+ *     thread; a cold app launch starts fresh on a clean slate (the
+ *     welcome + "make me a plan" CTA). Messages persist server-side.
  *   • Inline tool-result rendering — search_venues hits inject
  *     <VenueResultCard> rows directly into the assistant message,
  *     and highlight_on_map results bubble up via onHighlight so the
@@ -106,8 +108,6 @@ interface VennySheetProps {
   onEnterPlanMode?: (planId: string) => void;
 }
 
-const CONV_STORAGE_KEY = 'venuu_venny_conversation_id';
-
 function newId(): string {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -128,13 +128,13 @@ function VennySheetInner({
   onPlanSaved,
   onEnterPlanMode,
 }: VennySheetProps) {
-  const [conversationId, setConversationId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(CONV_STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  });
+  // Start every COLD app launch with a fresh conversation (null) so Venny
+  // opens on a clean slate — the welcome + "make me a plan" CTA, not the
+  // old scrollback. The first send creates a new conversation server-side,
+  // exactly as for any new thread. VennySheet stays mounted for the whole
+  // session, so close/reopen WITHIN a session still resumes the in-progress
+  // thread from component state. Old venny_messages remain in the DB.
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<VennyMessage[]>([]);
   const [input, setInput] = useState('');
@@ -145,14 +145,9 @@ function VennySheetInner({
   /** Per-rendered-plan UI state — saving/saved indicators don't need
    *  to round-trip through the persisted message blocks. */
   const [planStates, setPlanStates] = useState<Record<string, PlanSaveState>>({});
-  /** Track the planMsgId of any plan we're currently waiting on save_plan
-   *  to confirm, so the next save_plan tool_result event can flip it. */
-  const pendingSavePlanIdRef = useRef<string | null>(null);
-  /** planMsgId of a plan the user tapped LETS GO on while it was still
-   *  unsaved — we enter plan mode once save_plan returns the real id. */
-  const pendingEnterRef = useRef<string | null>(null);
-  /** planMsgId → persisted night_plans.id, populated on save_plan
-   *  success so a later LETS GO enters immediately without re-saving. */
+  /** planMsgId → persisted night_plans.id, populated on a successful
+   *  deterministic save so a later LETS GO enters immediately without
+   *  re-saving. */
   const savedPlanIds = useRef<Record<string, string>>({});
 
   const abortRef = useRef<AbortController | null>(null);
@@ -306,9 +301,11 @@ function VennySheetInner({
 
       await consumeSSE(res.body, (event) => {
         if (event.type === 'conversation') {
+          // Hold the conversation id in component state only — not
+          // localStorage. It survives close/reopen within the session
+          // (sheet stays mounted) but resets on a cold launch (Option a).
           if (event.id && event.id !== conversationId) {
             setConversationId(event.id);
-            try { localStorage.setItem(CONV_STORAGE_KEY, event.id); } catch { /* swallow */ }
           }
         } else if (event.type === 'text') {
           setMessages(prev => appendTextToAssistant(prev, asstId, event.delta));
@@ -327,46 +324,11 @@ function VennySheetInner({
             setMessages(prev => appendPlanToAssistant(prev, asstId, plan, planMsgId));
             setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
             onActivatePlan?.(plan);
-          } else if (toolName === 'save_plan') {
-            // Flip the pending plan card to "saved" (or back to idle on
-            // failure). pendingSavePlanIdRef is set when the user taps
-            // "save" OR "LETS GO" (save-first) — the SSE event arrives a
-            // couple turns later.
-            const out = output as Record<string, unknown> | undefined;
-            const success = out?.success === true;
-            const targetId = pendingSavePlanIdRef.current;
-            if (targetId) {
-              setPlanStates(prev => ({ ...prev, [targetId]: success ? 'saved' : 'idle' }));
-              pendingSavePlanIdRef.current = null;
-            }
-            if (success) {
-              hapticSuccess();
-              setToast('plan saved ✓');
-              window.setTimeout(() => setToast(null), 2400);
-              // Surface the new night_plans.id so the parent can
-              // persist per-stop visited_at as the proximity detector
-              // marks stops visited.
-              const planId = typeof out?.plan_id === 'string' ? out.plan_id : null;
-              if (planId) {
-                onPlanSaved?.(planId);
-                // Remember the persisted id for this card so a later
-                // LETS GO can enter immediately (no redundant save).
-                if (targetId) savedPlanIds.current[targetId] = planId;
-                // If this save was triggered by LETS GO, enter plan mode
-                // now — on the REAL night_plans id, never a temp id.
-                if (pendingEnterRef.current && pendingEnterRef.current === targetId) {
-                  pendingEnterRef.current = null;
-                  onEnterPlanMode?.(planId);
-                }
-              }
-            } else {
-              const msg = out?.message as string | undefined;
-              setToast(msg ?? 'save failed');
-              window.setTimeout(() => setToast(null), 3000);
-              // Don't enter plan mode on a failed save.
-              if (pendingEnterRef.current === targetId) pendingEnterRef.current = null;
-            }
           }
+          // NOTE: save_plan is no longer handled here. Saving is
+          // deterministic — handleSavePlan / handleLetsGo call the
+          // venny-chat `save_plan` action directly and drive the UI off
+          // the awaited result, never off whether Haiku emits the tool.
         } else if (event.type === 'metadata') {
           // Phase 4.5 — assistant declared whether it used live market
           // data. Stamp the streaming message so the pulse dot paints.
@@ -397,7 +359,7 @@ function VennySheetInner({
       setSending(false);
       abortRef.current = null;
     }
-  }, [sending, city, userId, conversationId, focusedVenueName, onHighlight, onActivatePlan, onPlanSaved, onEnterPlanMode]);
+  }, [sending, city, userId, conversationId, focusedVenueName, onHighlight, onActivatePlan]);
 
   // ── Auto-send a priming message once history is loaded.
   // Used by the profile's "Tell Venny your taste" banner — opening
@@ -515,27 +477,83 @@ function VennySheetInner({
   }, [send, input]);
 
   // ── Plan card actions ────────────────────────────────────────────
-  // Save: flip local state to 'saving', stash the plan id, then send
-  // a confirmation message to Venny. The agent calls save_plan; we
-  // flip to 'saved' (or back to 'idle') when the tool_result arrives.
-  const handleSavePlan = useCallback((planMsgId: string, _plan: Plan) => {
+  // Deterministic save — calls the venny-chat `save_plan` action directly
+  // and resolves with the server result { success, plan_id, error?,
+  // message? }. The UI is driven off THIS promise, never off whether
+  // Haiku chose to emit a save_plan tool call over the chat stream.
+  const savePlanDirect = useCallback(async (plan: Plan): Promise<{
+    success: boolean;
+    plan_id?: string | null;
+    error?: string | null;
+    message?: string | null;
+  }> => {
+    let accessToken: string | null = null;
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      accessToken = data.session?.access_token ?? null;
+    }
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'apikey': supabaseAnonPublicKey,
+      'Authorization': `Bearer ${accessToken ?? supabaseAnonPublicKey}`,
+    };
+    const res = await fetch(`${supabaseProjectUrl}/functions/v1/venny-chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action: 'save_plan', plan, city, userId, conversationId }),
+    });
+    const out = await res.json().catch(() => null);
+    return out ?? { success: false, error: 'bad_response' };
+  }, [city, userId, conversationId]);
+
+  // Save: flip to 'saving', call save_plan directly, then resolve the
+  // card to 'saved' (success) or back to 'idle' (failure) — the state
+  // ALWAYS clears on the awaited result, so a card can never freeze.
+  const handleSavePlan = useCallback(async (planMsgId: string, plan: Plan) => {
     if (!userId) {
       setToast('sign in to save plans');
       window.setTimeout(() => setToast(null), 2400);
       return;
     }
+    if (planStates[planMsgId] === 'saving') return;
     hapticLight();
-    pendingSavePlanIdRef.current = planMsgId;
+    console.log('[SAVE-REPRO] save initiated (deterministic)', { userIdSentToServer: userId, planMsgId });
     setPlanStates(prev => ({ ...prev, [planMsgId]: 'saving' }));
-    send('save this plan');
-  }, [userId, send]);
+    try {
+      const out = await savePlanDirect(plan);
+      console.log('[SAVE-REPRO] save_plan result', {
+        success: out?.success === true,
+        plan_id: typeof out?.plan_id === 'string' ? out.plan_id : null,
+        error: out?.error ?? null,
+        message: out?.message ?? null,
+      });
+      if (out?.success === true && typeof out.plan_id === 'string') {
+        setPlanStates(prev => ({ ...prev, [planMsgId]: 'saved' }));
+        savedPlanIds.current[planMsgId] = out.plan_id;
+        hapticSuccess();
+        setToast('plan saved ✓');
+        window.setTimeout(() => setToast(null), 2400);
+        onPlanSaved?.(out.plan_id);
+      } else {
+        setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
+        setToast((out?.message as string) ?? 'save failed');
+        window.setTimeout(() => setToast(null), 3000);
+      }
+    } catch (err) {
+      console.warn('[SAVE-REPRO] save threw', err);
+      setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
+      setToast('save failed');
+      window.setTimeout(() => setToast(null), 3000);
+    }
+  }, [userId, planStates, savePlanDirect, onPlanSaved]);
 
   // LETS GO — enter plan mode. Save-first contract: plan mode only ever
   // opens on a PERSISTED night_plans row (no temp ids, ever).
-  //   • already saved  → enter immediately on the stored real id
-  //   • save in flight  → just record intent; save_plan handler enters
-  //   • not saved       → trigger save, enter when save_plan returns
-  const handleLetsGo = useCallback((planMsgId: string, _plan: Plan) => {
+  //   • already saved → enter immediately on the stored real id
+  //   • not saved     → save directly, then enter on the REAL id from
+  //                     the awaited result (no chat injection, no SSE
+  //                     dependency, no frozen spinner on failure)
+  const handleLetsGo = useCallback(async (planMsgId: string, plan: Plan) => {
     const savedId = savedPlanIds.current[planMsgId];
     if (savedId) {
       hapticMedium();
@@ -547,21 +565,40 @@ function VennySheetInner({
       window.setTimeout(() => setToast(null), 2400);
       return;
     }
-    if (planStates[planMsgId] === 'saving') {
-      // A save is already in flight (e.g. user tapped save then LETS GO)
-      // — just record the intent; the save_plan success handler enters.
-      pendingEnterRef.current = planMsgId;
-      return;
-    }
+    if (planStates[planMsgId] === 'saving') return;
     hapticLight();
-    pendingSavePlanIdRef.current = planMsgId;
-    pendingEnterRef.current = planMsgId;
     setPlanStates(prev => ({ ...prev, [planMsgId]: 'saving' }));
-    send('save this plan');
-  }, [userId, send, onEnterPlanMode, planStates]);
+    try {
+      const out = await savePlanDirect(plan);
+      console.log('[SAVE-REPRO] save_plan result (lets go)', {
+        success: out?.success === true,
+        plan_id: typeof out?.plan_id === 'string' ? out.plan_id : null,
+        error: out?.error ?? null,
+        message: out?.message ?? null,
+      });
+      if (out?.success === true && typeof out.plan_id === 'string') {
+        setPlanStates(prev => ({ ...prev, [planMsgId]: 'saved' }));
+        savedPlanIds.current[planMsgId] = out.plan_id;
+        onPlanSaved?.(out.plan_id);
+        hapticMedium();
+        onEnterPlanMode?.(out.plan_id);
+      } else {
+        setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
+        setToast((out?.message as string) ?? 'save failed');
+        window.setTimeout(() => setToast(null), 3000);
+      }
+    } catch (err) {
+      console.warn('[SAVE-REPRO] lets go save threw', err);
+      setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
+      setToast('save failed');
+      window.setTimeout(() => setToast(null), 3000);
+    }
+  }, [userId, planStates, savePlanDirect, onEnterPlanMode, onPlanSaved]);
 
-  // Share: copy a plain-text summary to clipboard. Full snapshot share
-  // is v1.3+; this is the minimum viable share button.
+  // Share: open the native iOS share sheet so the user can text a friend
+  // their 3-stop plan. Falls back to clipboard on web (where the native
+  // sheet isn't available) so localhost still works. We share TEXT (the
+  // spots) — not a deep-link; shareable plan-links are a later thing.
   const handleSharePlan = useCallback(async (plan: Plan) => {
     hapticLight();
     const lines: string[] = [];
@@ -579,14 +616,36 @@ function VennySheetInner({
       lines.push('');
       lines.push(`total: ~$${plan.total_estimated_cost} / person`);
     }
+    lines.push('');
+    lines.push('— planned with venuu');
     const text = lines.join('\n');
+    const title = plan.title || 'My venuu plan tonight';
+
     try {
+      const { Capacitor } = await import('@capacitor/core');
+      if (Capacitor.isNativePlatform()) {
+        // Native iOS/Android share sheet (@capacitor/share, already in
+        // package.json) — lets the user send the plan via Messages, etc.
+        const { Share } = await import('@capacitor/share');
+        await Share.share({ title, text, dialogTitle: 'Share your plan' });
+        return; // the native sheet owns its UX — no toast needed
+      }
+      // Web fallback — native sheet unavailable, copy to clipboard.
       await navigator.clipboard.writeText(text);
       setToast('plan copied');
-    } catch {
-      setToast('clipboard unavailable');
+      window.setTimeout(() => setToast(null), 2400);
+    } catch (err) {
+      // User dismissed the share sheet → stay silent. Anything else →
+      // fall back to clipboard so they still get the text.
+      if ((err as { name?: string })?.name === 'AbortError') return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setToast('plan copied');
+      } catch {
+        setToast('share unavailable');
+      }
+      window.setTimeout(() => setToast(null), 2400);
     }
-    window.setTimeout(() => setToast(null), 2400);
   }, []);
 
   return (

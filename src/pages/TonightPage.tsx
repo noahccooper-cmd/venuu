@@ -78,6 +78,13 @@ interface TonightPageProps {
   /** Plan sheet state — drives map camera padding so the focused
    *  stop stays visible above the sheet. */
   sheetState?: 'pill' | 'card' | 'full' | null;
+  /** Non-null when there's an active plan whose sheet is currently
+   *  CLOSED — drives the floating "Resume Plan" pill that hops back
+   *  into plan mode. Null while in plan mode or with no active plan. */
+  resumablePlanId?: string | null;
+  /** Tap handler for the resume pill — reopens plan mode on the
+   *  existing plan id (gentle re-entry, progress preserved). */
+  onResumePlan?: () => void;
   /** Set of venue IDs the current user has captured. Forwarded to
    *  MapView for heat-map weighting (pearl border + glow + breathing
    *  on the user's own marked venues). */
@@ -131,6 +138,8 @@ export function TonightPage({
   onPlanStopTap,
   focusedStopIndex,
   sheetState,
+  resumablePlanId,
+  onResumePlan,
   userVenueIds,
   mapMode,
   onEventPinClick,
@@ -474,6 +483,48 @@ export function TonightPage({
           }}
         >
           <TheDrop venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
+
+          {/* Resume Plan pill — hop back into an active plan after exiting
+           *  to the map. Shows only when there's a resumable plan AND the
+           *  plan sheet is closed. Bottom-center, clear of TheDrop/VennyBar
+           *  (both top elements) and above the bottom nav. */}
+          {resumablePlanId && (
+            <button
+              type="button"
+              onClick={() => onResumePlan?.()}
+              style={{
+                position: 'absolute',
+                bottom: 22,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '11px 20px',
+                borderRadius: 22,
+                background: '#FF8200',
+                border: 'none',
+                color: 'white',
+                fontFamily: 'Satoshi, sans-serif',
+                fontSize: 14,
+                fontWeight: 700,
+                letterSpacing: '-0.01em',
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+                boxShadow: '0 4px 20px rgba(255, 130, 0, 0.42)',
+                zIndex: 40,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="3" cy="3" r="2" fill="white" />
+                <circle cx="13" cy="13" r="2" fill="white" />
+                <path d="M3 3 L13 13" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
+                <circle cx="8" cy="8" r="2" fill="white" />
+              </svg>
+              Resume Plan
+            </button>
+          )}
         </div>
       )}
 

@@ -1,0 +1,884 @@
+[
+  {
+    "slug": "lower-deck",
+    "name": "Lower Deck",
+    "kb_key": "lower deck",
+    "city": "Tampa",
+    "neighborhood": "Harbour Island",
+    "address": "601 S Harbour Island Blvd Ste 110, Tampa, FL 33602",
+    "latitude": 27.93795,
+    "longitude": -82.4552,
+    "is_partner": true,
+    "one_liner": "Laid-back dockside waterfront bar at the marina level of Harbour Island with panoramic Tampa skyline views, raw oysters, craft cocktails, and live music; the casual coastal escape just below American Social.",
+    "details": {
+      "fullName": "The Lower Deck",
+      "aesthetic": "relaxed dockside waterfront bar at pier level of Harbour Island, casual coastal escape from the city",
+      "colors": "natural coastal tones, waterfront blues, warm casual lighting, Tampa skyline backdrop",
+      "interior": "marina level open-air setup at Pointe on Harbour Island, panoramic waterfront views of downtown Tampa, indoor and outdoor dockside seating",
+      "vibe": "laid-back neighborhood waterfront bar, craft cocktails and immersive music experience, from Three Oaks Hospitality, perfect for group gatherings and corporate happy hours",
+      "crowd": "Harbour Island locals, young professionals, after-work crowd, waterfront regulars",
+      "signature": "fresh raw oysters, shrimp scampi toast, craft cocktails, panoramic Tampa waterfront views, dockside escape energy"
+    }
+  },
+  {
+    "slug": "american-social",
+    "name": "American Social",
+    "kb_key": "american social",
+    "city": "Tampa",
+    "neighborhood": "Harbour Island",
+    "address": "601 S Harbour Island Blvd #107, Tampa, FL 33602",
+    "latitude": 27.9384058,
+    "longitude": -82.454863,
+    "is_partner": false,
+    "one_liner": "Spacious waterfront bar-and-kitchen on Harbour Island with Tampa skyline views, indoor/outdoor bars, Taco Tuesday, and weekend nightlife energy; lively, stylish, busy, loud, and fun.",
+    "details": {
+      "fullName": "American Social Bar & Kitchen",
+      "aesthetic": "upscale waterfront sports bar and gastropub on Harbour Island, ranked #39 in US Top 100 Independents by sales",
+      "colors": "Americana-style interior, warm tones, omnipresent flat screens, open patio with Garrison Channel and Tampa skyline views",
+      "interior": "9100 sq ft inside plus 5000 sq ft exterior patio, four full bars, self-serve six-tap communal beer wall, private booths with draft lines, raw bar, waterfront patio overlooking Tampa skyline",
+      "vibe": "high-energy gastropub that transitions to dance club at 11pm, DJ until 3am on weekends, Taco Tuesday and weekly events, near Amalie Arena, 40+ craft beers on tap",
+      "crowd": "young professionals, sports fans, Harbour Island residents, Channelside crowd, upscale bar energy without the pretension",
+      "signature": "40 craft beers on tap, communal beer wall, waterfront Tampa skyline views, turns to dance club at 11pm, weekend bottomless brunch mimosas"
+    }
+  },
+  {
+    "slug": "boulon",
+    "name": "Boulon",
+    "kb_key": "boulon",
+    "city": "Tampa",
+    "neighborhood": "Water Street",
+    "address": "1001 Water St, Tampa, FL 33602",
+    "latitude": 27.9437675,
+    "longitude": -82.4500198,
+    "is_partner": false,
+    "one_liner": "Bright all-day French brasserie and bakery in Water Street serving beef tartare, lobster bisque, and burlesque martinis; lively, attentive, and stylish, a special-occasion spot.",
+    "details": {
+      "fullName": "Boulon Brasserie",
+      "aesthetic": "modern French brasserie in Tampa's Water Street district, Great Gatsby elegance meets contemporary design by Montreal architects",
+      "colors": "soft tan, black, gold, rich blue-teal navy, floor-to-ceiling windows, warm European lighting, gold and cream tones throughout",
+      "interior": "7000 sq ft with high ceilings, open floor plan, bar spanning the length of the dining room with intimate alcoves, two outdoor patios, hexagonal design motifs referencing the bolt concept, adjacent to Amalie Arena",
+      "vibe": "Water Street Tampa anchor, all-day dining from breakfast through late night, Parisian brasserie energy with upbeat music that turns techno on peak nights, special occasion destination, Michelin-adjacent caliber",
+      "crowd": "Water Street professionals, special occasion diners, upscale young crowd, pre and post Amalie Arena events",
+      "signature": "French classics with modern twist, espresso martinis, floor-to-ceiling windows, hexagonal design throughout, Water Street Tampa prestige location"
+    }
+  },
+  {
+    "slug": "predalina",
+    "name": "Predalina",
+    "kb_key": "predalina",
+    "city": "Tampa",
+    "neighborhood": "Water Street",
+    "address": "1001 E Cumberland Ave, Tampa, FL 33602",
+    "latitude": 27.944868,
+    "longitude": -82.4500045,
+    "is_partner": false,
+    "one_liner": "Glamorous Mediterranean coastal restaurant and after-dark cocktail lounge on Water Street, all hand-laid mosaics, olive trees, and a gold disco ball over a painted dance floor.",
+    "details": {
+      "fullName": "Predalina",
+      "aesthetic": "Mediterranean coastal restaurant, cocktail lounge, and after-dark destination on Water Street, alegria de viver — the joy of living well",
+      "colors": "earthy tones, gold and ceramic accents, aged brass fixtures, hand-laid mosaics, olive trees, heavy drapery, gold disco ball glittering overhead",
+      "interior": "7000 sq ft with two cocktail lounges flanking a brass-top bar, painted dance floors, hand-painted tile mural of Predalina Oliveira, mosaic walls and floors, olive trees, cozy intimate corners, 2000 sq ft patio with umbrellas and string lights along Water Street",
+      "vibe": "the most electric and glamorous concept from Oxford Commons, equal parts restaurant cocktail lounge and after-dark destination, cocktails savored amongst the glitter of a gold disco ball, evenings morph into effortless cool",
+      "crowd": "Water Street upscale crowd, Mediterranean food lovers, date night and special occasion, late-night cocktail lounge regulars",
+      "signature": "hand-laid mosaic design, gold disco ball, painted dance floor, Blue Crab Chitara, Potato Stroma, Steak Frites, named after owner's great-grandmother who lived to 101"
+    }
+  },
+  {
+    "slug": "511-franklin",
+    "name": "511 Franklin",
+    "kb_key": "511 franklin",
+    "city": "Tampa",
+    "neighborhood": "Downtown",
+    "address": "513 N Franklin St, Tampa, FL 33602",
+    "latitude": 27.9490216,
+    "longitude": -82.4582075,
+    "is_partner": false,
+    "one_liner": "Upscale-casual downtown craft cocktail bar with a strong bourbon selection, well-made old fashioneds, happy-hour specials, and DJ nights; classy yet welcoming, drawing a 23+ after-dark professional crowd.",
+    "details": {
+      "fullName": "511 Franklin",
+      "aesthetic": "elevated craft cocktail bar and late-night destination in the heart of downtown Tampa, 23+ crowd",
+      "colors": "exposed brick walls, stylish dark interior, outdoor patio on Franklin Street",
+      "interior": "exposed brick walls, stylish cocktail bar design, complemented by outdoor street patio, downtown Tampa location at 511 N Franklin St",
+      "vibe": "downtown Tampa's premier craft cocktail and nightlife destination from Station and Bowery, ages 23+ only, live DJs, chef-driven menu, VIP table reservations available",
+      "crowd": "downtown professionals, 23+ nightlife crowd, cocktail enthusiasts, Tampa after-dark regulars",
+      "signature": "signature cocktails including The Big Guava (Teremana Tequila, Aperol, guava, lime, black salt), late-night destination energy, 23+ door policy"
+    }
+  },
+  {
+    "slug": "echo",
+    "name": "Echo Downtown",
+    "kb_key": "echo",
+    "city": "Tampa",
+    "neighborhood": "Downtown",
+    "address": "914 N Franklin St, Tampa, FL 33602",
+    "latitude": 27.9518696,
+    "longitude": -82.460074,
+    "is_partner": false,
+    "one_liner": "Downtown Franklin St late-night dance club spinning R&B and Latin on weekends only with cover charges; energetic crowd and music.",
+    "details": {
+      "fullName": "Echo Downtown"
+    }
+  },
+  {
+    "slug": "delta",
+    "name": "Delta Downtown",
+    "kb_key": "delta",
+    "city": "Tampa",
+    "neighborhood": "Downtown",
+    "address": "912 N Franklin St, Tampa, FL 33602",
+    "latitude": 27.9517715,
+    "longitude": -82.4600305,
+    "is_partner": false,
+    "one_liner": "Multi-floor downtown nightclub running three zones of music, EDM/house outdoors, hip-hop on the first floor, Spanish upstairs, open Friday and Saturday nights with cover charges; vibrant and danceable.",
+    "details": {
+      "fullName": "Delta Downtown"
+    }
+  },
+  {
+    "slug": "m-bird",
+    "name": "M.Bird",
+    "kb_key": "m bird",
+    "city": "Tampa",
+    "neighborhood": "Tampa Heights",
+    "address": "1903 Market St, Tampa, FL 33602",
+    "latitude": 27.96099,
+    "longitude": -82.4642862,
+    "is_partner": false,
+    "one_liner": "Rooftop American restaurant and bar atop Armature Works with sweeping Tampa Bay views, friendly attentive staff, a DJ-driven night scene, and solid food; a lively special-occasion and celebration spot, busy on weekends.",
+    "details": {
+      "fullName": "M.Bird",
+      "aesthetic": "tropical mod-deco rooftop lounge perched above historic Armature Works, Tampa Heights crown jewel",
+      "colors": "lush tropical greens, antique gold accents, warm pendant lighting, palm trees against sunset sky, Hillsborough River backdrop",
+      "interior": "3500 sq ft split between covered terrace with exposed hardwood trusses and open-air seating, custom banquettes in muted tropical fabrics, terrazzo columns, geometric mural at entrance, day beds and circular Hollywood-style seating",
+      "vibe": "Tampa's premier rooftop destination, 21+ only adults escape, bottle service and live DJs, weekend rooftop brunch, reservations rare so arrive early, panoramic views of downtown Tampa and Hillsborough River",
+      "crowd": "stylish young professionals, date night crowd, upscale-casual dresscode, Tampa's see-and-be-seen rooftop set",
+      "signature": "tropical curated cocktails, Caribbean and Mediterranean small plates, sunset views, live DJs, no kids policy"
+    }
+  },
+  {
+    "slug": "armature-works",
+    "name": "Armature Works",
+    "kb_key": "armature works",
+    "city": "Tampa",
+    "neighborhood": "Tampa Heights",
+    "address": "1910 N Ola Ave, Tampa, FL 33602",
+    "latitude": 27.9609343,
+    "longitude": -82.4642724,
+    "is_partner": false,
+    "one_liner": "Historic 1910 streetcar warehouse turned Tampa Heights food hall and riverside entertainment destination, family-friendly by day and a nightlife hub by night, with M.Bird on the roof.",
+    "details": {
+      "fullName": "Armature Works",
+      "aesthetic": "historic 1910 streetcar warehouse transformed into Tampa Heights' premier food hall and entertainment destination on the Hillsborough River",
+      "colors": "exposed brick, original wood floors, industrial steel, warm Edison lighting, lush outdoor greenery along the riverwalk",
+      "interior": "22000 sq ft Heights Public Market food hall with exposed brick and ductwork, communal tables, 15+ local food vendors, outdoor riverside lawn with giant chess and checkers, M.Bird rooftop above, event spaces throughout",
+      "vibe": "Tampa's most iconic mixed-use destination, beloved by locals and tourists, always something happening, family-friendly by day and nightlife destination by night, Riverwalk access",
+      "crowd": "diverse Tampa crowd, food lovers, date nights, families, young professionals, tourists discovering the city",
+      "signature": "Heights Public Market food hall, M.Bird rooftop bar, riverside lawn with yard games, live events, Bar AW craft cocktails, frequent special events"
+    }
+  },
+  {
+    "slug": "sunset-rodeo",
+    "name": "Sunset Rodeo",
+    "kb_key": "sunset rodeo",
+    "city": "Tampa",
+    "neighborhood": "SoHo (S Howard)",
+    "address": "302 S Howard Ave, Tampa, FL 33606",
+    "latitude": 27.9416843,
+    "longitude": -82.4827188,
+    "is_partner": false,
+    "one_liner": "Nashville-inspired SoHo live-music bar with weekly country and Southern-rock acts, standout decor, an outdoor patio, brunch, VIP tables, and a 23+ policy; high-energy with Nashville hot chicken and smash burgers.",
+    "details": {
+      "fullName": "Sunset Rodeo",
+      "aesthetic": "Nashville-inspired live music bar and outdoor oasis on South Howard Avenue, Tampa's answer to a honky tonk",
+      "colors": "warm Southern tones, string lights, outdoor Nashville patio energy, rustic and lively",
+      "interior": "outdoor oasis patio layout on S Howard Ave, live music stage, Nashville bar aesthetic, hot chicken and cold beer energy",
+      "vibe": "Nashville nights under Tampa lights, live music weekly with country and Southern rock, 23+ Thursdays and 21+ other nights, high energy rowdy good time, quickly becoming SoHo's hottest spot",
+      "crowd": "SoHo regulars, live music lovers, country and Southern rock fans, 21-23+ Tampa nightlife crowd",
+      "signature": "live music every week, hot chicken, outdoor oasis patio, Nashville-inspired concept, country and Southern rock acts"
+    }
+  },
+  {
+    "slug": "the-grove",
+    "name": "The Grove",
+    "kb_key": "the grove",
+    "city": "Tampa",
+    "neighborhood": "SoHo (S Howard)",
+    "address": "406 S Howard Ave, Tampa, FL 33606",
+    "latitude": 27.9405769,
+    "longitude": -82.4827815,
+    "is_partner": false,
+    "one_liner": "SoHo bar with DJs, live reggae, well-made bar drinks, and excellent outdoor service; clean, entertaining, and friendly.",
+    "details": {
+      "fullName": "The Grove"
+    }
+  },
+  {
+    "slug": "macdintons",
+    "name": "MacDinton's",
+    "kb_key": "macdintons",
+    "city": "Tampa",
+    "neighborhood": "SoHo (S Howard)",
+    "address": "405 S Howard Ave, Tampa, FL 33606",
+    "latitude": 27.9405322,
+    "longitude": -82.4831814,
+    "is_partner": false,
+    "one_liner": "SoHo's biggest Irish pub and nightlife institution with multiple bars, DJs, karaoke, trivia, daily specials, and a sports patio; high-energy college-adjacent crowd.",
+    "details": {
+      "fullName": "MacDinton's Irish Pub",
+      "aesthetic": "SoHo's biggest Irish pub and nightlife institution, massive indoor-outdoor setup that packs out every weekend",
+      "colors": "classic Irish pub palette, warm lighting, outdoor patio with string lights, lively and loud",
+      "interior": "huge indoor and outdoor spaces, large outdoor patio, multiple bars, DJs and live entertainment, TVs for sports especially soccer and EPL",
+      "vibe": "SoHo staple drawing locals and tourists, high-energy clubby Irish pub atmosphere, watch parties, themed nights, holiday bashes, VIP tables and bottle service, 21-year-old UT girls and everyone in between",
+      "crowd": "SoHo crowd of all ages, soccer fans, tourists, young college-adjacent crowd, weekend warriors",
+      "signature": "DJ nights, live entertainment, outdoor patio, soccer and EPL watch parties, VIP bottle service, classic Irish pub menu"
+    }
+  },
+  {
+    "slug": "corner-bar",
+    "name": "Corner Bar",
+    "kb_key": "corner bar",
+    "city": "Tampa",
+    "neighborhood": "SoHo (S Howard)",
+    "address": "402 S Howard Ave, Tampa, FL 33606",
+    "latitude": 27.9409084,
+    "longitude": -82.4828092,
+    "is_partner": false,
+    "one_liner": "Chill, dog-friendly SoHo corner bar with weekend DJs, Tuesday karaoke and trivia, cigar-friendly outdoor seating, and Sunday $5 drink specials; great service and reasonable prices in a relaxed neighborhood vibe.",
+    "details": {
+      "fullName": "Corner Bar"
+    }
+  },
+  {
+    "slug": "the-patio",
+    "name": "The Patio",
+    "kb_key": "the patio",
+    "city": "Tampa",
+    "neighborhood": "SoHo (MacDill Ave)",
+    "address": "421 S MacDill Ave, Tampa, FL 33609",
+    "latitude": 27.9400902,
+    "longitude": -82.4935891,
+    "is_partner": false,
+    "one_liner": "Easygoing multi-level SoHo patio bar and Bills Backers spot with three bars, a food truck, darts, plenty of TVs, and reasonable prices; chill, electric on game days, with limited parking.",
+    "details": {
+      "fullName": "The Patio",
+      "aesthetic": "unpretentious SoHo neighborhood bar, cheap drinks and no frills, exactly what it sounds like",
+      "colors": "casual bar palette, TVs everywhere, outdoor patio as the centerpiece",
+      "interior": "interior bar with TVs perfect for game watching, outdoor patio as the main focal point and namesake, relaxed and unfussy layout",
+      "vibe": "SoHo staple for when you want a cold cheap drink without the pretension, consistently voted among South Tampa favorites, game day reliable",
+      "crowd": "SoHo regulars, sports fans, neighborhood locals who want a no-nonsense bar experience",
+      "signature": "cold cheap drinks, outdoor patio, game day TVs, unpretentious SoHo neighborhood energy"
+    }
+  },
+  {
+    "slug": "meat-market",
+    "name": "Meat Market",
+    "kb_key": "meat market",
+    "city": "Tampa",
+    "neighborhood": "Hyde Park",
+    "address": "1606 W Snow Ave, Tampa, FL 33606",
+    "latitude": 27.935898,
+    "longitude": -82.4760815,
+    "is_partner": false,
+    "one_liner": "Upscale Hyde Park steakhouse with prime cuts, sushi, lobster mac, and craft cocktails in a trendy, elegant indoor-outdoor setting; a popular special-occasion destination.",
+    "details": {
+      "fullName": "Meat Market"
+    }
+  },
+  {
+    "slug": "blind-goat",
+    "name": "The Blind Goat",
+    "kb_key": "blind goat",
+    "city": "Tampa",
+    "neighborhood": "South Tampa (Henderson)",
+    "address": "4106 Henderson Blvd, Tampa, FL 33629",
+    "latitude": 27.9278699,
+    "longitude": -82.5122459,
+    "is_partner": false,
+    "one_liner": "Lively, dog-friendly South Tampa bar-and-grill with elevated bar food, pizzas, wings, the Goat Drip cocktail, dart boards, pool, and weekly trivia and bingo; loud, younger FSU-leaning crowd, owner-run feel.",
+    "details": {
+      "fullName": "The Blind Goat Food & Drink Co.",
+      "aesthetic": "Prohibition-era inspired craft bar and eatery, voted Best Pub in Tampa 2024 and 2025, independently owned South Tampa gem",
+      "colors": "warm industrial tones, prohibition speakeasy aesthetic, cozy and lived-in",
+      "interior": "dart boards, mini stage for live events, great back room, outdoor patio space, more TVs than you can count, prohibition-style bar design",
+      "vibe": "10-year South Tampa institution, independently owned by George, craft beer and creative cocktails, pizza and small plates, Thursday and Friday $5 pizza nights with live music, bingo nights, trivia, dog-friendly patio",
+      "crowd": "South Tampa locals, craft beer enthusiasts, people who hate pretentious bars, regulars who know everyone",
+      "signature": "Blackberry Whiskey Smash, craft beer selection, $5 pizza nights with live music, dart boards, prohibition speakeasy concept, Best Pub in Tampa two years running"
+    }
+  },
+  {
+    "slug": "red-dog",
+    "name": "Red Dog",
+    "kb_key": "red dog",
+    "city": "Tampa",
+    "neighborhood": "South Tampa (Bay to Bay)",
+    "address": "3311 W Bay to Bay Blvd, Tampa, FL 33629",
+    "latitude": 27.919958,
+    "longitude": -82.4981003,
+    "is_partner": false,
+    "one_liner": "Casual neighborhood bar with billiards, darts, cold beer, strong drinks, and good burgers; friendly local vibe and a unique atmosphere.",
+    "details": {
+      "fullName": "Red Dog"
+    }
+  },
+  {
+    "slug": "dead-bobs",
+    "name": "Dead Bob's",
+    "kb_key": "dead bobs",
+    "city": "Tampa",
+    "neighborhood": "South Tampa (Westshore)",
+    "address": "3681 S Westshore Blvd, Tampa, FL 33629",
+    "latitude": 27.909007,
+    "longitude": -82.5269904,
+    "is_partner": false,
+    "one_liner": "Unpretentious, budget-friendly South Tampa fisherman's sports bar, open 11am-3am daily, packed with TVs and serving standout burgers, wings, French dips, and mahi bites; lively, friendly, and beloved by locals.",
+    "details": {
+      "fullName": "Dead Bob's"
+    }
+  },
+  {
+    "slug": "five-bucks-drinkery",
+    "name": "Five Bucks Drinkery",
+    "kb_key": "five bucks",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "247 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7713413,
+    "longitude": -82.6363935,
+    "is_partner": false,
+    "one_liner": "Busy Central Ave sports bar and grill open 11am-3am daily with sidewalk seating, value-priced food and drinks, famous fries, and fast friendly bartenders; reliable lunch and late-night downtown staple.",
+    "details": {
+      "fullName": "Five Bucks Drinkery",
+      "aesthetic": "high-volume Central Avenue sports bar and grill with sidewalk energy, the value-priced anchor of the 247 block",
+      "colors": "warm bar-wood tones, neon and TV glow, open garage-door storefront spilling onto Central Ave, casual coastal daylight",
+      "interior": "long indoor bar lined with flat screens, open-air front roll-up windows onto the sidewalk, picnic-style and high-top seating, connected outdoor patio shared with Banana Hammock behind",
+      "vibe": "all-day downtown St. Pete staple open till 3am every night, equal parts lunch counter and late-night sports bar, fast friendly bartenders who learn your order, dependable game-day landing spot",
+      "crowd": "downtown workers on lunch break, sports fans, bar-crawl regulars, locals who want a cheap reliable round",
+      "signature": "value drink specials and famous fries, Five Bucks Stacked Chicken sandwich, sidewalk people-watching, open 11am-3am daily, sports on every screen"
+    }
+  },
+  {
+    "slug": "banana-hammock",
+    "name": "Banana Hammock",
+    "kb_key": "banana hammock",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "247 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.771571,
+    "longitude": -82.6364159,
+    "is_partner": false,
+    "one_liner": "Laid-back outdoor bar tucked behind Five Bucks with cheap $5 cans, a smoky 'illegal margarita,' wings, fries, and French dips; relaxed street-side seating and music away from the noise.",
+    "details": {
+      "fullName": "Banana Hammock",
+      "aesthetic": "tucked-away tropical outdoor bar hidden behind Five Bucks on Central, the laid-back escape from the sidewalk crowd",
+      "colors": "tiki-leaning tropical accents, string lights, open-air greenery, easy island palette",
+      "interior": "outdoor courtyard bar set back off Central Avenue, picnic and patio seating away from the street noise, shared back-lot footprint with Five Bucks Drinkery",
+      "vibe": "cheap-and-cheerful hideaway open till 3am, frozen drinks and canned beers at unbeatable prices, the kind of spot you stumble into mid-crawl and stay longer than planned, outdoor music floating from the main bar",
+      "crowd": "bar-crawl wanderers, budget-minded locals, anyone hunting a quieter outdoor seat off Central",
+      "signature": "the smoky 'illegal margarita,' $5 16oz canned beers, sweet chili wings and fries, hidden outdoor courtyard energy"
+    }
+  },
+  {
+    "slug": "birchwood-canopy",
+    "name": "The Canopy at the Birchwood",
+    "kb_key": "birchwood canopy",
+    "city": "St. Petersburg",
+    "neighborhood": "Beach Drive",
+    "address": "340 Beach Dr NE, St. Petersburg, FL 33701",
+    "latitude": 27.7760139,
+    "longitude": -82.6320345,
+    "is_partner": false,
+    "one_liner": "Rooftop bar atop the Birchwood with panoramic Old Tampa Bay and downtown views, excellent espresso martinis, and prime sunset timing; elegant and festive.",
+    "details": {
+      "fullName": "The Canopy at The Birchwood",
+      "aesthetic": "rooftop cocktail lounge crowning the historic Birchwood hotel on Beach Drive, the best skyline-and-bay view in St. Pete",
+      "colors": "open sky and sunset hues, warm rooftop lighting, water and waterfront-park views, polished elegant tones",
+      "interior": "elevator-access rooftop deck with a central courtyard bar, small railing-edge tables ringing the open-air perimeter, refined ground-floor dining room below, panoramic open-air layout",
+      "vibe": "Beach Drive's premier rooftop destination overlooking Old Tampa Bay and downtown, arrive 45 minutes before sunset for a railing seat, pricier drinks earned by the view, polished but festive evening energy",
+      "crowd": "date-night couples, visitors and locals chasing the view, upscale-casual Beach Drive set, sunset-cocktail crowd",
+      "signature": "best espresso martinis in town, panoramic Tampa Bay and downtown skyline views, sunset timing, happy hour specials, rooftop perch above the historic Birchwood"
+    }
+  },
+  {
+    "slug": "cane-and-barrel",
+    "name": "Cane & Barrel",
+    "kb_key": "cane and barrel",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (2nd St)",
+    "address": "110 2nd St N, St. Petersburg, FL 33701",
+    "latitude": 27.7726847,
+    "longitude": -82.6357233,
+    "is_partner": false,
+    "one_liner": "Relaxed rooftop bar atop the AC Marriott with two full bars, Latin-Caribbean tapas, empanadas, yuca fries, peekaboo bay views, and DJ or steel-drum nights; calm hidden-gem ambiance.",
+    "details": {
+      "fullName": "Cane & Barrel Rooftop Bar",
+      "aesthetic": "breezy rooftop bar and Latin-Caribbean kitchen atop the AC Hotel Marriott downtown, relaxed elevated escape",
+      "colors": "warm tropical tones, sunset lighting, peekaboo bay views over the downtown rooftops, easy resort palette",
+      "interior": "rooftop deck above the AC Marriott with two full bars, an interior bar plus a later-opening terrace bar, open-air seating with string-lit patio, tapas-portion table service",
+      "vibe": "calm relaxing rooftop with a slower beachy pace, Latin and Caribbean small plates and cocktails, DJ on the patio some nights and steel drums others, hidden-gem feel above the downtown bustle",
+      "crowd": "hotel guests, downtown couples, rooftop-hopping visitors, easygoing happy-hour crowd",
+      "signature": "spinach-and-artichoke and beef empanadas, yuca fries, tapas-style plates, two-bar rooftop above the AC Marriott, sunset terrace cocktails"
+    }
+  },
+  {
+    "slug": "copper-shaker",
+    "name": "Copper Shaker",
+    "kb_key": "copper shaker",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (1st Ave)",
+    "address": "169 1st Ave N, St. Petersburg, FL 33701",
+    "latitude": 27.7723137,
+    "longitude": -82.6349515,
+    "is_partner": false,
+    "one_liner": "Speakeasy-style craft cocktail bar with a premium whiskey selection, hand-crafted old fashioneds, truffle fries, and Taco Tuesday; bartenders who remember your name, classy and chill, open till 3am nightly.",
+    "details": {
+      "fullName": "Copper Shaker",
+      "aesthetic": "speakeasy-leaning craft cocktail bar near Jannus Landing, premium-spirit destination with a friendly edge",
+      "colors": "warm copper and dark wood tones, dim intimate lighting, classic speakeasy ambiance",
+      "interior": "cozy bar-forward room built around hand-crafted cocktails, copper accents throughout, intimate seating, kitchen turning out flavor-forward small plates",
+      "vibe": "downtown St. Pete's go-to for serious cocktails without the pretension, bartenders who remember your name and your order, speakeasy mood with an unfussy welcome, open nightly till 3am",
+      "crowd": "cocktail enthusiasts, whiskey drinkers, date nights, regulars who came for one and stayed for three",
+      "signature": "premium whiskey selection and hand-crafted old fashioneds, truffle fries, Taco Tuesday, speakeasy-style craft program, open till 3am nightly"
+    }
+  },
+  {
+    "slug": "crafty-squirrel",
+    "name": "Crafty Squirrel",
+    "kb_key": "crafty squirrel",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "259 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7713527,
+    "longitude": -82.6365966,
+    "is_partner": false,
+    "one_liner": "Versatile Central Ave spot that's a cozy sports pub by day and a late-night dance bar by night, with two-for-one happy hours, bottomless mimosas, bottle service, and a flavor-forward new menu.",
+    "details": {
+      "fullName": "Crafty Squirrel",
+      "aesthetic": "shape-shifting Central Avenue spot that's a cozy sports pub by day and a late-night dance bar after dark",
+      "colors": "warm pub tones early, club lighting late, lively Central Ave storefront energy",
+      "interior": "multi-zone layout with a sports-bar front, cocktail and dance space, bottle-service setup for late nights, indoor-outdoor Central Ave seating",
+      "vibe": "does it all from noon to 3am, two-for-one happy hours and bottomless mimosa brunches, mellow IPA-and-burger afternoons that turn into a dance floor by night, new menu with big flavors",
+      "crowd": "happy-hour locals, brunch crowds, weekend night-dancers, bar-crawl groups",
+      "signature": "two-for-one happy hour, $15 build-your-own bottomless mimosas, late-night dancing with bottle service, new flavor-forward menu, noon-3am daily"
+    }
+  },
+  {
+    "slug": "fergs",
+    "name": "Ferg's Sports Bar",
+    "kb_key": "fergs",
+    "city": "St. Petersburg",
+    "neighborhood": "Edge District",
+    "address": "1320 Central Ave, St. Petersburg, FL 33705",
+    "latitude": 27.7708789,
+    "longitude": -82.65219,
+    "is_partner": false,
+    "one_liner": "Sprawling, nationally top-rated sports bar near Tropicana Field with hundreds of TVs, $5 game-day beers, famous wings, live music, two dog parks, and a tunnel toward the Trop.",
+    "details": {
+      "fullName": "Ferg's Sports Bar & Grill",
+      "aesthetic": "sprawling, nationally ranked sports-bar institution in the shadow of the Trop, St. Pete's ultimate game-day compound",
+      "colors": "team-banner color everywhere, hundreds of glowing screens, open-air patio greenery, classic American sports-bar palette",
+      "interior": "massive multi-building footprint with indoor dining, expansive outdoor seating, multiple live-music stages, two dog parks (big and small), and a tunnel connecting toward Tropicana Field",
+      "vibe": "rated among the best sports bars in the country, electric on game days with $5 beers and a packed house, live music weekly, attentive staff that never lets a glass go empty, a destination in its own right",
+      "crowd": "Rays and Bucs fans, families, dog owners, pre-game tailgaters, live-music crowds, tourists making the pilgrimage",
+      "signature": "hundreds of TVs and $5 game-day beers, famous wings, Reuben and Cuban sandwiches, two on-site dog parks, weekly live music, tunnel toward Tropicana Field"
+    }
+  },
+  {
+    "slug": "flute-and-dram",
+    "name": "Flute & Dram",
+    "kb_key": "flute and dram",
+    "city": "St. Petersburg",
+    "neighborhood": "Beach Drive",
+    "address": "234 Beach Dr NE, St. Petersburg, FL 33701",
+    "latitude": 27.7743792,
+    "longitude": -82.6326767,
+    "is_partner": false,
+    "one_liner": "Polished Beach Drive whiskey-and-champagne lounge with cigars, caviar, an in-house humidor, 25%-off-whiskey Thursdays, live music, and prime waterfront people-watching; one of the best-located bars on the strip.",
+    "details": {
+      "fullName": "Flute & Dram",
+      "aesthetic": "polished whiskey-and-champagne lounge on Beach Drive, cigars-and-caviar sophistication in a prime people-watching perch",
+      "colors": "warm wood and brass tones, soft lounge lighting, open Beach Drive frontage facing the waterfront park",
+      "interior": "indoor lounge with an in-house humidor and an above-average wine wall, open-air Beach Drive seating overlooking the park and water, intimate bar with a deep spirits back bar",
+      "vibe": "one of the best-positioned bars on Beach Drive, live singers and shifting ambiance depending on the night, 25% off whiskey on Thursdays, genuine staff who look after regulars, prime location energy",
+      "crowd": "Beach Drive strollers, whiskey and champagne drinkers, cigar lovers, date nights, people-watchers",
+      "signature": "deep whiskey list with 25%-off Thursdays, big champagne selection and caviar, in-house humidor, live music, waterfront Beach Drive views"
+    }
+  },
+  {
+    "slug": "goodnight-john-boy",
+    "name": "Good Night John Boy",
+    "kb_key": "goodnight john boy",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (2nd St)",
+    "address": "16 2nd St N, St. Petersburg, FL 33701",
+    "latitude": 27.7716018,
+    "longitude": -82.6357291,
+    "is_partner": false,
+    "one_liner": "High-energy 1970s disco-themed dance bar with a checkerboard dance floor, retro decor, and a mix of 70s hits and newer beats; reasonably priced, all-ages-of-adult fun, extremely packed after 9pm.",
+    "details": {
+      "fullName": "Good Night John Boy",
+      "aesthetic": "1970s disco-fever dance bar downtown, a full Saturday-Night-Fever time capsule with a checkerboard floor",
+      "colors": "retro 70s palette, neon and disco glow, Farrah Fawcett poster decor, lit checkerboard dance floor",
+      "interior": "groovy throwback room with a checkerboard dance floor, vintage posters and 70s memorabilia, packed late-night layout, outside front area",
+      "vibe": "everybody's favorite downtown dance party, 70s hits cut with newer beats, electric and shoulder-to-shoulder after 9pm, go early to dance with room to move, all-ages-of-adult fun",
+      "crowd": "dance-floor diehards, girls' weekends, all-age party crowd, locals and visitors chasing nostalgia",
+      "signature": "lit checkerboard dance floor, 70s disco soundtrack, reasonably priced drinks, retro memorabilia decor, go-early-to-dance energy"
+    }
+  },
+  {
+    "slug": "jannus-live",
+    "name": "Jannus Live",
+    "kb_key": "jannus live",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Jannus Landing)",
+    "address": "200 1st Ave N Ste 206, St. Petersburg, FL 33701",
+    "latitude": 27.7719257,
+    "longitude": -82.636271,
+    "is_partner": false,
+    "one_liner": "Intimate historic open-air courtyard concert venue hosting surprisingly big touring acts with great acoustics, no bad sightlines, a balcony, and multiple bars; minimal seating, standing-room shows.",
+    "details": {
+      "fullName": "Jannus Live",
+      "aesthetic": "historic open-air courtyard concert venue tucked into downtown, one of the best small live-music rooms in America",
+      "colors": "string-lit night sky, brick-and-stone courtyard, stage lighting, weathered historic charm",
+      "interior": "intimate paved brick-and-stone courtyard with an elevated main stage, upstairs balcony and side-stage perches, multiple bars, surrounded by the historic Jannus Landing buildings",
+      "vibe": "a St. Pete legend hosting surprisingly big touring acts in an intimate space where every spot is a good one, great acoustics, no bad sightlines, the kind of place locals have been seeing shows at for decades",
+      "crowd": "music fans of every stripe, all-ages concertgoers, longtime locals, touring-act diehards",
+      "signature": "intimate courtyard concerts, elevated main stage and balcony views, great acoustics, multiple bars, decades of St. Pete live-music history"
+    }
+  },
+  {
+    "slug": "mandarin-hide",
+    "name": "Mandarin Hide",
+    "kb_key": "mandarin hide",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "231 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7713667,
+    "longitude": -82.6362014,
+    "is_partner": false,
+    "one_liner": "Rustic, dimly lit craft cocktail lounge known for expertly built old fashioneds and the best spicy margarita around, with vintage decor, live music, and $9 weeknight specials; conversational until late, open till 3am.",
+    "details": {
+      "fullName": "Mandarin Hide",
+      "aesthetic": "rustic, dimly lit craft cocktail den on Central Avenue, prohibition-mood lounge built for serious drinks",
+      "colors": "warm low light, rustic reclaimed wood and vintage decor, moody speakeasy ambiance",
+      "interior": "narrow atmospheric room with a craft-focused bar, rustic salvaged decor, intimate seating, live-music corner, layout that stays conversational until late-night",
+      "vibe": "St. Pete's craft-cocktail favorite where bartenders take real pride in the pour, $9 old fashioneds on a Wednesday, music and a cool vibe pulling you in off the street, open till 3am most nights",
+      "crowd": "bourbon and whiskey drinkers, cocktail purists, couples, locals who come back for a specific bartender",
+      "signature": "expertly built old fashioneds and the best spicy margarita around, $9 weeknight specials, rustic speakeasy decor, live music, open till 3am"
+    }
+  },
+  {
+    "slug": "mary-margarets",
+    "name": "Mary Margaret's",
+    "kb_key": "mary margarets",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (3rd St)",
+    "address": "29 3rd St N, St. Petersburg, FL 33701",
+    "latitude": 27.7718144,
+    "longitude": -82.6368227,
+    "is_partner": false,
+    "one_liner": "Authentic downtown Irish pub with flawless Guinness pours, full Irish breakfast, banger-and-mash, and mustard-slaw sandwiches; lively daily with a sharp bar staff, open till 2-2:30am.",
+    "details": {
+      "fullName": "Mary Margaret's Olde Irish Tavern",
+      "aesthetic": "authentic downtown Irish pub, perfect-pour Guinness and proper pub grub a half-block off the action",
+      "colors": "classic Irish-pub palette, dark wood and warm amber lighting, cozy tavern tones",
+      "interior": "traditional Irish tavern layout with a busy bar, snug wood-trimmed seating, lively and welcoming room, full kitchen",
+      "vibe": "a true Irish pub in the middle of St. Pete, insanely good perfectly poured Guinness, lively every day thanks to a sharp bar staff, the dependable stop for a pint and a proper meal, open till 2-2:30am",
+      "crowd": "Guinness loyalists, pub regulars, downtown locals, visitors hunting an authentic pint",
+      "signature": "flawless Guinness pours, full Irish breakfast and banger-and-mash, mustard-slaw sandwiches, authentic tavern atmosphere, open late"
+    }
+  },
+  {
+    "slug": "my-rich-uncle",
+    "name": "My Rich Uncle",
+    "kb_key": "my rich uncle",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (1st Ave)",
+    "address": "260 1st Ave N, St. Petersburg, FL 33701",
+    "latitude": 27.7719542,
+    "longitude": -82.636581,
+    "is_partner": false,
+    "one_liner": "Weekend-only high-energy nightclub-style bar open Friday-Saturday 8pm-2:30am with thumping DJ sets, bottle service, and dedicated VIP hosts; cinematic party atmosphere with a dressed-up crowd.",
+    "details": {
+      "fullName": "My Rich Uncle",
+      "aesthetic": "weekend-only high-energy nightclub-style bar downtown, VIP-host glamour and a cinematic party room",
+      "colors": "club lighting and bottle-service glow, vibrant after-dark palette, energetic upscale-night tones",
+      "interior": "DJ-driven bar built for a big night out, VIP table and bottle-service setup, high-energy dance-forward layout, polished nightlife design",
+      "vibe": "one of downtown's hottest weekend-out spots, open Friday and Saturday only from 8pm till 2:30am, vibrant music and a movie-like atmosphere, dedicated VIP hosts who run the room, fast professional bartending",
+      "crowd": "weekend-night partiers, VIP-table bookers, bottle-service crowd, dressed-up nightlife regulars",
+      "signature": "VIP hosting and bottle service, high-energy DJ sets, top-tier bartending, Friday-Saturday 8pm-2:30am only, cinematic party-room atmosphere"
+    }
+  },
+  {
+    "slug": "oak-and-stone",
+    "name": "Oak & Stone",
+    "kb_key": "oak and stone",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "199 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7714566,
+    "longitude": -82.6352435,
+    "is_partner": false,
+    "one_liner": "Casual craft-pizza restaurant with a signature self-pour beer wall, tons of taps, gluten-free options, and sports on TV; affordable, relaxed, and walkable to the St. Pete Pier.",
+    "details": {
+      "fullName": "Oak & Stone",
+      "aesthetic": "casual craft-pizza and self-pour beer hall on Central Avenue, easygoing across from the AC Marriott",
+      "colors": "warm casual tones, big-screen glow, bright open dining-room palette, relaxed daytime light",
+      "interior": "open, casual restaurant with a signature self-pour tap-and-pour beer wall, big communal feel, TVs for the game, indoor seating steps from the St. Pete Pier",
+      "vibe": "approachable all-day spot for craft pizza and self-poured beer, fun and unpretentious, perfect for casual game-watching or an affordable first date, walkable to the Pier and downtown",
+      "crowd": "casual diners, beer explorers, families, sports-watchers, Pier-bound visitors",
+      "signature": "self-pour tap-and-pour beer wall, craft and gluten-free pizzas, tons of beers on tap, casual sports-watching, across from the AC Marriott and near the Pier"
+    }
+  },
+  {
+    "slug": "one-night-stand",
+    "name": "The One Night Stand",
+    "kb_key": "one night stand",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (1st Ave)",
+    "address": "149 1st Ave N, St. Petersburg, FL 33701",
+    "latitude": 27.7722795,
+    "longitude": -82.6348431,
+    "is_partner": false,
+    "one_liner": "Comfortably worn-in country dive bar centered on a mechanical bull, with country music, a 25% military discount, and a welcoming community spirit; open till 3am.",
+    "details": {
+      "fullName": "The One Night Stand",
+      "aesthetic": "worn-in-the-best-way country dive bar downtown, mechanical bull and no-nonsense charm",
+      "colors": "broken-in dive palette, warm bar lighting, country-honky-tonk tones, unfussy and comfortable",
+      "interior": "comfortable lived-in dive layout centered on a mechanical bull, full bar, country-night setup, easygoing downtown footprint open till 3am",
+      "vibe": "a dive bar in the best sense, clean but comfortably broken-in, country music and a mechanical bull that's a guaranteed good time, military discount, staff that's friendly but no-nonsense",
+      "crowd": "country-music fans, dive-bar devotees, birthday groups, military folks, downtown regulars",
+      "signature": "the mechanical bull, country music, 25% military discount, comfortable dive-bar charm, open till 3am"
+    }
+  },
+  {
+    "slug": "park-and-rec",
+    "name": "Park & Rec DTSP",
+    "kb_key": "park and rec",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (4th St)",
+    "address": "100 4th St S, St. Petersburg, FL 33701",
+    "latitude": 27.7700162,
+    "longitude": -82.6382071,
+    "is_partner": false,
+    "one_liner": "Big playful gastro-bar and adult arcade with pool, games, cornhole, a wall of TVs, self-poured bottomless mimosas, $25 all-you-can-eat snacks, free trivia, and a dog-friendly, game-day-friendly vibe.",
+    "details": {
+      "fullName": "Park & Rec DTSP",
+      "aesthetic": "big playful gastro-bar and adult arcade downtown, games-and-drinks clubhouse with a serious bar menu",
+      "colors": "lively arcade glow, big-screen sports light, casual high-energy palette",
+      "interior": "large multi-room space with pool tables, arcade games, cornhole, a wall of TVs, ample seating, and a high-end bar kitchen, open later Wednesday through the weekend",
+      "vibe": "the city's go-to for Sunday Funday and game day, legitimately self-poured bottomless mimosas and all-you-can-eat snacks, trivia nights, dog-friendly, free swag tossed by the manager, big and fun by design",
+      "crowd": "game-day fans, group hangs, trivia regulars, dog owners, brunch-and-arcade crowds",
+      "signature": "self-poured bottomless mimosas and $25 all-you-can-eat snacks, pool and arcade games, free trivia with prizes, dog-friendly, big-screen sports"
+    }
+  },
+  {
+    "slug": "pier-teaki",
+    "name": "Pier Teaki",
+    "kb_key": "pier teaki",
+    "city": "St. Petersburg",
+    "neighborhood": "St. Pete Pier",
+    "address": "800 2nd Ave NE 5th Floor, St. Petersburg, FL 33701",
+    "latitude": 27.7735968,
+    "longitude": -82.6224926,
+    "is_partner": false,
+    "one_liner": "Open-air rooftop tiki bar atop the St. Pete Pier with sweeping water, city, and dolphin views, creative tiki cocktails, and shareable plates like lobster-chorizo empanadas; chill tropical mood.",
+    "details": {
+      "fullName": "Pier Teaki",
+      "aesthetic": "open-air rooftop tiki bar crowning the St. Pete Pier, a mini-vacation perch over the water",
+      "colors": "colorful tropical tiki decor, open-sky and waterfront blues, sunset palette, breezy island tones",
+      "interior": "fifth-floor open-air rooftop atop the Pier with sweeping bay and city views, spacious tiki-styled deck, casual table and bar seating, laid-back tropical layout",
+      "vibe": "a true rooftop tiki escape right in the city, incredible views of the water, planes, dolphins and downtown, chill spacious tropical mood, creative tiki cocktails, automatic 20% service fee like much of St. Pete",
+      "crowd": "Pier visitors, sunset-cocktail seekers, tourists and locals on a day out, relaxed tropical crowd",
+      "signature": "classic and creative tiki cocktails, sweeping St. Pete Pier waterfront views, lobster-chorizo empanadas and shareable dips, open-air rooftop tropical vibe"
+    }
+  },
+  {
+    "slug": "pour-judgement",
+    "name": "Pour Judgement",
+    "kb_key": "pour judgement",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "269 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7714168,
+    "longitude": -82.6367583,
+    "is_partner": false,
+    "one_liner": "Central Ave bar built around an extensive menu-book of shots and themed drink specials, with engaging bartenders and fun start-the-night energy, open till 3am.",
+    "details": {
+      "fullName": "Pour Judgement",
+      "aesthetic": "shot-menu specialist on Central Avenue, a no-frills good-time bar built around an encyclopedic shot list",
+      "colors": "casual bar palette, Central Ave storefront energy, easy late-night tones",
+      "interior": "straightforward Central Avenue bar with a full bar and an extensive shot program, themed-drink specials, late-night layout open till 3am",
+      "vibe": "the place for a menu-book of shots you didn't know existed, themed drink specials (think pop-culture tie-ins), engaging bartenders and a fun start-the-night energy on the Central Ave strip",
+      "crowd": "bar-crawl groups, shot-takers, Central Ave night-outers, friend squads pre-gaming the night",
+      "signature": "a full menu book of shots, themed drink specials, engaging bartenders, Central Ave crawl energy, open till 3am"
+    }
+  },
+  {
+    "slug": "saigon-blonde",
+    "name": "Saigon Blonde",
+    "kb_key": "saigon blonde",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "265 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7713936,
+    "longitude": -82.6367072,
+    "is_partner": false,
+    "one_liner": "Funky Vietnam/New Orleans-themed lounge on the Central Ave drag with eclectic war-era decor, house and techno DJs, rum old fashioneds, hemp cocktails, and THC seltzers; chill early, lively and danceable late.",
+    "details": {
+      "fullName": "Saigon Blonde",
+      "aesthetic": "funky Vietnam-meets-New-Orleans themed lounge on the Central Ave drag, an eclectic art-filled vibe room",
+      "colors": "rich eclectic decor, vintage Vietnam-era posters and artifacts, moody lounge lighting, funky maximalist palette",
+      "interior": "art-and-memorabilia-packed lounge with character in every corner, DJ booth, plenty of varied seating, instruments out for guests to play, sidewalk seating on the drag for people-watching",
+      "vibe": "a one-of-a-kind atmosphere bar that's part lounge, part vibe, house and techno most nights, mellow and conversational early before it fills up, hemp cocktails and THC seltzers alongside great rum old fashioneds",
+      "crowd": "vibe-seekers, design and music lovers, late-night drag crowd, locals who call it their favorite hideout",
+      "signature": "rum old fashioneds and creative cocktails, hemp cocktails and THC seltzers, Vietnam-era decor and artwork, house/techno DJ nights, drag-side people-watching"
+    }
+  },
+  {
+    "slug": "sparrow",
+    "name": "Sparrow",
+    "kb_key": "sparrow",
+    "city": "St. Petersburg",
+    "neighborhood": "Edge District",
+    "address": "1234 Central Ave, St. Petersburg, FL 33705",
+    "latitude": 27.7709681,
+    "longitude": -82.6510648,
+    "is_partner": false,
+    "one_liner": "Rooftop Asian-leaning restaurant and cocktail bar atop the Moxy with views toward Tropicana Field, pork bao buns, sushi, lobster mac, and tequila-espresso martinis; stylish weekend energy.",
+    "details": {
+      "fullName": "Sparrow",
+      "aesthetic": "rooftop Asian-leaning restaurant and cocktail bar atop the Moxy hotel, stylish perch with skyline-and-stadium views",
+      "colors": "sleek modern tones, rooftop sunset light, downtown-and-Tropicana-Field backdrop, upscale-trendy palette",
+      "interior": "ground-floor lobby bar with an escort up to the rooftop dining-and-cocktail space, open-air rooftop patio, contemporary stylish layout above the Moxy",
+      "vibe": "a see-the-city rooftop with a beautiful view toward Tropicana Field, shareable Asian-inspired plates and sushi, espresso and tequila-espresso martinis, weekend-night energy with a polished hotel-rooftop feel",
+      "crowd": "hotel guests, date nights, rooftop-cocktail seekers, upscale-casual visitors",
+      "signature": "tequila and espresso martinis, pork bao buns and sushi rolls, lobster mac and cheese, rooftop views toward Tropicana Field, Moxy hotel perch"
+    }
+  },
+  {
+    "slug": "tequila-daisy",
+    "name": "Tequila Daisy",
+    "kb_key": "tequila daisy",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (1st Ave)",
+    "address": "120 1st Ave N, St. Petersburg, FL 33701",
+    "latitude": 27.7719355,
+    "longitude": -82.6345176,
+    "is_partner": false,
+    "one_liner": "Compact downtown tequila bar boasting one of the world's largest tequila collections, custom-built cocktails, hibiscus palomas, and guided tastings; friendly fast-paced bartenders and a great meet-up size, open till 3am.",
+    "details": {
+      "fullName": "Tequila Daisy",
+      "aesthetic": "agave-obsessed downtown tequila bar, a custom-cocktail specialist with a world-class spirits wall",
+      "colors": "warm cantina tones, bottle-lined back bar, intimate small-bar lighting, lively downtown palette",
+      "interior": "cute, compact downtown bar built around one of the largest tequila collections anywhere, bottle-stacked back bar, bar-forward seating, open till 3am",
+      "vibe": "the spot for tequila lovers, custom cocktails made with care, friendly fast-paced bartenders who'll build you something from scratch, guided tequila tastings, a perfect meet-up-with-friends size",
+      "crowd": "tequila and mezcal fans, cocktail explorers, friend groups, tasting-curious locals",
+      "signature": "one of the world's largest tequila collections, custom-built cocktails and hibiscus palomas, guided tequila tastings, intimate downtown room, open till 3am"
+    }
+  },
+  {
+    "slug": "the-landing",
+    "name": "The Landing",
+    "kb_key": "the landing",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Jannus Landing)",
+    "address": "200 1st Ave N, St. Petersburg, FL 33701",
+    "latitude": 27.7719201,
+    "longitude": -82.6357797,
+    "is_partner": false,
+    "one_liner": "Loft bar above Jannus Live with great city views, local DJ events, a full bar, and Sunday-Funday shot specials; cool hideaway vibe.",
+    "details": {
+      "fullName": "The Landing",
+      "aesthetic": "loft bar perched above Jannus Live, a chalk-sign hideaway with skyline views and local DJs",
+      "colors": "warm loft lighting, downtown-skyline views, easy late-night palette",
+      "interior": "upstairs loft above Jannus Live reached by a tucked-away staircase, full bar with beer and wine, open city views, intimate elevated layout open Thursday through the weekend till 3am",
+      "vibe": "a cool little loft above the music venue with great views of the city, local DJ events, Sunday-Funday shot specials, easy hangout energy for a crowd that found the staircase",
+      "crowd": "Jannus showgoers, downtown locals, DJ-night regulars, view-seeking hangout crowd",
+      "signature": "loft city views above Jannus Live, local DJ events, Sunday-Funday shot-of-the-day, full bar, Thursday-weekend nights till 3am"
+    }
+  },
+  {
+    "slug": "trailer-daddy",
+    "name": "Trailer Daddy",
+    "kb_key": "trailer daddy",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "217 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7713218,
+    "longitude": -82.6360721,
+    "is_partner": false,
+    "one_liner": "Tongue-in-cheek trailer-park-themed bar with creative cocktails, playful shots like the American Pie and PB&J, and cheesesteaks; great music, genuine staff, and a fresh, lively concept, open weekends till 2am.",
+    "details": {
+      "fullName": "Trailer Daddy",
+      "aesthetic": "tongue-in-cheek trailer-park-themed bar on Central, a glamper-chic newcomer with creative cocktails and big personality",
+      "colors": "kitschy retro-Americana decor, neon and string-light glow, playful campground palette",
+      "interior": "cleverly laid-out themed space that feels lively and easy to move through, full bar with a creative cocktail program, kitchen turning out cheesesteaks and bar bites, indoor-outdoor flow",
+      "vibe": "a fun fresh concept St. Pete didn't know it needed, great music and genuine staff who love the gimmick, the kind of place you come for cocktails and stay for the personality, open till 2am weekends",
+      "crowd": "novelty-loving night-outers, cocktail crowds, friend groups, downtown newcomers and regulars alike",
+      "signature": "creative cocktails and playful shots like the American Pie and PB&J, cheesesteaks and bar bites, trailer-park theming, lively concept design, weekends till 2am"
+    }
+  },
+  {
+    "slug": "tryst",
+    "name": "Tryst",
+    "kb_key": "tryst",
+    "city": "St. Petersburg",
+    "neighborhood": "Beach Drive",
+    "address": "240 Beach Dr NE, St. Petersburg, FL 33701",
+    "latitude": 27.774514,
+    "longitude": -82.6326825,
+    "is_partner": false,
+    "one_liner": "Eclectic Beach Drive gastro-lounge with a Mediterranean-French menu, fish tacos, bottomless mimosas, hookah, Tito's on tap, and live music; prime patio people-watching and fast service, open till 3am.",
+    "details": {
+      "fullName": "Tryst Gastro Lounge",
+      "aesthetic": "eclectic Beach Drive gastro-lounge, Mediterranean-French-leaning kitchen with hookah, live music, and a prime patio",
+      "colors": "cozy warm interior tones, Beach Drive sunset light, eclectic lounge palette, lively outdoor string lighting",
+      "interior": "cozy interior bar with an eclectic menu plus a generous outdoor bar and patio along busy Beach Drive, big draft selection (Tito's on tap), hookah service, intimate lounge corners",
+      "vibe": "a fixture on the Beach Drive strip that hits every mode, lunch date, big-game watch, special-occasion dinner or late-night lounge, live music and great people-watching, fast friendly service, open till 3am",
+      "crowd": "Beach Drive crowds, foodies, hookah lovers, date nights and group celebrations, late-night loungers",
+      "signature": "Mediterranean-French eclectic menu, fish tacos and chicken kabobs, bottomless mimosas, hookah and Tito's-on-tap, live music, Beach Drive patio open till 3am"
+    }
+  },
+  {
+    "slug": "detroit-201",
+    "name": "Detroit 201",
+    "kb_key": "detroit 201",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (Central Ave)",
+    "address": "201 Central Ave, St. Petersburg, FL 33701",
+    "latitude": 27.7713654,
+    "longitude": -82.6357291,
+    "is_partner": false,
+    "one_liner": "Tiny Central Ave corner cocktail bar with nightly live music, a string-lit patio, an abundant drink list, $5 old fashioneds, and barrel-aged ales; intimate, vibey, with a lovely on-site owner.",
+    "details": {
+      "fullName": "Detroit 201",
+      "aesthetic": "tiny corner cocktail bar on Central, a string-lit live-music gem that drinks bigger than its footprint",
+      "colors": "warm intimate lighting, string-lit patio glow, cozy corner-bar tones",
+      "interior": "small corner room with an abundant drink selection, an adjoining string-lit outdoor patio, nightly live-music setup, intimate seating open Tuesday through the weekend",
+      "vibe": "an under-the-radar corner spot with a real vibe, talented nightly live music kept conversational, lovely owner often on-site, $5 old fashioneds and round-robin bands, the kind of place you return to",
+      "crowd": "live-music lovers, cocktail drinkers, couples, neighborhood regulars who found the corner",
+      "signature": "$5 old fashioneds and a deep drink list, nightly live music, string-lit outdoor patio, barrel-aged ales and a great Bramble, intimate corner-bar charm"
+    }
+  },
+  {
+    "slug": "welcome-to-the-farm",
+    "name": "Welcome To The Farm",
+    "kb_key": "welcome to the farm",
+    "city": "St. Petersburg",
+    "neighborhood": "Downtown (1st Ave)",
+    "address": "242 1st Ave N, St. Petersburg, FL 33701",
+    "latitude": 27.7718136,
+    "longitude": -82.6363795,
+    "is_partner": false,
+    "one_liner": "Popular downtown country bar with live country music, weekend outdoor DJs, multiple bars, Thursday karaoke, free military entry, and a late-night sports-bar connection; a local home base.",
+    "details": {
+      "fullName": "Welcome To The Farm",
+      "aesthetic": "downtown's premier country bar, a multi-bar live-music compound that doubles as everyone's home base",
+      "colors": "warm country-bar tones, neon and stage lighting, lively indoor-outdoor palette",
+      "interior": "multi-bar layout so you never fight the crowd for a drink, indoor stage plus two outdoor spaces, late-night connection to an adjoining sports bar, big and built for a crowd, open Thursday through the weekend",
+      "vibe": "the most popular spot in town for good reason, live country music with weekend outdoor DJs, the kind of bar that becomes a home if you live nearby, cold drinks, watchful security, family-like staff energy",
+      "crowd": "country-music fans, downtown regulars, weekend-night crowds, military (free with CAC), big group nights",
+      "signature": "live country music with weekend DJs, multiple bars and two outdoor spaces, Thursday karaoke, free military entry, late-night sports-bar connection"
+    }
+  }
+]
