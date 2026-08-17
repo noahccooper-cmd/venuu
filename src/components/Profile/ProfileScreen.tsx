@@ -388,21 +388,6 @@ export function ProfileScreen({
     return () => window.clearTimeout(t);
   }, [stats.loading, stats.nightsOut]);
 
-  const [celebrateTaste, setCelebrateTaste] = useState(false);
-
-  // When a user finishes the rate flow, Taste % gets new data — burst
-  // the stat card so the increment reads as a reward, not a quiet
-  // tick. Hook refetches via its own listener too; the burst here is
-  // the visual companion.
-  useEffect(() => {
-    function handle() {
-      setCelebrateTaste(true);
-      window.setTimeout(() => setCelebrateTaste(false), 1400);
-    }
-    window.addEventListener('venuu-night-rated', handle as EventListener);
-    return () => window.removeEventListener('venuu-night-rated', handle as EventListener);
-  }, []);
-
   // ── "since {Mon YYYY}" sublabel under the Nights Out stat.
   //    accountSince is computed inside useUserAccountStats now —
   //    earliest user_visits.first_seen_at, falling back to the
@@ -1054,7 +1039,6 @@ export function ProfileScreen({
                     label="Taste"
                     icon={Sparkles}
                     suffix="%"
-                    celebrating={celebrateTaste}
                     onTap={() => { hapticLight(); console.log('[stat] taste tapped'); }}
                   />
                 )}

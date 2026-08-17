@@ -309,16 +309,6 @@ export function useUserAccountStats({
     return () => { supabase.removeChannel(channel); };
   }, [profileId, refetch]);
 
-  // Listen for the rate-night dopamine event — when a user finishes
-  // the rating flow PlanSheet dispatches venuu-night-rated. Refetch
-  // immediately so the Taste % stat ticks up before the realtime
-  // sub fires (which can lag ~200ms).
-  useEffect(() => {
-    function handle() { void refetch(); }
-    window.addEventListener('venuu-night-rated', handle as EventListener);
-    return () => window.removeEventListener('venuu-night-rated', handle as EventListener);
-  }, [refetch]);
-
   // venue_recaps is keyed on username (denormalized — no FK), so
   // realtime filter has to be by username. The channel rebuilds when
   // username changes (rare).

@@ -1,13 +1,10 @@
 /**
  * hueMath.ts
  *
- * The HSL fusion math. Single source of truth for venue color.
- *
- * - HUE comes from vibe (1-14 spectrum, mapped to HSL degrees)
- * - SATURATION comes from engine state (Surging → 100%, Quiet → 50%)
- * - LIGHTNESS comes from capacity_pct (empty → 35%, full → 55%)
- *
- * Mirrors the vibe_hue_lookup table in Postgres. Keep in sync.
+ * The 14-hue vibe spectrum lookup. Single source of truth for a
+ * venue's signature hue (1-14 → HSL degrees), keyed off
+ * vibe_hue_baseline. Mirrors the vibe_hue_lookup table in Postgres.
+ * Keep in sync.
  */
 
 export type VibeHueId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
@@ -42,81 +39,6 @@ export const HUE_BY_ID: Record<VibeHueId, VibeHue> = VIBE_HUES.reduce(
   (acc, h) => { acc[h.id] = h; return acc; },
   {} as Record<VibeHueId, VibeHue>
 );
-
-/**
- * State → saturation modulation.
- * Surging is fully saturated; Quiet drops to 50% (moderate desat,
- * vibe identity stays prominent); Unknown drops to 25% (visibly muted).
- */
-export type StateLabel = 'Surging' | 'Packed' | 'Busy' | 'Lively' | 'Quiet' | 'Unknown';
-
-export function stateToSaturation(state: StateLabel | string | null, vibeBaseSat: number): number {
-  const multiplier = (() => {
-    switch (state) {
-      case 'Surging': return 1.0;
-      case 'Packed':  return 0.95;
-      case 'Busy':    return 0.88;
-      case 'Lively':  return 0.80;
-      case 'Quiet':   return 0.72;
-      case 'Unknown':
-      case null:
-      case undefined: return 0.70;
-      default:        return 0.72;
-    }
-  })();
-  return Math.round(vibeBaseSat * multiplier);
-}
-
-/**
- * Capacity → lightness modulation.
- * Empty venues render slightly dark (35%); full venues render at 55%;
- * over-capacity nudges brighter (60%) to feel "lit up".
- * Returns a value safe to drop into an HSL string.
- */
-export function capacityToLightness(capacityPct: number | null | undefined): number {
-  if (capacityPct == null) return 45;
-  const clamped = Math.min(1.2, Math.max(0, capacityPct));
-  // Linear: 0 → 35, 1.0 → 55, 1.2 → 60
-  if (clamped >= 1.0) return Math.round(55 + (clamped - 1.0) * 25);
-  return Math.round(35 + clamped * 20);
-}
-
-/**
- * Master function. Produces an HSL string for any venue at any moment.
- * Pass the vibe hue ID, current state label, and capacity (0-1+).
- * Returns "hsl(degrees, sat%, light%)" ready for any CSS context.
- */
-export function vibeToHsl(
-  hueId: VibeHueId | null | undefined,
-  state: StateLabel | string | null,
-  capacityPct: number | null | undefined,
-): string {
-  if (hueId == null || !(hueId in HUE_BY_ID)) {
-    // Unknown vibe — render as neutral grey
-    return 'hsl(240, 8%, 60%)';
-  }
-  const hue = HUE_BY_ID[hueId as VibeHueId];
-  const sat = stateToSaturation(state, hue.defaultSat);
-  const light = capacityToLightness(capacityPct);
-  return `hsl(${hue.degrees}, ${sat}%, ${light}%)`;
-}
-
-/**
- * Glow color for halos and shadows. Same hue, higher saturation,
- * mid-lightness, with alpha. Use in box-shadow and radial-gradient.
- */
-export function vibeToGlow(
-  hueId: VibeHueId | null | undefined,
-  state: StateLabel | string | null,
-  alpha = 0.5,
-): string {
-  if (hueId == null || !(hueId in HUE_BY_ID)) {
-    return `rgba(150, 150, 170, ${alpha})`;
-  }
-  const hue = HUE_BY_ID[hueId as VibeHueId];
-  const sat = Math.min(100, stateToSaturation(state, hue.defaultSat) + 15);
-  return `hsla(${hue.degrees}, ${sat}%, 55%, ${alpha})`;
-}
 
 /**
  * Find the closest hue ID by angular distance on the wheel.

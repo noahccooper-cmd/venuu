@@ -21,7 +21,6 @@ import { LiveVenueBubble } from './LiveVenueBubble';
 import { LiveEventsFeed } from './LiveEventsFeed';
 import { HeatFieldLayer } from './HeatFieldLayer';
 import { useHeatField } from '../../hooks/useHeatField';
-import type { Plan as VennyPlan } from '../../lib/types';
 
 /** True between 5pm and 3am local — boosts heat-field intensity. */
 function isNightHours(): boolean {
@@ -260,18 +259,6 @@ interface MapViewProps {
   /** Venue IDs Venny has highlighted. When non-empty, matching bubbles
    *  get an orange ring + scale boost and non-matching bubbles fade. */
   highlightedVenueIds?: string[];
-  /** When non-null, render an orange route polyline + numbered stop
-   *  markers connecting the plan's stops, and fit camera to all. */
-  activePlan?: VennyPlan | null;
-  /** Called when the user taps a numbered route marker. */
-  onPlanStopTap?: (stopIndex: number) => void;
-  /** Stop index the parent currently considers "focused" (e.g. the
-   *  user tapped a stop in the sheet). Receives a brief pulse class
-   *  on its marker. */
-  focusedStopIndex?: number | null;
-  /** Plan sheet state — drives camera ease padding so the focused
-   *  stop stays visible above the sheet. */
-  sheetState?: 'pill' | 'card' | 'full' | null;
   /** Phase C (Vibe canvas) — currently selected venue id (e.g. when the
    *  VenueSheet is open). Threaded to HeatFieldLayer to drive the
    *  tap-bleed expansion in the halos layer. Null → no bleed. */
@@ -404,62 +391,16 @@ function buildEventsGeoJSON(events: VenueEvent[], venues: Venue[]): GeoJSON.Feat
   return { type: 'FeatureCollection', features };
 }
 
-/**
- * drawLineProgress — given an ordered list of [lng, lat] coords and a
- * progress fraction `t` in [0,1], returns the coords subset that
- * represents the line "drawn in" to that fraction of total length.
- * The last point is interpolated between two consecutive coords so the
- * animation looks continuous rather than stepping segment-by-segment.
- */
-function drawLineProgress(coords: [number, number][], t: number): [number, number][] {
-  if (coords.length === 0) return [];
-  if (t <= 0) return [coords[0]];
-  if (t >= 1) return coords;
-
-  // Compute segment lengths in plain euclidean lng/lat space — close
-  // enough for short city-scale plans, and avoids haversine costs on
-  // every RAF tick.
-  let total = 0;
-  const segLens: number[] = [];
-  for (let i = 1; i < coords.length; i++) {
-    const dx = coords[i][0] - coords[i - 1][0];
-    const dy = coords[i][1] - coords[i - 1][1];
-    const len = Math.hypot(dx, dy);
-    segLens.push(len);
-    total += len;
-  }
-  if (total === 0) return [coords[0]];
-
-  const target = total * t;
-  const out: [number, number][] = [coords[0]];
-  let acc = 0;
-  for (let i = 0; i < segLens.length; i++) {
-    const next = acc + segLens[i];
-    if (next >= target) {
-      const local = (target - acc) / (segLens[i] || 1);
-      const x = coords[i][0] + (coords[i + 1][0] - coords[i][0]) * local;
-      const y = coords[i][1] + (coords[i + 1][1] - coords[i][1]) * local;
-      out.push([x, y]);
-      return out;
-    }
-    out.push(coords[i + 1]);
-    acc = next;
-  }
-  return out;
-}
-
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, mapMode = 'vibe', glowEventId = null, litEventVenueIds = undefined, selectedRangeStart = null, selectedRangeEnd = null, eventWindowLabel = '' }: MapViewProps) {
-  // Side pills (share-globe / globe / follow-me) fade out and slide
-  // down while the plan sheet covers the bottom of the map. They
-  // remain visible at PILL state (sheet is at the top) and when no
-  // sheet is active.
-  const sheetHidesSidePills = sheetState === 'card' || sheetState === 'full';
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, mapMode = 'vibe', glowEventId = null, litEventVenueIds = undefined, selectedRangeStart = null, selectedRangeEnd = null, eventWindowLabel = '' }: MapViewProps) {
+  // Side pills (share-globe / globe / follow-me) — always visible now
+  // that the plan sheet (which used to cover the bottom of the map and
+  // hide them) is gone.
   const sidePillSheetStyle: React.CSSProperties = {
-    opacity: sheetHidesSidePills ? 0 : 1,
-    pointerEvents: sheetHidesSidePills ? 'none' : 'auto',
-    transform: sheetHidesSidePills ? 'translateY(20px)' : 'translateY(0)',
+    opacity: 1,
+    pointerEvents: 'auto',
+    transform: 'translateY(0)',
     transition: 'opacity 320ms cubic-bezier(0.2, 0.7, 0.2, 1), transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1), border-color 0.2s, bottom 0.3s',
   };
 
@@ -478,15 +419,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
-  // ── Venny plan route refs ──
-  // Mapbox source+layer pair for the route polyline + glow, plus DOM
-  // markers anchored at each stop. animFrame and `lastSignature` let
-  // us avoid re-animating the draw-in when only the camera moves.
-  const planMarkersRef = useRef<mapboxgl.Marker[]>([]);
-  const planAnimRafRef = useRef<number | null>(null);
-  const planSignatureRef = useRef<string | null>(null);
-  const onPlanStopTapRef = useRef(onPlanStopTap);
-  onPlanStopTapRef.current = onPlanStopTap;
   const eventsRef = useRef(events);
   const onVenueClickRef = useRef(onVenueClick);
   const onEventClickRef = useRef(onEventClick);
@@ -513,27 +445,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   // ── Globe view state (zoom < 4 → "we're at the globe") ───────
   const [isAtGlobe, setIsAtGlobe] = useState(false);
 
-  // Listen for explicit venue-card dismissal from the moments flow.
-  // After MARK fires onPainted, App.tsx dispatches venuu:dismiss-venue-card
-  // so the map is fully visible when the ceremony's bloom radiates from
-  // the venue marker. App also clears focusedVenue directly — this listener
-  // is the defensive fallback for any deeper sheet path that lives below
-  // MapView and listens for the same event.
-  useEffect(() => {
-    const handler = () => {
-      console.log('[MapView] venuu:dismiss-venue-card received');
-      // onVenueClick's parent signature accepts a Venue; calling it with
-      // null is a documented dismiss convention. The cast bypasses the
-      // strict type; the catch swallows if the parent rejects null.
-      try {
-        onVenueClickRef.current(null as unknown as Venue);
-      } catch (err) {
-        console.warn('[MapView] onVenueClick(null) rejected by parent', err);
-      }
-    };
-    window.addEventListener('venuu:dismiss-venue-card', handler);
-    return () => window.removeEventListener('venuu:dismiss-venue-card', handler);
-  }, []);
   const onCityTapFromGlobeRef = useRef(onCityTapFromGlobe);
   onCityTapFromGlobeRef.current = onCityTapFromGlobe;
   const cityPulseFrameRef = useRef<number>(0);
@@ -1731,232 +1642,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       }
     });
   }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds]);
-
-  // ── Venny plan route — orange polyline + glow + numbered markers ──
-  // Adds a dedicated 'venny-route' source/layer pair and a set of DOM
-  // markers at each stop's coordinates. The line gradient-animates
-  // from start to end on first render of a given plan signature; on
-  // re-render with the same plan we leave the static line alone. When
-  // activePlan becomes null we tear everything down cleanly.
-  useEffect(() => {
-    if (!mapLoaded) return;
-    const map = mapRef.current;
-    if (!map) return;
-
-    const teardown = () => {
-      // Cancel any in-flight draw-in animation.
-      if (planAnimRafRef.current != null) {
-        cancelAnimationFrame(planAnimRafRef.current);
-        planAnimRafRef.current = null;
-      }
-      // Remove DOM markers.
-      for (const m of planMarkersRef.current) {
-        try { m.remove(); } catch { /* already gone */ }
-      }
-      planMarkersRef.current = [];
-      // Remove layers/source if present.
-      for (const id of ['venny-route-line', 'venny-route-glow']) {
-        if (map.getLayer(id)) {
-          try { map.removeLayer(id); } catch { /* already gone */ }
-        }
-      }
-      if (map.getSource('venny-route')) {
-        try { map.removeSource('venny-route'); } catch { /* already gone */ }
-      }
-      planSignatureRef.current = null;
-    };
-
-    if (!activePlan || !Array.isArray(activePlan.stops) || activePlan.stops.length < 2) {
-      teardown();
-      return;
-    }
-
-    const stops = activePlan.stops.filter(s =>
-      typeof s?.lat === 'number' && typeof s?.lng === 'number'
-    );
-    if (stops.length < 2) {
-      teardown();
-      return;
-    }
-
-    // Derive the "current" stop — first one with no arrival/skip
-    // markers. Falls back to 0 if every stop is already done.
-    const currentIdx = (() => {
-      const idx = stops.findIndex(s =>
-        !s.arrived_at && !s.visited_at && !s.skipped_at,
-      );
-      return idx === -1 ? Math.max(0, stops.length - 1) : idx;
-    })();
-
-    // Signature includes arrived/skipped state per stop + the focused
-    // index so any state mutation triggers a marker rebuild.
-    const signature = stops
-      .map((s, i) => {
-        const flags = `${s.arrived_at || s.visited_at ? 'a' : ''}${s.skipped_at ? 's' : ''}`;
-        return `${s.venue_id}:${s.lng.toFixed(5)},${s.lat.toFixed(5)}:${flags}:${i === currentIdx ? 'c' : ''}`;
-      })
-      .join('|') + `::focus=${focusedStopIndex ?? -1}`;
-    const sameAsLast = signature === planSignatureRef.current;
-    if (sameAsLast) return;
-
-    teardown();
-    planSignatureRef.current = signature;
-
-    const coords: [number, number][] = stops.map(s => [s.lng, s.lat]);
-
-    // 1. Source — full LineString. We animate by overwriting `data` on
-    //    every RAF tick with a progressively-longer slice. Simple,
-    //    portable across Mapbox versions, no line-gradient needed.
-    map.addSource('venny-route', {
-      type: 'geojson',
-      data: {
-        type: 'Feature',
-        properties: {},
-        geometry: { type: 'LineString', coordinates: [coords[0]] },
-      },
-    });
-
-    // 2. Glow first so the main line paints above it.
-    map.addLayer({
-      id: 'venny-route-glow',
-      type: 'line',
-      source: 'venny-route',
-      paint: {
-        'line-color': '#FF8200',
-        'line-width': 12,
-        'line-opacity': 0.25,
-        'line-blur': 4,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    });
-
-    // 3. Main route line.
-    map.addLayer({
-      id: 'venny-route-line',
-      type: 'line',
-      source: 'venny-route',
-      paint: {
-        'line-color': '#FF8200',
-        'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3, 16, 5],
-        'line-opacity': 0.9,
-        'line-blur': 0.5,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    });
-
-    // 4. Plan stop markers — visual lives in .map-plan-marker* (CSS).
-    //    Variant is derived from each stop's arrived/skipped flags
-    //    plus the derived currentIdx. Focused stop (from the sheet's
-    //    progress strip) gets a one-shot scale pulse via the
-    //    --focused modifier class.
-    stops.forEach((stop, i) => {
-      const isVisited = !!(stop.arrived_at || stop.visited_at);
-      const isSkipped = !!stop.skipped_at && !isVisited;
-      const variant: 'arrived' | 'skipped' | 'current' | 'upcoming' = isVisited
-        ? 'arrived'
-        : isSkipped
-          ? 'skipped'
-          : i === currentIdx
-            ? 'current'
-            : 'upcoming';
-
-      const el = document.createElement('div');
-      el.className = `map-plan-marker map-plan-marker--${variant}`;
-      if (focusedStopIndex === i && variant !== 'current') {
-        el.classList.add('map-plan-marker--focused');
-      }
-      el.setAttribute('aria-label', `Stop ${i + 1}: ${stop.venue_name}`);
-      el.style.zIndex = '20';
-      el.style.setProperty('-webkit-tap-highlight-color', 'transparent');
-
-      if (variant === 'arrived') {
-        el.innerHTML =
-          '<svg width="16" height="16" viewBox="0 0 14 14" fill="none" aria-hidden="true">' +
-          '<path d="M2 7L5.5 10.5L12 4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
-          '</svg>';
-      } else if (variant === 'skipped') {
-        const span = document.createElement('span');
-        span.textContent = '×';
-        span.style.lineHeight = '1';
-        span.style.fontSize = '18px';
-        el.appendChild(span);
-      } else {
-        const span = document.createElement('span');
-        span.textContent = String(i + 1);
-        el.appendChild(span);
-      }
-
-      const handler = (evt: Event) => {
-        evt.stopPropagation();
-        onPlanStopTapRef.current?.(i);
-      };
-      el.addEventListener('click', handler);
-      el.addEventListener('touchend', handler);
-
-      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-        .setLngLat([stop.lng, stop.lat])
-        .addTo(map);
-      planMarkersRef.current.push(marker);
-    });
-
-    // 5. fitBounds — show the whole route with breathing room. The
-    //    bottom padding adapts to the sheet state so the route stays
-    //    visible above the sheet (no plan stops hidden behind it).
-    try {
-      const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
-      const bottomPad =
-        sheetState === 'full' ? Math.round(winH * 0.50) :
-        sheetState === 'card' ? Math.round(winH * 0.40) :
-        120;
-      const bounds = coords.reduce(
-        (b, c) => b.extend(c as [number, number]),
-        new mapboxgl.LngLatBounds(coords[0], coords[0]),
-      );
-      map.fitBounds(bounds, {
-        padding: { top: 100, bottom: bottomPad, left: 60, right: 60 },
-        duration: 1200,
-        essential: true,
-      });
-    } catch {
-      /* swallow — map sometimes refuses fitBounds during entrance anim */
-    }
-
-    // 6. Draw-in animation over ~1500 ms. Interpolate intermediate
-    //    points along each segment so the line grows smoothly.
-    const totalDuration = 1500;
-    const start = performance.now();
-    const animate = () => {
-      const elapsed = performance.now() - start;
-      const t = Math.min(1, elapsed / totalDuration);
-      const drawn = drawLineProgress(coords, t);
-      const src = map.getSource('venny-route') as mapboxgl.GeoJSONSource | undefined;
-      if (src) {
-        src.setData({
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'LineString', coordinates: drawn },
-        });
-      }
-      if (t < 1) {
-        planAnimRafRef.current = requestAnimationFrame(animate);
-      } else {
-        planAnimRafRef.current = null;
-      }
-    };
-    planAnimRafRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      // Effect re-runs (or unmount) → tear it all down so subsequent
-      // renders start clean.
-      teardown();
-    };
-  }, [mapLoaded, activePlan, focusedStopIndex, sheetState]);
 
   // ── Filter pill visibility — show/hide markers via CSS, never delete them ──
   useEffect(() => {
