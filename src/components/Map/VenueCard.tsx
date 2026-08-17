@@ -1,10 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { formatCount, getCapacityPercent } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
-import { useVenueRecaps } from '../../hooks/useVenueRecaps';
-import { useGeofence } from '../../hooks/useGeofence';
-import MomentOrb from '../Moment/MomentOrb';
-import MomentFullScreen from '../Moment/MomentFullScreen';
 import { PunchCard } from '../Loyalty/PunchCard';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
 import { recordSignal } from '../../lib/signals';
@@ -81,161 +77,6 @@ function SpecialsRow({ venue }: { venue: Venue }) {
   );
 }
 
-/* ── Leave a Recap ── */
-
-function LeaveRecap({ disabled }: {
-  venue: Venue;
-  username: string;
-  submitRecap: (u: string, b: string, s: number) => Promise<void>;
-  disabled?: boolean;
-}) {
-  if (disabled) {
-    return (
-      <div className="leave-recap" style={{ textAlign: 'center', padding: '16px' }}>
-        <div style={{
-          color: 'rgba(255,255,255,0.4)',
-          fontSize: '13px',
-          fontFamily: 'Satoshi, sans-serif',
-          fontStyle: 'italic',
-        }}>
-          {'\u2728'} Your moment at this venue is captured
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="leave-recap" style={{
-      textAlign: 'center',
-      padding: '20px 16px',
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px dashed rgba(255,255,255,0.12)',
-      borderRadius: '12px',
-      margin: '12px 0',
-    }}>
-      <div style={{
-        fontSize: '14px',
-        fontWeight: 600,
-        color: 'rgba(255,255,255,0.7)',
-        fontFamily: 'Satoshi, sans-serif',
-        marginBottom: '4px',
-      }}>
-        {'\u2728'} Moments coming soon
-      </div>
-      <div style={{
-        fontSize: '11px',
-        color: 'rgba(255,255,255,0.4)',
-        fontFamily: 'Satoshi, sans-serif',
-      }}>
-        paint + capture one moment per venue, develops at 8am
-      </div>
-    </div>
-  );
-}
-
-/* ── Recap Section (receives hook data from parent to avoid duplicate subscriptions) ── */
-
-interface RecapSectionProps {
-  venue: Venue;
-  username: string;
-  recapData: ReturnType<typeof useVenueRecaps>;
-}
-
-function RecapSection({ venue, username, recapData }: RecapSectionProps) {
-  const { recaps, submitRecap, hasUserRecapped } = recapData;
-  const [openMomentId, setOpenMomentId] = useState<string | null>(null);
-
-  return (
-    <div className="recap-section">
-      {/* moments header */}
-      <div className="recap-header-row">
-        <span className="recap-title">Moments from {venue.name}</span>
-      </div>
-      <div className="recap-list">
-        {(() => {
-          // Only show DEVELOPED moments publicly. Locked ones stay
-          // private to their author (and visible on author's profile
-          // via the read_own_developing RLS policy).
-          const developedMoments = recaps.filter(r => {
-            if (!r.developed_at) return false;
-            return new Date(r.developed_at).getTime() <= Date.now();
-          });
-
-          if (developedMoments.length === 0) {
-            return (
-              <div style={{
-                padding: '24px 16px',
-                textAlign: 'center',
-                color: 'rgba(255,255,255,0.3)',
-                fontSize: '13px',
-                fontStyle: 'italic',
-                fontFamily: 'Satoshi, sans-serif',
-              }}>
-                No moments captured here yet
-              </div>
-            );
-          }
-
-          return (
-            <div style={{
-              display: 'flex',
-              flexDirection: 'row',
-              gap: '14px',
-              padding: '12px 4px 16px',
-              overflowX: 'auto',
-              WebkitOverflowScrolling: 'touch',
-              scrollbarWidth: 'none',
-            }}>
-              {developedMoments.map(m => {
-                const momentForOrb = {
-                  id: m.id,
-                  venue_id: venue.id,
-                  venue_name: venue.name,
-                  photo_url: m.photo_url || '',
-                  hue_at_capture: m.hue_at_capture || 0,
-                  developed_at: m.developed_at || new Date().toISOString(),
-                  created_at: m.created_at,
-                  username: m.username,
-                };
-                return (
-                  <MomentOrb
-                    key={m.id}
-                    moment={momentForOrb}
-                    size="venue-card"
-                    onTap={() => setOpenMomentId(m.id)}
-                  />
-                );
-              })}
-            </div>
-          );
-        })()}
-      </div>
-      <LeaveRecap venue={venue} username={username} submitRecap={submitRecap} disabled={hasUserRecapped} />
-
-      {openMomentId && (() => {
-        const m = recaps.find(r => r.id === openMomentId);
-        if (!m) return null;
-        return (
-          <MomentFullScreen
-            open={true}
-            moment={{
-              id: m.id,
-              venue_id: venue.id,
-              venue_name: venue.name,
-              photo_url: m.photo_url || '',
-              hue_at_capture: m.hue_at_capture || 0,
-              developed_at: m.developed_at || new Date().toISOString(),
-              created_at: m.created_at,
-              username: m.username,
-            }}
-            onClose={() => setOpenMomentId(null)}
-          />
-        );
-      })()}
-    </div>
-  );
-}
-
 /* ── Main VenueSheet (Pull-Up Bottom Sheet) ── */
 
 const EVENT_TYPE_LABELS: Record<VenueEvent['event_type'], string> = {
@@ -251,7 +92,6 @@ export function VenueSheet({
   venue,
   headcount,
   venueEvent,
-  username,
   userId,
   onSignIn,
   onClose,
@@ -264,9 +104,6 @@ export function VenueSheet({
   const [sheetState, setSheetState] = useState<SheetState>('peeked');
 
   const sheetRef = useRef<HTMLDivElement>(null);
-  const recapRef = useRef<HTMLDivElement>(null);
-  const recapData = useVenueRecaps(venue.id, username);
-  const geofence = useGeofence(venue.lat, venue.lng);
   const startYRef = useRef(0);
   const currentYRef = useRef(0);
   const isDragging = useRef(false);
@@ -296,13 +133,6 @@ export function VenueSheet({
     setSheetState('hidden');
     setTimeout(onClose, 300);
   }, [onClose]);
-
-  const handleOpenRecap = useCallback(() => {
-    setSheetState('expanded');
-    setTimeout(() => {
-      recapRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 400);
-  }, []);
 
   const handleUber = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -688,10 +518,6 @@ export function VenueSheet({
               <span className="sa-label">Call</span>
             </div>
           ))}
-          <button onClick={handleOpenRecap} className="sheet-action-btn">
-            <span className="sa-icon">{'\u2B50'}</span>
-            <span className="sa-label">Recap</span>
-          </button>
           {onAskVenny && (
             <button onClick={onAskVenny} className="sheet-action-btn">
               <span className="sa-icon">{'\u2728'}</span>
@@ -734,83 +560,15 @@ export function VenueSheet({
           )}
         </div>
 
-        {/* Loyalty Punch Card — bars only (frats don't have loyalty) */}
-        {venue.category !== 'fraternity' && (
+        {/* Loyalty Punch Card — only mounted where loyalty is actually
+            enabled, so useLoyalty's queries + realtime subscription don't
+            fire on every bar's card, just the ones with loyalty_active. */}
+        {venue.category !== 'fraternity' && venue.loyalty_active && (
           <div style={{ padding: '0 16px' }}>
             <PunchCard venueId={venue.id} venueName={venue.name} venueLat={venue.lat} venueLng={venue.lng} loyaltyActive={venue.loyalty_active ?? false} nfcRequired={venue.nfc_required ?? false} userId={userId} onSignIn={onSignIn} />
           </div>
         )}
 
-        {/* In-app paint entry — new in 44A. Same destination as push-driven
-            paint, additional entry point. Geofence verified on tap. */}
-        {username && username !== 'Guest' && (
-          <div style={{
-            padding: '14px 16px',
-            margin: '12px 0',
-            borderRadius: '14px',
-            background: 'rgba(255, 130, 0, 0.04)',
-            border: '1px solid rgba(255, 130, 0, 0.18)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-          }}>
-            <button
-              onClick={() => {
-                if (!geofence.isNearVenue) {
-                  // Not inside — show the friendly message instead.
-                  // We use a simple alert here for now; PROMPT 44B will
-                  // polish this to a toast.
-                  const dist = geofence.distance != null ? `${geofence.distance}m` : 'unknown distance';
-                  alert(`Get within 200m of ${venue.name} to paint your night. You're ${dist} away.`);
-                  return;
-                }
-                // Geofenced — open CaptureSurface for this venue.
-                // The actual open path is owned by App.tsx; we dispatch a
-                // custom event the App listens for to open the capture
-                // surface with this venue. (49c — replaced the legacy
-                // venuu:request-paint path.)
-                window.dispatchEvent(new CustomEvent('venuu:request-capture', {
-                  detail: { venueId: venue.id, venueName: venue.name, lat: venue.lat, lng: venue.lng },
-                }));
-              }}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                background: 'transparent',
-                border: 'none',
-                color: '#FF8200',
-                fontFamily: 'Satoshi, sans-serif',
-                fontSize: '14px',
-                fontWeight: 700,
-                letterSpacing: '1.5px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                textAlign: 'center',
-              }}
-            >
-              {'✦'} capture {venue.name.toLowerCase()}
-            </button>
-            {!geofence.isNearVenue && geofence.distance != null && (
-              <div style={{
-                fontSize: '10px',
-                color: 'rgba(255,255,255,0.35)',
-                fontFamily: 'Satoshi, sans-serif',
-                textAlign: 'center',
-                letterSpacing: '0.5px',
-              }}>
-                you must be inside · {geofence.distance}m away
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Divider */}
-        <div className="sheet-divider" />
-
-        {/* The Recap */}
-        <div ref={recapRef}>
-          <RecapSection venue={venue} username={username} recapData={recapData} />
-        </div>
       </div>
     </div>
     </>

@@ -272,3 +272,43 @@ export interface SecurityOrganization {
   created_at: string;
   is_active: boolean;
 }
+
+/* ── Venny Plans ── */
+
+export interface PlanStop {
+  venue_id: string;
+  venue_name: string;
+  lat: number;
+  lng: number;
+  arrival_time: string;
+  duration_min: number;
+  vibe_note?: string | null;
+  estimated_cost?: number | null;
+  /** Canonical arrival timestamp — set by tap or by the proximity
+   *  detector's ENTER event. Persisted onto night_plans.stops[i]
+   *  for saved plans. */
+  arrived_at?: string | null;
+  /** Set when the user hold-skipped this stop. */
+  skipped_at?: string | null;
+  /** Set on the final stop when the user taps "end the night". */
+  completed_at?: string | null;
+  /** true if arrival was a user tap, false/null if proximity detector
+   *  auto-credited the visit. */
+  confirmed_manually?: boolean | null;
+  /** Set when the user advances past this stop to the next. */
+  left_at?: string | null;
+  /** Legacy alias — older client wrote this. Read as a fallback when
+   *  arrived_at is absent. */
+  visited_at?: string | null;
+}
+
+export interface Plan {
+  title: string;
+  summary?: string | null;
+  vibe_tags?: string[] | null;
+  stops: PlanStop[];
+  total_estimated_cost?: number | null;
+  total_duration_min?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
+}

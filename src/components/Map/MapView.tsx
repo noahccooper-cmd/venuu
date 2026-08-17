@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useMemo, useState, type MutableRefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState, type MutableRefObject } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import mapboxgl from 'mapbox-gl';
 import { Globe, Share2 } from 'lucide-react';
@@ -21,29 +21,12 @@ import { LiveVenueBubble } from './LiveVenueBubble';
 import { LiveEventsFeed } from './LiveEventsFeed';
 import { HeatFieldLayer } from './HeatFieldLayer';
 import { useHeatField } from '../../hooks/useHeatField';
-import type { Plan as VennyPlan } from '../Venny/PlanCard';
-import { FEATURE_FLAGS } from '../../lib/featureFlags';
-import { CityPulseLine } from '../Market/CityPulseLine';
-import { MoversChip } from '../Market/MoversDrawer';
-import { MarketPanel } from '../Market/MarketPanel';
-import { MarketTicker } from '../Market/MarketTicker';
+import type { Plan as VennyPlan } from '../../lib/types';
 
 /** True between 5pm and 3am local — boosts heat-field intensity. */
 function isNightHours(): boolean {
   const hour = new Date().getHours();
   return hour >= 17 || hour < 3;
-}
-
-/** Great-circle distance in km between two (lat, lng) pairs. Used by
- *  the smart-density name-label heuristic ("within ~500m of user"). */
-function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const x = Math.sin(dLat / 2) ** 2
-          + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(x));
 }
 
 // Compact pin-time format: "FRI 9PM", "JUN 26", etc.
@@ -135,28 +118,6 @@ function getCountFontSize(count: number): string {
   if (count <= 100) return '15px';
   if (count <= 150) return '17px';
   return '19px';
-}
-
-/** Heat-map weighting: stamp pearl border + halo + breathing class onto
- *  a venue bubble that the current user has captured. Idempotent — safe
- *  to call repeatedly. The pearl rgba fingerprint (255, 248, 231) lets
- *  us detect prior application and avoid re-stacking shadows. */
-function applyUserMarkedEnhancement(bubbleEl: HTMLDivElement, isMarked: boolean) {
-  if (isMarked) {
-    bubbleEl.dataset.userMarked = 'true';
-    bubbleEl.classList.add('user-marked-venue');
-    bubbleEl.style.border = '2px solid rgba(255, 248, 231, 0.85)';
-    const existing = bubbleEl.style.boxShadow || '';
-    // Pearl rgba fingerprint detects prior application — skip stacking
-    // if the helper already ran on this current boxShadow value.
-    if (!existing.includes('255, 248, 231')) {
-      const pearl = '0 0 24px rgba(255, 248, 231, 0.45), 0 0 8px rgba(255, 252, 239, 0.7)';
-      bubbleEl.style.boxShadow = existing ? `${existing}, ${pearl}` : pearl;
-    }
-  } else if (bubbleEl.dataset.userMarked === 'true') {
-    delete bubbleEl.dataset.userMarked;
-    bubbleEl.classList.remove('user-marked-venue');
-  }
 }
 
 /** Featured bubbles glow in the venue's signature vibe hue. Maps the
@@ -315,11 +276,6 @@ interface MapViewProps {
    *  VenueSheet is open). Threaded to HeatFieldLayer to drive the
    *  tap-bleed expansion in the halos layer. Null → no bleed. */
   selectedVenueId?: string | null;
-  /** Set of venue IDs the current user has captured. Venues in
-   *  this set render with enhanced glow + pearl border + subtle
-   *  breathing animation. Drives the "your marks shine brighter
-   *  to me" daily monument feature. Empty set = no enhancement. */
-  userVenueIds?: Set<string>;
   /** Current map mode — gates event-layer visibility + venue dimming. */
   mapMode?: 'vibe' | 'events';
   /** Event id whose pin should glow gold (set when a lineup card is
@@ -494,7 +450,7 @@ function drawLineProgress(coords: [number, number][], t: number): [number, numbe
 
 /* ── Main MapView Component ──────────── */
 
-export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, userVenueIds, mapMode = 'vibe', glowEventId = null, litEventVenueIds = undefined, selectedRangeStart = null, selectedRangeEnd = null, eventWindowLabel = '' }: MapViewProps) {
+export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulsedVenueId, events, coverPrices, userLocation, route, routeDuration, routeDistance, routeDestination, routeArrived, followMode, onVenueClick, onEventClick, onMapTap, onCityTapFromGlobe, cityAggregates, totalPeopleOut, introActive, introPhase, onMapReady, onShareGlobe, sharingGlobe, onCancelRoute, onPriceTap, onToggleFollow, onUserDragMap, mapInstanceRef, highlightedVenueIds, activePlan, onPlanStopTap, focusedStopIndex, sheetState, mapMode = 'vibe', glowEventId = null, litEventVenueIds = undefined, selectedRangeStart = null, selectedRangeEnd = null, eventWindowLabel = '' }: MapViewProps) {
   // Side pills (share-globe / globe / follow-me) fade out and slide
   // down while the plan sheet covers the bottom of the map. They
   // remain visible at PILL state (sheet is at the top) and when no
@@ -519,49 +475,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const nightPhaseRef = useRef(getNightPhase());
   const entrancePlayedRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
-  // Market-mode zoom bucket. Only the bucket transitions trigger a
-  // React re-render of the LiveVenueBubble overlay — keeps zoom
-  // interactions cheap. Snapped to a representative zoom number so
-  // the bubble can do its own < 13 / < 15 / >= 15 tier math.
-  const [marketZoom, setMarketZoom] = useState<number>(16);
-  const marketZoomBucketRef = useRef<'wide' | 'mid' | 'tight'>('tight');
-  // Market View Mode — the signature gesture. Chip morphs upward
-  // into MarketPanel via shared layoutId; map bubbles BOLD-transform
-  // with staggered choreography while active.
-  const [marketViewActive, setMarketViewActive] = useState(false);
-  // Currently-spotlighted venue from the panel; the matching bubble
-  // overrides scale + adds a pulsing glow. Cleared on exit.
-  const [spotlightVenueId, setSpotlightVenueId] = useState<string | null>(null);
-  const exitMarketView = useCallback(() => {
-    setMarketViewActive(false);
-    setSpotlightVenueId(null);
-  }, []);
-  // Biggest absolute delta in this batch defines the BOLD entry
-  // stagger curve. Each bubble's `movementMagnitude` = |its delta| /
-  // maxAbsDelta, so the strongest mover gets delay 0, weakest gets
-  // ~600ms. Recomputed when the venue list changes.
-  const maxAbsDelta = useMemo(() => {
-    let max = 0;
-    for (const v of venues as VenueWithEstimate[]) {
-      const d = v.headcount_estimates?.[0]?.delta_pct;
-      if (typeof d === 'number') {
-        const abs = Math.abs(d);
-        if (abs > max) max = abs;
-      }
-    }
-    return max > 0 ? max : 1;
-  }, [venues]);
-  // Top-5 venues by |delta_pct| — these always show their name label
-  // regardless of zoom. Membership is computed once per venue batch and
-  // memoized so the per-marker render loop is a cheap Set.has() lookup.
-  const topMoverIds = useMemo(() => {
-    const ranked = (venues as VenueWithEstimate[])
-      .map(v => ({ id: v.id, abs: Math.abs(v.headcount_estimates?.[0]?.delta_pct ?? 0) }))
-      .filter(x => x.abs > 0)
-      .sort((a, b) => b.abs - a.abs)
-      .slice(0, 5);
-    return new Set(ranked.map(x => x.id));
-  }, [venues]);
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
@@ -575,11 +488,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const onPlanStopTapRef = useRef(onPlanStopTap);
   onPlanStopTapRef.current = onPlanStopTap;
   const eventsRef = useRef(events);
-  // Mirror of userVenueIds in a ref so the imperative marker-styling
-  // hot path can read it without re-running the syncMarkers effect
-  // every time the user captures a new moment.
-  const userVenueIdsRef = useRef<Set<string>>(userVenueIds ?? new Set());
-  userVenueIdsRef.current = userVenueIds ?? new Set();
   const onVenueClickRef = useRef(onVenueClick);
   const onEventClickRef = useRef(onEventClick);
   const onPriceTapRef = useRef(onPriceTap);
@@ -604,23 +512,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
   // ── Globe view state (zoom < 4 → "we're at the globe") ───────
   const [isAtGlobe, setIsAtGlobe] = useState(false);
-  // Unified globe-zoom signal broadcast by TonightPage (single source of
-  // truth for hiding metro pills). Drives the MoversChip hide so the chip
-  // disappears at the universe view in unison with the other pills.
-  const [globalIsAtGlobe, setGlobalIsAtGlobe] = useState(false);
-  useEffect(() => {
-    const handler = (e: Event) => setGlobalIsAtGlobe((e as CustomEvent).detail.isAtGlobe);
-    window.addEventListener('venuu:globe-state', handler as EventListener);
-    return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
-  }, []);
-  // Drop-open broadcast (from TheDrop) — fades the ticker while a drop is
-  // being read. Stats card stays visible (masthead).
-  const [isDropOpen, setIsDropOpen] = useState(false);
-  useEffect(() => {
-    const handler = (e: Event) => setIsDropOpen((e as CustomEvent).detail.isOpen);
-    window.addEventListener('venuu:drop-state', handler as EventListener);
-    return () => window.removeEventListener('venuu:drop-state', handler as EventListener);
-  }, []);
 
   // Listen for explicit venue-card dismissal from the moments flow.
   // After MARK fires onPainted, App.tsx dispatches venuu:dismiss-venue-card
@@ -711,15 +602,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         tVisible = true;
       }
 
-      // Market-mode bucket. Snap to a representative zoom number so
-      // bubbles only repaint when crossing a tier boundary, not on
-      // every animation tick.
-      const nextBucket: 'wide' | 'mid' | 'tight' =
-        zoom < 13 ? 'wide' : zoom < 15 ? 'mid' : 'tight';
-      if (nextBucket !== marketZoomBucketRef.current) {
-        marketZoomBucketRef.current = nextBucket;
-        setMarketZoom(nextBucket === 'wide' ? 11 : nextBucket === 'mid' ? 14 : 16);
-      }
     });
 
     // Set initial state in case map starts zoomed out
@@ -1692,12 +1574,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         labelEl.style.color = '#F5F0EB';
       }
 
-      // Heat-map weighting: pearl enhancement for venues the current
-      // user has captured. Layers on top of whatever stage the venue
-      // is at (featured, fraternity, plain). Re-applied by the
-      // heat-map sync below whenever stage changes.
-      applyUserMarkedEnhancement(bubbleEl, userVenueIdsRef.current.has(venue.id));
-
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         onVenueClickRef.current(venue);
@@ -1815,28 +1691,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.el.style.zIndex = '';
       }
 
-      // Per-venue magnitude for the BOLD stagger curve. Falls back to
-      // 0 when delta_pct is missing — those bubbles light last.
-      const venueAbsDelta = typeof est?.delta_pct === 'number' ? Math.abs(est.delta_pct) : 0;
-      const movementMagnitude = venueAbsDelta / maxAbsDelta;
-
-      // Smart-density name label heuristic: top-5 mover, spotlit,
-      // tight-zoom (≥ 16), or within ~500 m of the user's location.
-      // Everywhere else the bubble stays anonymous to keep the map
-      // legible at city zoom.
-      const isVenueSpotlight = marketViewActive && v.id === spotlightVenueId;
-      let showName = false;
-      if (isVenueSpotlight) {
-        showName = true;
-      } else if (topMoverIds.has(v.id)) {
-        showName = true;
-      } else if (marketZoom >= 16) {
-        showName = true;
-      } else if (userLocation && typeof v.lat === 'number' && typeof v.lng === 'number') {
-        const dKm = haversineKm(userLocation.lat, userLocation.lng, v.lat, v.lng);
-        if (dKm < 0.5) showName = true;
-      }
-
       entry.reactRoot.render(
         <LiveVenueBubble
           venueId={v.id}
@@ -1845,13 +1699,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           estimate={usable ? est : null}
           introBloomDelay={bloomDelay}
           highlighted={isHighlighted}
-          mapZoom={marketZoom}
-          marketView={marketViewActive}
-          isSpotlight={isVenueSpotlight}
-          movementMagnitude={movementMagnitude}
-          showName={mapMode === 'events' ? false : showName}
           vibeHueBaseline={v.vibe_hue_baseline ?? null}
-          userMarked={userVenueIdsRef.current.has(v.id)}
         />
       );
 
@@ -1882,7 +1730,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.currentStage = -1; // force the legacy visuals sync to repaint
       }
     });
-  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds, marketZoom, marketViewActive, spotlightVenueId, maxAbsDelta, topMoverIds, userLocation, userVenueIds]);
+  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds]);
 
   // ── Venny plan route — orange polyline + glow + numbered markers ──
   // Adds a dedicated 'venny-route' source/layer pair and a set of DOM
@@ -2333,10 +2181,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           entry.bubbleEl.classList.remove('active-glow');
         }
 
-        // Re-apply user-marked pearl enhancement — the stage repaint
-        // above clobbered border + boxShadow, so layer it back on.
-        applyUserMarkedEnhancement(entry.bubbleEl, userVenueIdsRef.current.has(venueId));
-
         entry.currentStage = visuals.stage;
       }
 
@@ -2368,9 +2212,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
             entry.ringEl.style.border = `2px solid ${visuals.color}`;
           }
         }
-        // Re-apply user-marked pearl enhancement (event-charged path
-        // overwrote boxShadow + border above).
-        applyUserMarkedEnhancement(entry.bubbleEl, userVenueIdsRef.current.has(venueId));
       }
 
       // Update count text with animated ticker + font size
@@ -2420,21 +2261,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       }
     });
   }, [venues, mapLoaded]);
-
-  // ── User-marked enhancement sync ──
-  // Re-walks every existing marker whenever the user's captured-venue
-  // set changes (e.g. they just captured a new moment). The helper is
-  // idempotent + cheap, so this is fine to run on every set update.
-  // Skips markers with the React live overlay since those handle their
-  // own user-mark via LiveVenueBubble's `userMarked` prop.
-  useEffect(() => {
-    if (!mapLoaded) return;
-    const ids = userVenueIds ?? new Set<string>();
-    markersRef.current.forEach((entry, venueId) => {
-      if (entry.hasLiveOverlay) return;
-      applyUserMarkedEnhancement(entry.bubbleEl, ids.has(venueId));
-    });
-  }, [userVenueIds, mapLoaded, venues]);
 
   // ── Cover price tags on venue markers ──
   useEffect(() => {
@@ -3422,69 +3248,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   return (
     <div className="w-full h-full" style={{ position: 'relative' }}>
       <div ref={mapContainer} className="w-full h-full" />
-
-      {/* Phase 4 market UX overlays — flag-gated. Pulse line self-hides
-          when there's no confident data. MoversChip floats bottom-left
-          when there are movers; tapping it morphs into MarketPanel via
-          a shared layoutId, replacing the old bottom-sheet drawer. */}
-      {FEATURE_FLAGS.MARKET_UX && (
-        <>
-          {/* City pulse stats card — single-line, top row. Hides at globe
-              zoom (Knoxville-specific narration doesn't belong there). */}
-          <div className="map-pulse-line-wrapper">
-            <div style={{
-              opacity: globalIsAtGlobe ? 0 : 1,
-              pointerEvents: globalIsAtGlobe ? 'none' : 'auto',
-              transition: 'opacity 0.3s ease',
-            }}>
-              <CityPulseLine city={city} />
-            </div>
-          </div>
-          {/* Ticker — second row, positioned independently below the stats
-              card. Self-hides at globe zoom via its own listener. */}
-          <div className="map-pulse-line-wrapper" style={{
-            top: 'calc(env(safe-area-inset-top) + 94px)',
-            opacity: (globalIsAtGlobe || isDropOpen) ? 0 : 1,
-            pointerEvents: (globalIsAtGlobe || isDropOpen) ? 'none' : 'auto',
-            transition: 'opacity 0.25s ease',
-          }}>
-            <MarketTicker
-              city={city}
-              onVenueTap={(venue) => {
-                mapRef.current?.flyTo({
-                  center: [venue.lng, venue.lat],
-                  zoom: 16,
-                  duration: 1100,
-                  essential: true,
-                });
-                setSpotlightVenueId(venue.venue_id);
-              }}
-            />
-          </div>
-          {!globalIsAtGlobe && (
-            <MoversChip
-              city={city}
-              onOpen={() => setMarketViewActive(true)}
-              hidden={marketViewActive}
-            />
-          )}
-          <MarketPanel
-            city={city}
-            active={marketViewActive}
-            onClose={exitMarketView}
-            onVenueTap={(venueId, venue) => {
-              setSpotlightVenueId(venueId);
-              mapRef.current?.flyTo({
-                center: [venue.lng, venue.lat],
-                zoom: 16,
-                duration: 1100,
-                essential: true,
-              });
-            }}
-            spotlightVenueId={spotlightVenueId}
-          />
-        </>
-      )}
 
       {/* Walking navigation overlays */}
       {route && routeDuration != null && routeDistance != null && (

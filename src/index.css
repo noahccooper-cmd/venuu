@@ -2411,29 +2411,6 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Phase 4.6 — map top-bar wrapper for the City Pulse Line.
-   pointer-events: none on the wrapper so map taps pass through
-   the dead space around the strip; auto on its children so the
-   pulse line + embedded chip stay interactive.
-   ───────────────────────────────────────────────────────────── */
-.map-pulse-line-wrapper {
-  /* Viewport-fixed so the stats card / ticker share ONE coordinate space
-     with the other pills (TheDrop, VennyBar). Previously absolute inside
-     TonightPage's offset container, which double-counted the safe-area
-     inset and inherited a stale +80 — the source of the pill overlap. */
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0) + 52px);
-  left: 12px;
-  right: 12px;
-  z-index: 50;
-  pointer-events: none;
-}
-
-.map-pulse-line-wrapper > * {
-  pointer-events: auto;
-}
-
 /* Phase 4.5 — pulse dot rendered next to assistant messages that
    cited live market data (city pulse, a delta_pct, or a mover venue
    with "tonight/right now" framing). Green to match the Surging
@@ -5270,45 +5247,15 @@ body[data-sheet-state="pill"] .map-side-pill {
   }
 }
 
-/* User-marked venue breathing — subtle 7-second pulse on
-   captured venues. Drives the "alive in my memory" feeling
-   for the heat map weighting feature. */
-@-webkit-keyframes user-marked-breathe {
-  0%, 100% {
-    filter: brightness(1) drop-shadow(0 0 6px rgba(255, 248, 231, 0.4));
-  }
-  50% {
-    filter: brightness(1.05) drop-shadow(0 0 14px rgba(255, 252, 239, 0.65));
-  }
-}
-@keyframes user-marked-breathe {
-  0%, 100% {
-    filter: brightness(1) drop-shadow(0 0 6px rgba(255, 248, 231, 0.4));
-  }
-  50% {
-    filter: brightness(1.05) drop-shadow(0 0 14px rgba(255, 252, 239, 0.65));
-  }
-}
-
-.user-marked-venue {
-  -webkit-animation: user-marked-breathe 7s ease-in-out infinite;
-  animation: user-marked-breathe 7s ease-in-out infinite;
-}
-
 /* ── Events mode — body-level UI hiding ──────────────────────
  * When the user taps the EVENTS toggle, App.tsx adds the
  * events-mode-active class to <body>. Body-level overlays fade
  * out so the event pulses own the visual hierarchy. Class names
- * map to the real component roots: CityPulseLine (.city-pulse-line),
- * MiniVennyPill (.mini-venny), TheDrop (.drop-pill-wrapper),
- * MarketTicker (.market-ticker).
+ * map to the real component roots: MiniVennyPill (.mini-venny),
+ * TheDrop (.drop-pill-wrapper).
  */
-body.events-mode-active .city-pulse-line,
 body.events-mode-active .mini-venny,
-body.events-mode-active .drop-pill-wrapper,
-body.events-mode-active .market-ticker,
-body.events-mode-active .map-pulse-line-wrapper,
-body.events-mode-active .movers-chip {
+body.events-mode-active .drop-pill-wrapper {
   opacity: 0 !important;
   transform: translateY(40px) !important;
   pointer-events: none !important;
@@ -5316,12 +5263,8 @@ body.events-mode-active .movers-chip {
               transform 350ms cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
-body:not(.events-mode-active) .city-pulse-line,
 body:not(.events-mode-active) .mini-venny,
-body:not(.events-mode-active) .drop-pill-wrapper,
-body:not(.events-mode-active) .market-ticker,
-body:not(.events-mode-active) .map-pulse-line-wrapper,
-body:not(.events-mode-active) .movers-chip {
+body:not(.events-mode-active) .drop-pill-wrapper {
   transition: opacity 350ms cubic-bezier(0.32, 0.72, 0, 1),
               transform 350ms cubic-bezier(0.32, 0.72, 0, 1);
 }

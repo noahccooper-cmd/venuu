@@ -18,7 +18,7 @@ import { getCityKnowledge } from './knowledge.ts';
  * Each iteration of the tool loop:
  *   • If the assistant emitted tool_use blocks, we execute them
  *     server-side (search_venues / get_user_taste / set_user_preference
- *     / highlight_on_map / compose_plan / save_plan) and feed the
+ *     / highlight_on_map / tool_check_live_status) and feed the
  *     tool_result back.
  *   • If the assistant emitted text + end_turn, we stream the final
  *     reply to the client.
@@ -37,23 +37,8 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
-// Sonnet is invoked server-side only inside compose_plan — Haiku stays
-// the persona Venny on the user-facing turn. Hybrid keeps the
-// conversation cheap/fast while letting plan composition use the
-// stronger reasoner for vibe arc + walking-distance + budget.
-const ANTHROPIC_PLANNER_MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 1024;
-// Headroom for the signed-in path: compose injects ratedArcsBlock +
-// user-memory context, which makes Sonnet's plan JSON longer. 1500 could
-// truncate mid-JSON → plan_parse_failed. 2500 leaves margin.
-const PLANNER_MAX_TOKENS = 2500;
 const TOOL_LOOP_GUARD = 6; // hard ceiling on tool-call iterations
-
-// Plan constraints — clamped server-side regardless of what Haiku asks.
-const PLAN_MIN_STOPS = 2;
-const PLAN_MAX_STOPS = 3;
-const PLAN_MAX_WALK_METERS = 800;   // sequential stops must be walkable
-const PLAN_BUDGET_BUFFER = 1.10;    // 10% over input budget = warn, not reject
 
 // Vibe-tag triggers that flip the frat filter from default-deny to allow.
 const FRAT_INTENT_TAGS = ['frat', 'greek', 'house party', 'fraternity', 'sorority'];
@@ -142,40 +127,6 @@ const TOOLS = [
     },
   },
   {
-    name: 'compose_plan',
-    description:
-      "Compose a 2 or 3 stop night plan. Call THIS REFLEXIVELY whenever the user asks ANYTHING that smells like a plan request — 'where should I go,' 'what's good,' 'plan my night,' 'make me a night,' or even just 'I'm bored.' Run search_venues first if you have time, but if not, call compose_plan with just city and Sonnet will handle the rest. NEVER ask more than ONE clarifying question before composing. Defaults: budget=$50, group=2, stops=3, start='now', vibe='whatever's alive.' Set driving=true for Tampa or St. Petersburg unless user says they want to walk. Returns plan with stops, timing, route, budget.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        vibe: { type: 'string', description: 'Vibe descriptor from user — chill, chaos, dance floor, dive, upscale. Defaults to "whatever\'s alive tonight" if missing.' },
-        city: { type: 'string', description: 'City slug — knoxville / tampa / st_petersburg.' },
-        budget_per_person_max: { type: 'number', description: 'Per-person budget in USD. Defaults to 50.' },
-        start_time: { type: 'string', description: 'When the night starts. "now" or "8:30 PM". Defaults to "now".' },
-        end_time: { type: 'string', description: 'When the night ends. Defaults to "2:00 AM".' },
-        group_size: { type: 'number', description: 'Number of people. Defaults to 2.' },
-        num_stops: { type: 'number', description: '2 or 3. Defaults to 3.' },
-        candidate_venue_ids: { type: 'array', items: { type: 'string' }, description: 'Optional — if you already ran search_venues, pass the IDs.' },
-        avoid_venue_ids: { type: 'array', items: { type: 'string' }, description: 'Venues to avoid — e.g. ones already in user moments.' },
-        driving: { type: 'boolean', description: 'True if user is driving/Ubering. Defaults to false (walking). Set TRUE for Tampa and St. Petersburg by default since these are multi-district cities.' },
-      },
-      required: ['city'],
-    },
-  },
-  {
-    name: 'save_plan',
-    description:
-      "Save a composed plan to the user's account. Call ONLY after a plan was composed AND the user confirmed they want it saved ('yes,' 'save it,' 'let's do it').",
-    input_schema: {
-      type: 'object',
-      properties: {
-        plan_data: { type: 'object' },
-        title: { type: 'string' },
-      },
-      required: ['plan_data', 'title'],
-    },
-  },
-  {
     name: 'tool_check_live_status',
     description:
       "Look up the current live state of a specific venue by name or slug. Use when the user asks about a specific venue and you need its current delta_pct, state_label, and confidence beyond what's already in the live market data section. Returns null if no fresh data (confidence too low, or outside the active window).",
@@ -191,63 +142,6 @@ const TOOLS = [
     },
   },
 ];
-
-// ──────────────────────────────────────────────────────────────
-//  Sonnet planner — composes structured plans server-side
-// ──────────────────────────────────────────────────────────────
-
-const SONNET_PLANNER_SYSTEM_PROMPT = `You are venuu's plan composition engine. You compose multi-stop night plans from candidate venues. You return ONLY valid JSON — no prose, no explanation, no markdown.
-
-═══ HARD RULES ═══
-
-1. Plans MUST be 2 or 3 stops. Never 1. Never 4 or more.
-2. Distance rule depends on the input.driving flag:
-   - If driving === false: stops MUST be walkable — under 800m apart. This is the Knoxville Strip default.
-   - If driving === true: stops should be reasonably close — prefer under 5km apart. This is the Tampa/St. Pete multi-district default. Mention "quick Uber" or "5 min drive" in vibe_note if stops are >1km apart so the user knows.
-   - If candidates don't support either, return the smallest valid plan you can — but ALWAYS return a plan, never refuse to compose.
-3. Total budget MUST stay under input.budget_per_person_max. If impossible, return your best attempt and flag it.
-4. Arc the vibe: stop 1 lighter → stop N harder. Don't start at a dance floor. Don't end at a quiet cocktail bar (unless user explicitly asked for that arc).
-5. Time spacing: 60-90 min per stop. Total plan duration roughly 2-3 hours. Account for closing times (most venues close 2am).
-6. Prefer active/lively venues over Unknown-state. Never include venues without descriptions unless candidates force it.
-7. Each stop's vibe_note must be SPECIFIC — say WHY this venue at this point in the night. Not "great spot" — instead "start lighter here, dim room, easy conversation before the energy picks up."
-
-═══ RATED ARCS ═══
-
-If a <rated_arcs> block is appended to this system prompt, treat it as the MOST IMPORTANT composition signal. The user has explicitly rated those nights highly. Bias your composition toward:
-
-* Similar venue types (if rated arcs feature dive bars → cocktail bars, lean that direction)
-* Similar pacing (3-stop vs 2-stop, geography spread, time-per-stop)
-* Similar mood (if mood_tags repeat across rated arcs, the user consistently wants that energy)
-
-Do NOT clone the rated arc — vary the venues, add freshness. But the SHAPE should resemble what worked before. If no <rated_arcs> block is present, compose from the candidates as usual.
-
-═══ OUTPUT SCHEMA ═══
-
-{
-  "title": "short evocative title (e.g. 'Old City Last Call', 'SoHo Sundown')",
-  "summary": "one sentence describing the night's arc",
-  "vibe_tags": ["tag1", "tag2"],
-  "stops": [
-    {
-      "venue_id": "uuid",
-      "venue_name": "name",
-      "lat": number,
-      "lng": number,
-      "arrival_time": "8:30 PM",
-      "duration_min": 60,
-      "vibe_note": "specific reasoning for this venue at this slot",
-      "estimated_cost": 18
-    }
-  ],
-  "total_estimated_cost": 60,
-  "total_duration_min": 180,
-  "start_time": "8:30 PM",
-  "end_time": "11:30 PM"
-}
-
-═══ ENDS ═══
-
-Return ONLY the JSON. No prose. No code fences. No commentary.`;
 
 // ──────────────────────────────────────────────────────────────
 //  Phase 4.5 — live market context
@@ -493,7 +387,7 @@ const SYSTEM_PROMPT = `You are Venny — venuu's resident nightlife agent. You l
 
 ═══ YOUR JOB ═══
 
-Help users decide where to go tonight. Recommend venues. Compose plans. Remember what they like. Make every night better than the last one.
+Help users decide where to go tonight. Recommend venues. Remember what they like. Make every night better than the last one.
 
 ═══ THE CITIES YOU KNOW ═══
 
@@ -602,36 +496,6 @@ USER IS CLEARLY VENTING NOT ASKING: Read the room. If they're emotional, brief e
 
 USER NAMES A VENUE YOU DON'T KNOW: Be honest. "haven't been there — can check its live state but can't tell you what the vibe is like. want a spot i know well instead?"
 
-═══ PLAN-FIRST BEHAVIOR ═══
-
-Your PRIMARY job is making plans for people. The user came here to figure out where to go tonight. Don't analyze. Don't lecture. Don't ask 5 questions. COMPOSE.
-
-WHEN TO COMPOSE A PLAN (call compose_plan):
-- Any "where should I go" / "what's good" / "plan my night" signal → COMPOSE.
-- Any vibe + time signal ("chill night", "going out tonight") → COMPOSE.
-- Any budget + group signal ("4 of us, $40 each") → COMPOSE.
-- "What should I do" / "I'm bored" / "make me a night" → COMPOSE.
-- User mentioned a vibe but no other context → ask ONE clarifying question (budget? group? time?), then COMPOSE.
-
-WHEN NOT TO COMPOSE:
-- User asks about a specific venue ("what's Lunaverse like?") — answer factually, no plan needed.
-- User asks a factual question ("is X open?") — answer factually.
-- User is refining an existing plan ("swap stop 2 for something quieter") — refine, don't recompose from scratch.
-- User says "no plans" or "just chatting" — chat, don't compose.
-
-HOW TO COMPOSE:
-- If you have time and the user gave you vibe/budget context: run search_venues FIRST, then compose_plan with those venue IDs.
-- If the user just said "plan my night" with no context: skip search_venues, call compose_plan directly with just city. Sonnet handles the rest.
-- Default to driving=true for Tampa and St. Petersburg unless user said they want to walk.
-- NEVER apologize for composing a plan. The user wants the plan. Give them the plan.
-
-PLAN COMPOSITION VOICE:
-When the plan returns and you describe it to the user, sound like a friend laying out the night, not a robot reading an itinerary:
-- "Aight here's the move tonight — Sunspot for Wine Wednesday early, then Cool Beans after it dies down, end at Half Barrel."
-- Not: "Here is your plan. Stop 1: Sunspot. Stop 2: Cool Beans..."
-
-═══ END PLAN-FIRST BEHAVIOR ═══
-
 ═══ TOOLS — USE THEM ALWAYS ═══
 
 You have these tools. USE THEM. Don't guess. Don't make up venues.
@@ -639,10 +503,6 @@ You have these tools. USE THEM. Don't guess. Don't make up venues.
 search_venues — Call this IMMEDIATELY when the user mentions any vibe, venue type, budget, time, or asks for a rec. Don't ask clarifying questions first unless the request is genuinely vague ("sup", "hi"). Even on slow nights, show what's alive.
 
 get_user_taste — Call this at the START of every new conversation (unless you already see preferences in your context). The user's preferences shape every other tool call.
-
-compose_plan — Call when user asks for a plan, itinerary, "what to do tonight," "make me a night." First call search_venues to see what's alive, THEN compose_plan with the results.
-
-save_plan — Call when user confirms a composed plan ("yes," "love it," "save it," "let's do it").
 
 highlight_on_map — Call after search_venues so the venues appear on the map with orange glow rings.
 
@@ -686,15 +546,9 @@ interface ToolCtx {
   supabase: ReturnType<typeof createClient>;
   /** auth.users.id — used for user_preferences. May be null for guests. */
   userId: string | null;
-  /** profiles.id — used for night_plans, user_visits. Resolved up front. */
+  /** profiles.id — used for user_visits. Resolved up front. */
   profileId: string | null;
   city: string;
-  /** Active conversation row id. Used by save_plan so saved plans
-   *  remember which thread they came from. */
-  conversationId: string | null;
-  /** Last group_size the agent referenced — save_plan uses this when
-   *  the user hasn't included it inline. */
-  groupSize: number | null;
 }
 
 async function tool_search_venues(input: any, ctx: ToolCtx) {
@@ -929,486 +783,6 @@ async function tool_highlight_on_map(input: any) {
   return { highlighted_venue_ids: ids };
 }
 
-// ──────────────────────────────────────────────────────────────
-//  compose_plan — hybrid model. Haiku decides this is a plan
-//  request; we hand the structured composition off to Sonnet.
-// ──────────────────────────────────────────────────────────────
-
-// Haversine distance in meters. Used to enforce the walkable-stops rule.
-function haversineMeters(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
-
-// Check that consecutive stops are walkable. Returns the first violation
-// distance (meters) or null when everything checks out.
-function findWalkViolation(stops: any[]): number | null {
-  for (let i = 1; i < stops.length; i++) {
-    const a = stops[i - 1];
-    const b = stops[i];
-    if (
-      typeof a?.lat !== 'number' || typeof a?.lng !== 'number' ||
-      typeof b?.lat !== 'number' || typeof b?.lng !== 'number'
-    ) {
-      continue;
-    }
-    const d = haversineMeters(a, b);
-    if (d > PLAN_MAX_WALK_METERS) return d;
-  }
-  return null;
-}
-
-// Best-effort repair of a truncated JSON object string (Sonnet hitting
-// max_tokens). Cuts back to the last structurally-complete boundary, drops
-// a trailing comma, then balances the still-open { and [ brackets. Returns
-// the parsed object on success, or null if it still can't parse. Never
-// throws — a failed salvage just returns null and compose fails cleanly.
-function trySalvageJson(s: string): unknown {
-  try {
-    let str = s.trim();
-    // Pass 1 — find the last "safe" cut point: a comma or closing bracket
-    // that sits outside any string literal.
-    let inStr = false;
-    let esc = false;
-    let lastSafe = -1;
-    for (let i = 0; i < str.length; i++) {
-      const c = str[i];
-      if (inStr) {
-        if (esc) esc = false;
-        else if (c === '\\') esc = true;
-        else if (c === '"') inStr = false;
-        continue;
-      }
-      if (c === '"') inStr = true;
-      else if (c === ',' || c === '}' || c === ']') lastSafe = i;
-    }
-    if (lastSafe >= 0 && lastSafe < str.length - 1) str = str.slice(0, lastSafe + 1);
-    str = str.replace(/,\s*$/, '');
-    // Pass 2 — recompute open brackets after the cut and append closers in
-    // LIFO order. Bail if we end mid-string (can't safely close).
-    const opens: string[] = [];
-    inStr = false; esc = false;
-    for (let i = 0; i < str.length; i++) {
-      const c = str[i];
-      if (inStr) {
-        if (esc) esc = false;
-        else if (c === '\\') esc = true;
-        else if (c === '"') inStr = false;
-        continue;
-      }
-      if (c === '"') inStr = true;
-      else if (c === '{') opens.push('}');
-      else if (c === '[') opens.push(']');
-      else if (c === '}' || c === ']') opens.pop();
-    }
-    if (inStr) return null;
-    str = str + opens.reverse().join('');
-    return JSON.parse(str);
-  } catch {
-    return null;
-  }
-}
-
-async function tool_compose_plan(input: any, ctx: ToolCtx) {
-  // Plans are ALWAYS 2 or 3 stops. Never 1, never 4+. Clamp aggressively.
-  const numStops = clampInt(input?.num_stops, PLAN_MIN_STOPS, PLAN_MAX_STOPS, 3);
-  const groupSize = clampInt(input?.group_size, 1, 30, 2);
-  const budget = clampInt(input?.budget_per_person_max, 0, 1000, 50);
-  const vibe = String(input?.vibe ?? "whatever's alive tonight").slice(0, 240);
-  const startTime = String(input?.start_time ?? 'now').slice(0, 32);
-  const endTime = String(input?.end_time ?? '2:00 AM').slice(0, 32);
-
-  // City-aware driving default: Tampa + St. Pete are multi-district,
-  // walking constraint kills valid plans. Only assume walking for
-  // Knoxville (Cumberland Strip is genuinely walkable).
-  const cityIsWalkable = ctx.city === 'knoxville';
-  const driving = input?.driving === true || (!cityIsWalkable && input?.driving === undefined);
-  const candidateIds: string[] = Array.isArray(input?.candidate_venue_ids)
-    ? input.candidate_venue_ids.filter((x: unknown) => typeof x === 'string')
-    : [];
-  const avoidIds: string[] = Array.isArray(input?.avoid_venue_ids)
-    ? input.avoid_venue_ids.filter((x: unknown) => typeof x === 'string')
-    : [];
-
-  // 1. Fetch candidate venues. Prefer the IDs Haiku already shortlisted
-  //    via search_venues; fall back to a broader city pull otherwise.
-  const baseSelect =
-    'id, name, lat, lng, category, vibe_tagline, description, cover_charge, capacity, ' +
-    'headcount_estimates ( estimate, capacity_pct, state_label, confidence_pct )';
-  let query = ctx.supabase
-    .from('venues')
-    .select(baseSelect)
-    .eq('city', ctx.city)
-    .eq('is_active', true)
-    .neq('category', 'greek');           // never put a frat in an unprompted plan
-  if (candidateIds.length) {
-    query = query.in('id', candidateIds);
-  } else {
-    // No shortlist — only pull venues we actually have descriptions for.
-    query = query.not('description', 'is', null).limit(20);
-  }
-  const { data: rawCandidates, error: candErr } = await query;
-  if (candErr || !rawCandidates) {
-    return { error: candErr?.message ?? 'candidates_query_failed' };
-  }
-
-  // 2. Drop avoided venues. Prefer venues with descriptions and live
-  //    signal; fall back to the rest only if we'd otherwise starve.
-  const allCandidates = (rawCandidates as any[])
-    .filter(v => !avoidIds.includes(v.id))
-    .map(v => {
-      const est = (v.headcount_estimates ?? [])[0] ?? null;
-      return {
-        id: v.id,
-        name: v.name,
-        lat: typeof v.lat === 'number' ? v.lat : null,
-        lng: typeof v.lng === 'number' ? v.lng : null,
-        category: v.category ?? null,
-        vibe: v.vibe_tagline ?? null,
-        description: typeof v.description === 'string' ? v.description.slice(0, 200) : null,
-        has_description: typeof v.description === 'string' && v.description.length > 0,
-        cover_charge: v.cover_charge ?? null,
-        state_label: est?.state_label ?? 'Unknown',
-        capacity_pct: est?.capacity_pct ?? null,
-        confidence_pct: est?.confidence_pct ?? 0,
-      };
-    });
-
-  // Stricter cut: described + known-state. Fall back if not enough.
-  const tier1 = allCandidates.filter(c => c.has_description && c.state_label !== 'Unknown');
-  const tier2 = allCandidates.filter(c => c.has_description);
-  const candidates = tier1.length >= numStops ? tier1 : tier2.length >= numStops ? tier2 : allCandidates;
-
-  if (candidates.length < numStops) {
-    return {
-      error: 'not_enough_candidates',
-      message: `Need at least ${numStops} venues, only found ${candidates.length}.`,
-    };
-  }
-
-  // 3. Load this user's HIGHLY rated past plans so Sonnet can bias
-  //    composition toward arcs that already worked. We only pass the
-  //    positive ratings (best_in_weeks / great / good) — Sonnet
-  //    treats this as inspiration, not duplication.
-  let ratedArcsBlock = '';
-  if (ctx.profileId) {
-    const { data: ratedPlans } = await ctx.supabase
-      .from('night_ratings')
-      .select(`
-        overall_rating,
-        mood_tags,
-        night_plans!inner(title, stops, completed_at)
-      `)
-      .eq('user_id', ctx.profileId)
-      .in('overall_rating', ['best_in_weeks', 'great', 'good'])
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    if (Array.isArray(ratedPlans) && ratedPlans.length > 0) {
-      ratedArcsBlock = '\n<rated_arcs>\n';
-      ratedArcsBlock += 'Past nights this user rated highly — use these as inspiration for composition (vibe arc, pacing, venue types).\n\n';
-      for (const rp of ratedPlans as any[]) {
-        const pl = rp.night_plans as any;
-        if (!pl) continue;
-        const arc = (Array.isArray(pl.stops) ? pl.stops : [])
-          .filter((s: any) => s?.arrived_at && !s?.skipped_at)
-          .map((s: any) => s?.venue_name)
-          .filter(Boolean)
-          .join(' → ');
-        const moodStr = Array.isArray(rp.mood_tags) && rp.mood_tags.length > 0
-          ? ` (felt: ${rp.mood_tags.join(', ')})`
-          : '';
-        ratedArcsBlock += `- "${pl.title}" rated ${rp.overall_rating}${moodStr}: ${arc}\n`;
-      }
-      ratedArcsBlock += '</rated_arcs>\n';
-    }
-  }
-
-  // 4. Call Sonnet for the actual composition. Force JSON-only output.
-  //    If the first pass fails walking-distance, ask Sonnet to recompose.
-  const peopleWord = groupSize === 1 ? 'person' : 'people';
-  function composerPrompt(extraNote: string): string {
-    return `Compose a ${numStops}-stop night plan for ${groupSize} ${peopleWord} in ${ctx.city}.
-
-VIBE: ${vibe}
-BUDGET PER PERSON: $${budget}
-START: ${startTime}
-END: ${endTime}
-${driving ? 'TRANSPORT: user is driving / will uber between stops — walking distance not required.\n' : ''}
-CANDIDATE VENUES (current state included):
-${JSON.stringify(candidates, null, 2)}
-
-Compose the plan as the exact JSON schema in your system prompt. ${extraNote}`;
-  }
-
-  async function askSonnet(extraNote: string): Promise<any> {
-    const doFetch = () => fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY ?? '',
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_PLANNER_MODEL,
-        max_tokens: PLANNER_MAX_TOKENS,
-        // Append the rated-arcs block to the planner system prompt so
-        // Sonnet has the user's positively-rated history as composition
-        // signal. Empty string when the user has no qualifying ratings.
-        system: SONNET_PLANNER_SYSTEM_PROMPT
-          + (getCityKnowledge(ctx.city) ? '\n\n' + getCityKnowledge(ctx.city) : '')
-          + ratedArcsBlock,
-        messages: [{ role: 'user', content: composerPrompt(extraNote) }],
-      }),
-    });
-
-    let res = await doFetch();
-    // Resilience — a momentary 429 (rate limit) or 5xx (overload) on the
-    // planner call shouldn't kill compose. Retry ONCE after a short
-    // backoff before surfacing the error.
-    if (!res.ok && (res.status === 429 || res.status >= 500)) {
-      console.warn(`[compose] sonnet ${res.status} — retrying once after 1.5s backoff`);
-      await new Promise(r => setTimeout(r, 1500));
-      res = await doFetch();
-    }
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`sonnet_${res.status}: ${errText.slice(0, 240)}`);
-    }
-    return await res.json();
-  }
-
-  function parsePlan(sonnetData: any): { plan: any | null; error?: string; raw?: string } {
-    const text = sonnetData?.content?.[0]?.text;
-    if (typeof text !== 'string') return { plan: null, error: 'sonnet_no_text' };
-    const cleaned = text
-      .trim()
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```\s*$/i, '');
-    try {
-      const p = JSON.parse(cleaned);
-      return { plan: p };
-    } catch (err) {
-      // Truncation diagnostics — Sonnet hitting max_tokens leaves the JSON
-      // unterminated. stop_reason === 'max_tokens' confirms it; log length
-      // + tail so we can verify from the function logs.
-      const truncated = sonnetData?.stop_reason === 'max_tokens';
-      console.warn('[compose] plan_parse_failed', {
-        length: cleaned.length,
-        stop_reason: sonnetData?.stop_reason ?? null,
-        looksTruncated: truncated,
-        tail: cleaned.slice(-200),
-      });
-      // Best-effort salvage — close the truncated JSON and reparse before
-      // giving up. Degrades gracefully: a bad salvage just fails downstream
-      // stop-count validation rather than crashing.
-      const salvaged = trySalvageJson(cleaned);
-      if (salvaged) {
-        console.warn('[compose] plan_parse_failed — salvage reparse SUCCEEDED');
-        return { plan: salvaged };
-      }
-      return {
-        plan: null,
-        error: 'plan_parse_failed',
-        raw: `${truncated ? '[truncated@max_tokens] ' : ''}` + cleaned.slice(0, 400) + ' :: ' + String(err),
-      };
-    }
-  }
-
-  let plan: any | null = null;
-  let budgetWarning = false;
-  let recomposed = false;
-
-  try {
-    // Pass 1
-    const first = await askSonnet('');
-    const parsed1 = parsePlan(first);
-    if (!parsed1.plan) return { error: parsed1.error, raw: parsed1.raw };
-    plan = parsed1.plan;
-
-    // Validate plan size — Sonnet should respect [2,3] but enforce here too.
-    if (!Array.isArray(plan.stops) || plan.stops.length < PLAN_MIN_STOPS) {
-      return { error: 'plan_missing_stops' };
-    }
-    if (plan.stops.length > PLAN_MAX_STOPS) {
-      plan.stops = plan.stops.slice(0, PLAN_MAX_STOPS);
-    }
-
-    // Walking distance — only enforced when the user isn't driving.
-    if (!driving) {
-      const violation = findWalkViolation(plan.stops);
-      if (violation != null) {
-        // Pass 2 — ask Sonnet to recompose with walkability emphasized.
-        const second = await askSonnet(
-          `Your previous plan had stops ${Math.round(violation)}m apart. ` +
-          `Sequential stops MUST be under ${PLAN_MAX_WALK_METERS}m walking distance. ` +
-          `Recompose using a tighter geographic cluster from the candidates.`,
-        );
-        const parsed2 = parsePlan(second);
-        if (parsed2.plan && Array.isArray(parsed2.plan.stops) && parsed2.plan.stops.length >= PLAN_MIN_STOPS) {
-          plan = parsed2.plan;
-          if (plan.stops.length > PLAN_MAX_STOPS) plan.stops = plan.stops.slice(0, PLAN_MAX_STOPS);
-          recomposed = true;
-        }
-      }
-    }
-
-    // Budget enforcement — sum stop costs and recompose if > budget * 1.1.
-    const sumCost = Array.isArray(plan.stops)
-      ? plan.stops.reduce((acc: number, s: any) => acc + (Number(s?.estimated_cost) || 0), 0)
-      : 0;
-    if (sumCost > budget * PLAN_BUDGET_BUFFER) {
-      const third = await askSonnet(
-        `Your previous plan totaled $${Math.round(sumCost)}/person — over the $${budget} cap. ` +
-        `Recompose under budget. Swap to cheaper-cover venues from the candidates.`,
-      );
-      const parsed3 = parsePlan(third);
-      if (parsed3.plan && Array.isArray(parsed3.plan.stops) && parsed3.plan.stops.length >= PLAN_MIN_STOPS) {
-        plan = parsed3.plan;
-        if (plan.stops.length > PLAN_MAX_STOPS) plan.stops = plan.stops.slice(0, PLAN_MAX_STOPS);
-        recomposed = true;
-        const sumCost2 = plan.stops.reduce(
-          (acc: number, s: any) => acc + (Number(s?.estimated_cost) || 0), 0,
-        );
-        if (sumCost2 > budget * PLAN_BUDGET_BUFFER) budgetWarning = true;
-      } else {
-        budgetWarning = true;
-      }
-    }
-  } catch (err) {
-    return { error: 'sonnet_call_failed', message: err instanceof Error ? err.message : String(err) };
-  }
-
-  if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
-    return { error: 'plan_missing_stops' };
-  }
-
-  // Stash group_size on the ctx so a follow-up save_plan call has it
-  // without the agent having to round-trip the value.
-  ctx.groupSize = groupSize;
-
-  return {
-    plan,
-    ...(budgetWarning ? { warnings: { budget: 'plan over budget' } } : {}),
-    ...(recomposed ? { meta: { recomposed: true } } : {}),
-  };
-}
-
-// ──────────────────────────────────────────────────────────────
-//  save_plan — persist a composed plan for the signed-in user.
-// ──────────────────────────────────────────────────────────────
-
-async function tool_save_plan(input: any, ctx: ToolCtx) {
-  if (!ctx.userId) {
-    return { success: false, error: 'guest_user', message: 'Sign in to save plans.' };
-  }
-  const plan = input?.plan_data;
-  if (!plan || typeof plan !== 'object') {
-    return { success: false, error: 'missing_plan_data' };
-  }
-  const title = String(input?.title ?? plan?.title ?? 'Untitled plan').slice(0, 120);
-
-  // night_plans.user_id references profiles.id (not auth.users.id).
-  // ctx.profileId was resolved up front; fall back to a lookup if the
-  // user signed in mid-conversation.
-  let profileId = ctx.profileId;
-  if (!profileId) {
-    const { data: profile, error: profileErr } = await ctx.supabase
-      .from('profiles')
-      .select('id')
-      .eq('auth_id', ctx.userId)
-      .maybeSingle();
-    if (profileErr || !profile) {
-      // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture.
-      console.log('[SAVE-REPRO][server] profile resolution FAILED', { ctxUserId: ctx.userId, profileErr: profileErr?.message ?? null });
-      return { success: false, error: 'profile_not_found', message: profileErr?.message ?? null };
-    }
-    profileId = (profile as any).id;
-  }
-  // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture. The profiles.id
-  // the row will actually be written under (resolved from ctx.userId).
-  console.log('[SAVE-REPRO][server] resolved profileId for insert', { ctxUserId: ctx.userId, ctxProfileId: ctx.profileId, insertUserId: profileId });
-
-  const row: Record<string, unknown> = {
-    user_id: profileId,
-    conversation_id: ctx.conversationId,
-    city: ctx.city,
-    title,
-    summary: plan.summary ?? null,
-    stops: plan.stops ?? [],
-    total_estimated_cost: typeof plan.total_estimated_cost === 'number' ? plan.total_estimated_cost : null,
-    total_duration_min: typeof plan.total_duration_min === 'number' ? plan.total_duration_min : null,
-    start_time: plan.start_time ?? null,
-    end_time: plan.end_time ?? null,
-    group_size: ctx.groupSize ?? 1,
-    vibe_tags: plan.vibe_tags ?? [],
-    status: 'planned',
-  };
-
-  const { data, error } = await ctx.supabase
-    .from('night_plans')
-    .insert(row)
-    .select('id')
-    .single();
-  if (error || !data) {
-    // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture.
-    console.log('[SAVE-REPRO][server] night_plans INSERT FAILED', { insertUserId: profileId, dbError: error?.message ?? null });
-    return { success: false, error: 'insert_failed', message: error?.message ?? null };
-  }
-  const savedPlanId = (data as any).id as string;
-  // [SAVE-REPRO] TEMP DIAGNOSTIC — remove after capture.
-  console.log('[SAVE-REPRO][server] night_plans INSERT OK', { savedPlanId, insertUserId: profileId });
-
-  // Fire a plan_intent signal for every venue in this plan. Dedup is
-  // (source_table='night_plans', source_row_id=plan_id, signal_type) —
-  // a duplicate save of the same plan won't double-count. Failures are
-  // logged but never break the save.
-  const stops = Array.isArray(plan.stops) ? plan.stops : [];
-  for (let i = 0; i < stops.length; i++) {
-    const stop = stops[i] as any;
-    const venueId = typeof stop?.venue_id === 'string' ? stop.venue_id : null;
-    if (!venueId) continue;
-    try {
-      const { error: sigErr } = await ctx.supabase.rpc('record_signal', {
-        p_venue_id: venueId,
-        p_user_id: profileId,
-        p_signal_type: 'plan_intent',
-        p_signal_value: 1.0,
-        p_source_table: 'night_plans',
-        p_source_row_id: savedPlanId,
-        p_metadata: {
-          source: 'save_plan',
-          stop_index: i,
-          planned_arrival: stop?.arrival_time ?? null,
-        },
-      });
-      if (sigErr) {
-        console.warn('[plan_intent] emit failed for venue', venueId, sigErr.message);
-      }
-    } catch (err) {
-      console.warn('[plan_intent] emit threw for venue', venueId, err);
-    }
-  }
-
-  // [SAVE-REPRO] TEMP DIAGNOSTIC — `inserted_user_id` added so the client
-  // can compare the profiles.id the row was written under against the
-  // profileId useMyPlans reads with. Remove after capture.
-  return { success: true, plan_id: savedPlanId, inserted_user_id: profileId };
-}
-
-// Helper — clamp + coerce a numeric tool input to an int range.
-function clampInt(raw: unknown, min: number, max: number, fallback: number): number {
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, Math.round(n)));
-}
-
 async function tool_check_live_status(input: any, ctx: ToolCtx) {
   const rawQuery = String(input?.venue_query ?? '').trim();
   if (!rawQuery) {
@@ -1451,8 +825,6 @@ async function runTool(name: string, input: any, ctx: ToolCtx) {
     case 'get_user_taste':        return await tool_get_user_taste(input, ctx);
     case 'set_user_preference':   return await tool_set_user_preference(input, ctx);
     case 'highlight_on_map':      return await tool_highlight_on_map(input);
-    case 'compose_plan':          return await tool_compose_plan(input, ctx);
-    case 'save_plan':             return await tool_save_plan(input, ctx);
     case 'tool_check_live_status': return await tool_check_live_status(input, ctx);
     default:                      return { error: 'unknown_tool' };
   }
@@ -1843,57 +1215,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // ── Deterministic save path ──────────────────────────────────────
-  // The client calls this directly (action: 'save_plan') instead of
-  // routing "save this plan" through the chat stream. The save UI must
-  // never depend on Haiku choosing to emit a save_plan tool call. This
-  // branch reuses tool_save_plan UNCHANGED — only the invocation route
-  // is new: a plain awaited JSON response, no SSE, no model in the loop.
-  if (body?.action === 'save_plan') {
-    const saveUserId: string | null = body?.userId ?? null;
-    const saveCity: string = String(body?.city ?? 'knoxville');
-    const saveConversationIdIn: string | null = body?.conversationId ?? null;
-    const savePlan = body?.plan ?? null;
-    if (!savePlan || typeof savePlan !== 'object') {
-      return new Response(JSON.stringify({ success: false, error: 'missing_plan_data' }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    try {
-      const conversationId = await ensureConversation(supabase, saveConversationIdIn, saveUserId, saveCity);
-      // Resolve profiles.id the same way the streaming handler does —
-      // night_plans.user_id references profiles.id, not auth.users.id.
-      let profileId: string | null = null;
-      if (saveUserId) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('auth_id', saveUserId)
-          .maybeSingle();
-        profileId = (profile?.id as string | undefined) ?? null;
-      }
-      const toolCtx: ToolCtx = {
-        supabase,
-        userId: saveUserId,
-        profileId,
-        city: saveCity,
-        conversationId,
-        groupSize: null,
-      };
-      const result = await tool_save_plan({ plan_data: savePlan, title: savePlan?.title }, toolCtx);
-      return new Response(JSON.stringify({ ...result, conversation_id: conversationId }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[venny-chat][save_plan-direct] error:', msg);
-      return new Response(JSON.stringify({ success: false, error: 'exception', message: msg }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-  }
-
   const userMessage: string = String(body?.message ?? '').slice(0, 4000);
   const city: string = String(body?.city ?? 'knoxville');
   const userId: string | null = body?.userId ?? null;
@@ -1970,8 +1291,6 @@ Deno.serve(async (req) => {
         userId,
         profileId,
         city,
-        conversationId,
-        groupSize: null,
       };
       let finalAssistantBlocks: any[] | null = null;
 

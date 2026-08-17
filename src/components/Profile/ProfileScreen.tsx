@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, LogOut, MapPin, Beer, Star, Ticket, Bell, Sparkles,
-  Pencil, Share2, Map as MapIcon, Award, Heart,
-  Crown, Trophy, Footprints, Calendar, Flame, LocateOff,
+  Pencil, Share2, Award,
+  Crown, Trophy, Footprints, Flame, LocateOff,
   type LucideIcon,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
@@ -10,12 +10,8 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { Browser } from '@capacitor/browser';
 import { CITIES, type CityKey } from '../../lib/constants';
 import { useVisitHistory } from '../../hooks/useVisitHistory';
-import { useMyRecaps } from '../../hooks/useMyRecaps';
-import MomentOrb from '../Moment/MomentOrb';
-import MomentFullScreen from '../Moment/MomentFullScreen';
 import { useUserAccountStats, type UserLevel } from '../../hooks/useUserAccountStats';
 import { useUserVibe } from '../../hooks/useUserVibe';
-import { useMyPlans, type MyPlan } from '../../hooks/useMyPlans';
 import { useMyStamps, type Stamp } from '../../hooks/useMyStamps';
 import { useCountUp } from '../../hooks/useCountUp';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
@@ -33,9 +29,6 @@ interface ProfileScreenProps {
   /** Called by parent (App.tsx) when the profile has been edited so
    *  it can refetch the row through useAuth.refreshProfile(). */
   onProfileRefresh?: () => Promise<void> | void;
-  /** Tapping a plan card enters full-screen Plan Execution Mode
-   *  (the time-aware companion that walks the user through stops). */
-  onOpenPlanExecution?: (plan: MyPlan) => void;
   /** Tapping the "Talk to Venny" CTA opens Venny. Accepts an
    *  optional priming message that the sheet auto-sends on open. */
   onOpenVenny?: (initialMessage?: string) => void;
@@ -342,7 +335,6 @@ export function ProfileScreen({
   onSignOut,
   onNavigateToVenue,
   onProfileRefresh,
-  onOpenPlanExecution,
   onOpenVenny,
   onOpenTasteFlow,
   locationPermissionStatus,
@@ -350,12 +342,6 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   // ── Existing data (preserved) ──
   const { bars, loading: barsLoading } = useVisitHistory(profile.auth_id);
-  const { recaps: myMoments, loading: momentsLoading } = useMyRecaps(profile.username);
-  const [openMomentId, setOpenMomentId] = useState<string | null>(null);
-  const openMoment = useMemo(
-    () => myMoments?.find(m => m.id === openMomentId) ?? null,
-    [myMoments, openMomentId],
-  );
 
   // ── New data sources ──
   const stats = useUserAccountStats({
@@ -364,25 +350,10 @@ export function ProfileScreen({
     profileCreatedAt: profile.created_at,
   });
   const vibe  = useUserVibe(profile.auth_id);
-  const { plans, loading: plansLoading } = useMyPlans(profile.id);
   // user_visits keys on profile.id (NOT auth.users.id) — stamps now
   // pull from the new confirmed-visits table that aggregates passive
   // GPS + NFC + cover + plan-stop sources.
   const { stamps, visitedCount: stampsVisited, cityTotal: stampsCityTotal } = useMyStamps(profile.id, profile.city);
-
-  // ── Defensive diagnostic for the v1.2 plans visibility bug.
-  //    Kept in for one release so any future user_id/profile.id
-  //    drift between save_plan (writes profiles.id) and useMyPlans
-  //    (reads where user_id = profile.id) is immediately visible
-  //    in the console. Remove in a follow-up release if no recurrence.
-  useEffect(() => {
-    if (plansLoading) return;
-    console.log('[my_plans] hydrated', {
-      authUserId: profile.auth_id,
-      profileId: profile.id,
-      plansReturned: plans.length,
-    });
-  }, [plansLoading, plans.length, profile.auth_id, profile.id]);
 
   // ── UI state ──
   const [showAllStamps, setShowAllStamps] = useState(false);
@@ -417,28 +388,7 @@ export function ProfileScreen({
     return () => window.clearTimeout(t);
   }, [stats.loading, stats.nightsOut]);
 
-  // ── Plan-completion dopamine listener.
-  //    PlanSheet's completePlan dispatches venuu-plan-completed-
-  //    celebrate. The streak chip glows + the Plans Run stat card
-  //    fires its built-in `celebrating` confetti for a brief beat.
-  //    Independent state flags so they can run together without
-  //    one cutting the other short.
-  const [streakBursting, setStreakBursting] = useState(false);
-  const [celebratePlans, setCelebratePlans] = useState(false);
   const [celebrateTaste, setCelebrateTaste] = useState(false);
-  useEffect(() => {
-    function handle() {
-      setStreakBursting(true);
-      setCelebratePlans(true);
-      window.setTimeout(() => setStreakBursting(false), 1600);
-      window.setTimeout(() => setCelebratePlans(false), 1400);
-      // Refetch stats so the Plans Run number ticks up — the realtime
-      // sub on user_visits doesn't fire for night_plans status flips.
-      stats.refetch?.();
-    }
-    window.addEventListener('venuu-plan-completed-celebrate', handle as EventListener);
-    return () => window.removeEventListener('venuu-plan-completed-celebrate', handle as EventListener);
-  }, [stats]);
 
   // When a user finishes the rate flow, Taste % gets new data — burst
   // the stat card so the increment reads as a reward, not a quiet
@@ -465,15 +415,13 @@ export function ProfileScreen({
     return `since ${fmt}`;
   }, [stats.accountSince]);
 
-  // ── Privacy toggles — local mirror so the switch is instant; the
-  //    canonical state lives on profile.show_*_publicly. Sync when the
-  //    profile prop changes. Saved on toggle via supabase update + parent refresh.
-  const [showRecaps, setShowRecaps] = useState<boolean>(profile.show_recaps_publicly ?? true);
+  // ── Privacy toggle — local mirror so the switch is instant; the
+  //    canonical state lives on profile.show_visits_publicly. Sync when
+  //    the profile prop changes. Saved on toggle via supabase update + parent refresh.
   const [showVisits, setShowVisits] = useState<boolean>(profile.show_visits_publicly ?? true);
   useEffect(() => {
-    setShowRecaps(profile.show_recaps_publicly ?? true);
     setShowVisits(profile.show_visits_publicly ?? true);
-  }, [profile.show_recaps_publicly, profile.show_visits_publicly]);
+  }, [profile.show_visits_publicly]);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -576,7 +524,7 @@ export function ProfileScreen({
 
   // ── Privacy toggle persist ──
   const persistPrivacyToggle = useCallback(async (
-    column: 'show_recaps_publicly' | 'show_visits_publicly',
+    column: 'show_visits_publicly',
     next: boolean,
   ) => {
     const { error } = await supabase
@@ -586,8 +534,7 @@ export function ProfileScreen({
     if (error) {
       showToast('couldn’t save — try again');
       // Revert local mirror.
-      if (column === 'show_recaps_publicly') setShowRecaps(!next);
-      else setShowVisits(!next);
+      setShowVisits(!next);
       return;
     }
     void onProfileRefresh?.();
@@ -1093,20 +1040,13 @@ export function ProfileScreen({
             return (
               <div
                 className="profile-stats-grid"
-                style={{ ['--cols' as string]: tasteHasData ? 3 : 2 } as React.CSSProperties}
+                style={{ ['--cols' as string]: tasteHasData ? 2 : 1 } as React.CSSProperties}
               >
                 <StatCard
                   value={stats.venuesDiscovered}
                   label="Venues"
                   icon={MapPin}
                   onTap={() => { hapticLight(); console.log('[stat] venues tapped'); }}
-                />
-                <StatCard
-                  value={stats.plansCompleted}
-                  label="Plans Run"
-                  icon={Calendar}
-                  celebrating={celebratePlans}
-                  onTap={() => { hapticLight(); console.log('[stat] plans tapped'); }}
                 />
                 {tasteHasData && (
                   <StatCard
@@ -1124,7 +1064,7 @@ export function ProfileScreen({
 
           {/* Weekend streak (Fix 6) */}
           <div
-            className={`profile-streak${streakBursting ? ' profile-streak--bursting' : ''}`}
+            className="profile-streak"
             style={{
               marginTop: 12,
               display: 'flex', alignItems: 'center', gap: 10,
@@ -1345,65 +1285,6 @@ export function ProfileScreen({
                   Talk to Venny
                 </button>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── 4. MY PLANS — renders unconditionally so users get
-         *    visible feedback even before they save anything (Fix 5
-         *    + Fix 8). The empty-state CTA opens Venny. ─────────── */}
-        <div style={{ padding: '20px 16px 0' }}>
-          <div style={{ paddingRight: 4 }}>
-            <SectionHeader
-              icon={<MapIcon size={16} strokeWidth={1.8} style={{ color: 'var(--brand-orange)' }} />}
-              title="My Plans"
-              subtitle={plans.length ? `${plans.length}` : undefined}
-              action={plans.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => showToast('all plans view coming soon')}
-                  style={{
-                    background: 'transparent', border: 'none',
-                    color: 'var(--brand-orange)',
-                    fontFamily: FONT, fontSize: 12, fontWeight: 600,
-                    cursor: 'pointer', padding: 0,
-                    WebkitTapHighlightColor: 'transparent',
-                  }}
-                >
-                  See all
-                </button>
-              ) : undefined}
-            />
-          </div>
-          {plansLoading ? (
-            <GlassCard style={{ display: 'flex', justifyContent: 'center', padding: '28px 16px' }}>
-              <div className="w-6 h-6 border-2 border-[#FF8200] border-t-transparent rounded-full animate-spin" />
-            </GlassCard>
-          ) : plans.length === 0 ? (
-            <EmptyState
-              icon={Sparkles}
-              title="No plans yet"
-              body="Ask Venny to make you one — she's good at this."
-              ctaLabel="Talk to Venny →"
-              onCta={() => { hapticLight(); onOpenVenny?.(); }}
-            />
-          ) : (
-            <div
-              style={{
-                display: 'flex', gap: 12,
-                overflowX: 'auto', WebkitOverflowScrolling: 'touch',
-                scrollSnapType: 'x mandatory',
-                paddingBottom: 4,
-                marginLeft: -16, marginRight: -16,
-                paddingLeft: 16, paddingRight: 16,
-              }}
-            >
-              {plans.slice(0, 5).map(plan => (
-                <PlanMiniCard key={plan.id} plan={plan} onTap={() => {
-                  hapticLight();
-                  onOpenPlanExecution?.(plan);
-                }} />
-              ))}
             </div>
           )}
         </div>
@@ -1683,65 +1564,6 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* ── 9. MY VENUES (moments trophy case) ───────────────── */}
-        <div style={{ padding: '20px 16px 0' }}>
-          <SectionHeader
-            icon={<span style={{ fontSize: 16, color: 'var(--venuu-pearl)', textShadow: '0 0 8px rgba(255, 248, 231, 0.6)' }}>{'✦'}</span>}
-            title="My Venues"
-            subtitle={
-              momentsLoading
-                ? 'loading…'
-                : myMoments && myMoments.length > 0
-                  ? `${myMoments.length} crowned`
-                  : 'crown your first venue'
-            }
-          />
-          <div style={{ padding: '12px 0 4px' }}>
-            {momentsLoading ? (
-              <div style={{
-                padding: '24px 16px',
-                textAlign: 'center',
-                color: 'rgba(255,255,255,0.3)',
-                fontFamily: 'Satoshi, sans-serif',
-                fontSize: '12px',
-              }}>
-                loading your venues…
-              </div>
-            ) : !myMoments || myMoments.length === 0 ? (
-              <div style={{
-                padding: '24px 16px',
-                textAlign: 'center',
-                color: 'rgba(255,255,255,0.4)',
-                fontFamily: 'Satoshi, sans-serif',
-                fontSize: '13px',
-              }}>
-                <div style={{ marginBottom: 6 }}>
-                  paint + capture a venue
-                </div>
-                <div style={{ fontSize: 11, opacity: 0.6 }}>
-                  your moments will live here forever
-                </div>
-              </div>
-            ) : (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '14px',
-                padding: '4px 4px 12px',
-                justifyItems: 'center',
-              }}>
-                {myMoments.map(m => (
-                  <MomentOrb
-                    key={m.id}
-                    moment={m}
-                    size="profile"
-                    onTap={() => setOpenMomentId(m.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* ── 10. SETTINGS ─────────────────────────────────── */}
         <div style={{ padding: '20px 16px 0' }}>
@@ -1817,21 +1639,6 @@ export function ProfileScreen({
                 Privacy
               </span>
             </div>
-            <SettingsRow
-              title="Show my recaps publicly"
-              hint="Your recaps appear under each bar's recap feed"
-              icon={<Heart size={14} strokeWidth={1.6} style={{ color: 'var(--text-secondary)' }} />}
-              right={
-                <Switch
-                  checked={showRecaps}
-                  onChange={() => {
-                    const next = !showRecaps;
-                    setShowRecaps(next);
-                    void persistPrivacyToggle('show_recaps_publicly', next);
-                  }}
-                />
-              }
-            />
             <SettingsRow
               title="Show my visits to friends"
               hint="(Friends arrive in a later release)"
@@ -1942,109 +1749,11 @@ export function ProfileScreen({
           </div>
         </div>
       )}
-
-      <MomentFullScreen
-        open={openMomentId !== null}
-        moment={openMoment}
-        onClose={() => setOpenMomentId(null)}
-      />
     </div>
   );
 }
 
 // ─── Sub-components ──────────────────────────────────────────────
-
-function PlanMiniCard({ plan, onTap }: { plan: MyPlan; onTap: () => void }) {
-  const stopsToShow = plan.stops.slice(0, 3);
-  const totalCost = plan.totalEstimatedCost != null ? `~$${plan.totalEstimatedCost}` : null;
-  const duration = plan.totalDurationMin != null
-    ? `${Math.floor(plan.totalDurationMin / 60)}h${plan.totalDurationMin % 60 ? ` ${plan.totalDurationMin % 60}m` : ''}`
-    : null;
-  // Status pill colors aligned with the doctrine palette.
-  const statusColor: Record<string, string> = {
-    planned:    '#FF8200',  // brand orange
-    active:     '#FFB050',  // active = orange-yellow
-    completed:  '#00CC66',  // green for closed-out runs
-    abandoned:  '#55555F',  // muted grey
-  };
-  const sc = statusColor[plan.status] ?? '#FF8200';
-  // "ran [date]" subtitle for completed plans — falls back to created
-  // when completed_at is missing (legacy rows pre-migration 00033).
-  const completedLabel = (() => {
-    if (plan.status !== 'completed') return null;
-    const iso = plan.completedAt ?? plan.createdAt;
-    if (!iso) return null;
-    try {
-      const d = new Date(iso);
-      return `ran ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-    } catch {
-      return null;
-    }
-  })();
-  return (
-    <button
-      type="button"
-      onClick={onTap}
-      style={{
-        flexShrink: 0,
-        width: 240,
-        padding: 14,
-        borderRadius: 16,
-        background: 'var(--bg-glass)',
-        border: '1px solid var(--brand-orange-tint)',
-        textAlign: 'left',
-        cursor: 'pointer',
-        WebkitTapHighlightColor: 'transparent',
-        scrollSnapAlign: 'start',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        display: 'flex', flexDirection: 'column', gap: 8,
-        color: 'inherit', font: 'inherit',
-      }}
-    >
-      <div style={{
-        fontFamily: FONT, fontSize: 15, fontWeight: 700,
-        color: 'var(--text-primary)', letterSpacing: '-0.01em',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>
-        {plan.title}
-      </div>
-      <div style={{
-        fontFamily: FONT, fontSize: 11, color: 'var(--text-secondary)',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}>
-        {[plan.city, totalCost, duration, completedLabel].filter(Boolean).join(' · ')}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {stopsToShow.map((s, i) => (
-          <div key={`${s.venue_id}-${i}`} style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontFamily: FONT, fontSize: 12,
-            color: 'rgba(255,255,255,0.78)',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: 3,
-              background: '#FF8200', flexShrink: 0,
-            }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {s.venue_name}
-            </span>
-          </div>
-        ))}
-      </div>
-      <span style={{
-        display: 'inline-flex', alignSelf: 'flex-start',
-        padding: '3px 8px', borderRadius: 999,
-        background: `${sc}22`, border: `1px solid ${sc}44`,
-        color: sc, fontFamily: FONT, fontSize: 10, fontWeight: 700,
-        letterSpacing: '0.04em', textTransform: 'uppercase',
-      }}>
-        {plan.status}
-      </span>
-    </button>
-  );
-}
 
 function StampDot({ stamp, onTap }: { stamp: Stamp; onTap: () => void }) {
   const color = stampHexForCity(stamp.city);
@@ -2104,65 +1813,6 @@ function StampDot({ stamp, onTap }: { stamp: Stamp; onTap: () => void }) {
         {stamp.venueName}
       </span>
     </button>
-  );
-}
-
-function EmptyState({
-  icon: Icon, title, body, ctaLabel, onCta,
-}: {
-  icon: LucideIcon;
-  title: string;
-  body: string;
-  ctaLabel?: string;
-  onCta?: () => void;
-}) {
-  return (
-    <GlassCard style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      padding: '24px 20px', textAlign: 'center',
-    }}>
-      <div className="profile-empty-glow" style={{
-        width: 44, height: 44, borderRadius: 22,
-        background: 'rgba(255, 130, 0, 0.08)',
-        border: '1px solid var(--brand-orange-tint)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginBottom: 12,
-      }}>
-        <Icon size={20} strokeWidth={1.6} style={{ color: 'var(--brand-orange)' }} />
-      </div>
-      <p style={{
-        fontFamily: FONT, fontSize: 15, fontWeight: 700,
-        color: 'var(--text-primary)', margin: '0 0 4px',
-      }}>
-        {title}
-      </p>
-      <p style={{
-        fontFamily: FONT, fontSize: 12,
-        color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.45,
-        maxWidth: 300,
-      }}>
-        {body}
-      </p>
-      {ctaLabel && onCta && (
-        <button
-          type="button"
-          onClick={onCta}
-          style={{
-            padding: '9px 16px',
-            borderRadius: 999,
-            background: 'var(--brand-orange)',
-            border: 'none',
-            color: 'white',
-            fontFamily: FONT, fontSize: 13, fontWeight: 700,
-            cursor: 'pointer',
-            WebkitTapHighlightColor: 'transparent',
-            letterSpacing: '-0.01em',
-          }}
-        >
-          {ctaLabel}
-        </button>
-      )}
-    </GlassCard>
   );
 }
 

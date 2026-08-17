@@ -1,9 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase, supabaseProjectUrl, supabaseAnonPublicKey } from '../../lib/supabase';
-import { hapticLight, hapticMedium, hapticSuccess } from '../../lib/haptics';
+import { hapticLight, hapticMedium } from '../../lib/haptics';
 import { VenueResultCard, type VenueResult } from './VenueResultCard';
-import { PlanCard, type Plan } from './PlanCard';
 import type { CityKey } from '../../lib/constants';
 import { getWelcomeMessage } from '../../lib/vennyKnowledge';
 
@@ -43,8 +42,7 @@ type Role = 'user' | 'assistant';
 
 interface MessageContentText { type: 'text'; text: string }
 interface MessageContentVenues { type: 'venues'; venues: VenueResult[] }
-interface MessageContentPlan { type: 'plan'; plan: Plan; planMsgId: string }
-type MessageContent = MessageContentText | MessageContentVenues | MessageContentPlan;
+type MessageContent = MessageContentText | MessageContentVenues;
 
 interface VennyMessageMetadata {
   /** Phase 4.5 — true when the assistant cited live market data
@@ -63,10 +61,6 @@ interface VennyMessage {
   metadata?: VennyMessageMetadata;
 }
 
-/** Tracks per-rendered-plan local UI state (saving/saved) without
- *  having to mutate the message itself. Keyed on the block's planMsgId. */
-type PlanSaveState = 'idle' | 'saving' | 'saved';
-
 interface VennySheetProps {
   open: boolean;
   onClose: () => void;
@@ -81,31 +75,11 @@ interface VennySheetProps {
   /** Called when the user taps a result card — parent closes the sheet
    *  and flies the map camera to (lng, lat). */
   onFlyToVenue: (venueId: string, lng: number, lat: number) => void;
-  /** Called when compose_plan returns. Parent renders the orange
-   *  route line + numbered stop markers on the map and (typically)
-   *  collapses the sheet height so the route is visible. */
-  onActivatePlan?: (plan: Plan | null) => void;
-  /** When non-null, drives the auto-snap-to-MINI behavior on the
-   *  transition to a fresh plan. Otherwise unused by the sheet's
-   *  size logic (user controls size via drag handle). */
-  activePlan?: Plan | null;
   /** Optional priming message — if set when the sheet opens, the
    *  sheet auto-sends it once history loads, then calls
    *  onInitialMessageHandled so the parent can clear it. */
   initialMessage?: string | null;
   onInitialMessageHandled?: () => void;
-  /** Indices of stops in the currently rendered plan that the
-   *  proximity detector has confirmed the user has entered. Passed
-   *  to PlanCard so it can render a green checkmark next to each
-   *  visited stop. */
-  visitedStopIndices?: number[];
-  /** Fires when save_plan succeeds — parent gets the new
-   *  night_plans.id so it can persist per-stop visited_at later. */
-  onPlanSaved?: (planId: string) => void;
-  /** Fires when the user taps LETS GO and the plan is persisted —
-   *  parent dismisses Venny and mounts plan mode on the REAL
-   *  night_plans.id (save-first contract; never a temp id). */
-  onEnterPlanMode?: (planId: string) => void;
 }
 
 function newId(): string {
@@ -120,13 +94,8 @@ function VennySheetInner({
   focusedVenueName,
   onHighlight,
   onFlyToVenue,
-  onActivatePlan,
-  activePlan,
   initialMessage,
   onInitialMessageHandled,
-  visitedStopIndices,
-  onPlanSaved,
-  onEnterPlanMode,
 }: VennySheetProps) {
   // Start every COLD app launch with a fresh conversation (null) so Venny
   // opens on a clean slate — the welcome + "make me a plan" CTA, not the
@@ -141,14 +110,6 @@ function VennySheetInner({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  /** Per-rendered-plan UI state — saving/saved indicators don't need
-   *  to round-trip through the persisted message blocks. */
-  const [planStates, setPlanStates] = useState<Record<string, PlanSaveState>>({});
-  /** planMsgId → persisted night_plans.id, populated on a successful
-   *  deterministic save so a later LETS GO enters immediately without
-   *  re-saving. */
-  const savedPlanIds = useRef<Record<string, string>>({});
 
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -161,9 +122,6 @@ function VennySheetInner({
   const [snapPoint, setSnapPoint] = useState<SheetSnap>(loadSnapPref);
   const [dragVh, setDragVh] = useState<number | null>(null);
   const dragRef = useRef<{ startVh: number; startY: number; movedPx: number } | null>(null);
-  /** Track activePlan transitions so we can auto-snap to MINI when a
-   *  fresh plan lands — without overwriting the user's manual pref. */
-  const planSnapRef = useRef<boolean>(activePlan != null);
 
   // ── Load history when the sheet opens (one shot per conversation) ──
   useEffect(() => {
@@ -217,19 +175,6 @@ function VennySheetInner({
     setSnapPoint(loadSnapPref());
     setDragVh(null);
   }, [open]);
-
-  // Auto-snap to MINI on the transition null → non-null activePlan
-  // so the user immediately sees the route on the map. Don't write
-  // this to the persisted pref — it's a one-time courtesy, not the
-  // user's stated preference.
-  useEffect(() => {
-    const wasActive = planSnapRef.current;
-    const isActive = activePlan != null;
-    planSnapRef.current = isActive;
-    if (!wasActive && isActive && open) {
-      setSnapPoint('mini');
-    }
-  }, [activePlan, open]);
 
   // Cancel any in-flight stream on close
   useEffect(() => {
@@ -316,19 +261,7 @@ function VennySheetInner({
             setMessages(prev => appendVenuesToAssistant(prev, asstId, output!.results as VenueResult[]));
           } else if (toolName === 'highlight_on_map' && Array.isArray(output?.highlighted_venue_ids)) {
             onHighlight(output!.highlighted_venue_ids as string[]);
-          } else if (toolName === 'compose_plan' && output?.plan && typeof output.plan === 'object') {
-            // Inject the plan card inline + tell the parent to render
-            // the route line on the map.
-            const plan = output.plan as Plan;
-            const planMsgId = newId();
-            setMessages(prev => appendPlanToAssistant(prev, asstId, plan, planMsgId));
-            setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
-            onActivatePlan?.(plan);
           }
-          // NOTE: save_plan is no longer handled here. Saving is
-          // deterministic — handleSavePlan / handleLetsGo call the
-          // venny-chat `save_plan` action directly and drive the UI off
-          // the awaited result, never off whether Haiku emits the tool.
         } else if (event.type === 'metadata') {
           // Phase 4.5 — assistant declared whether it used live market
           // data. Stamp the streaming message so the pulse dot paints.
@@ -359,7 +292,7 @@ function VennySheetInner({
       setSending(false);
       abortRef.current = null;
     }
-  }, [sending, city, userId, conversationId, focusedVenueName, onHighlight, onActivatePlan]);
+  }, [sending, city, userId, conversationId, focusedVenueName, onHighlight]);
 
   // ── Auto-send a priming message once history is loaded.
   // Used by the profile's "Tell Venny your taste" banner — opening
@@ -390,11 +323,6 @@ function VennySheetInner({
     () => getWelcomeMessage(city, 'friend'),
     [city],
   );
-
-  const handleSuggestionTap = useCallback((text: string) => {
-    hapticLight();
-    send(text);
-  }, [send]);
 
   // ── Drag handle: pointer events for resize + tap cycle ──────────
   // Pointer events unify mouse + touch + pen, capture properly for
@@ -476,178 +404,6 @@ function VennySheetInner({
     }
   }, [send, input]);
 
-  // ── Plan card actions ────────────────────────────────────────────
-  // Deterministic save — calls the venny-chat `save_plan` action directly
-  // and resolves with the server result { success, plan_id, error?,
-  // message? }. The UI is driven off THIS promise, never off whether
-  // Haiku chose to emit a save_plan tool call over the chat stream.
-  const savePlanDirect = useCallback(async (plan: Plan): Promise<{
-    success: boolean;
-    plan_id?: string | null;
-    error?: string | null;
-    message?: string | null;
-  }> => {
-    let accessToken: string | null = null;
-    if (supabase) {
-      const { data } = await supabase.auth.getSession();
-      accessToken = data.session?.access_token ?? null;
-    }
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'apikey': supabaseAnonPublicKey,
-      'Authorization': `Bearer ${accessToken ?? supabaseAnonPublicKey}`,
-    };
-    const res = await fetch(`${supabaseProjectUrl}/functions/v1/venny-chat`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ action: 'save_plan', plan, city, userId, conversationId }),
-    });
-    const out = await res.json().catch(() => null);
-    return out ?? { success: false, error: 'bad_response' };
-  }, [city, userId, conversationId]);
-
-  // Save: flip to 'saving', call save_plan directly, then resolve the
-  // card to 'saved' (success) or back to 'idle' (failure) — the state
-  // ALWAYS clears on the awaited result, so a card can never freeze.
-  const handleSavePlan = useCallback(async (planMsgId: string, plan: Plan) => {
-    if (!userId) {
-      setToast('sign in to save plans');
-      window.setTimeout(() => setToast(null), 2400);
-      return;
-    }
-    if (planStates[planMsgId] === 'saving') return;
-    hapticLight();
-    console.log('[SAVE-REPRO] save initiated (deterministic)', { userIdSentToServer: userId, planMsgId });
-    setPlanStates(prev => ({ ...prev, [planMsgId]: 'saving' }));
-    try {
-      const out = await savePlanDirect(plan);
-      console.log('[SAVE-REPRO] save_plan result', {
-        success: out?.success === true,
-        plan_id: typeof out?.plan_id === 'string' ? out.plan_id : null,
-        error: out?.error ?? null,
-        message: out?.message ?? null,
-      });
-      if (out?.success === true && typeof out.plan_id === 'string') {
-        setPlanStates(prev => ({ ...prev, [planMsgId]: 'saved' }));
-        savedPlanIds.current[planMsgId] = out.plan_id;
-        hapticSuccess();
-        setToast('plan saved ✓');
-        window.setTimeout(() => setToast(null), 2400);
-        onPlanSaved?.(out.plan_id);
-      } else {
-        setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
-        setToast((out?.message as string) ?? 'save failed');
-        window.setTimeout(() => setToast(null), 3000);
-      }
-    } catch (err) {
-      console.warn('[SAVE-REPRO] save threw', err);
-      setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
-      setToast('save failed');
-      window.setTimeout(() => setToast(null), 3000);
-    }
-  }, [userId, planStates, savePlanDirect, onPlanSaved]);
-
-  // LETS GO — enter plan mode. Save-first contract: plan mode only ever
-  // opens on a PERSISTED night_plans row (no temp ids, ever).
-  //   • already saved → enter immediately on the stored real id
-  //   • not saved     → save directly, then enter on the REAL id from
-  //                     the awaited result (no chat injection, no SSE
-  //                     dependency, no frozen spinner on failure)
-  const handleLetsGo = useCallback(async (planMsgId: string, plan: Plan) => {
-    const savedId = savedPlanIds.current[planMsgId];
-    if (savedId) {
-      hapticMedium();
-      onEnterPlanMode?.(savedId);
-      return;
-    }
-    if (!userId) {
-      setToast('sign in to start a plan');
-      window.setTimeout(() => setToast(null), 2400);
-      return;
-    }
-    if (planStates[planMsgId] === 'saving') return;
-    hapticLight();
-    setPlanStates(prev => ({ ...prev, [planMsgId]: 'saving' }));
-    try {
-      const out = await savePlanDirect(plan);
-      console.log('[SAVE-REPRO] save_plan result (lets go)', {
-        success: out?.success === true,
-        plan_id: typeof out?.plan_id === 'string' ? out.plan_id : null,
-        error: out?.error ?? null,
-        message: out?.message ?? null,
-      });
-      if (out?.success === true && typeof out.plan_id === 'string') {
-        setPlanStates(prev => ({ ...prev, [planMsgId]: 'saved' }));
-        savedPlanIds.current[planMsgId] = out.plan_id;
-        onPlanSaved?.(out.plan_id);
-        hapticMedium();
-        onEnterPlanMode?.(out.plan_id);
-      } else {
-        setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
-        setToast((out?.message as string) ?? 'save failed');
-        window.setTimeout(() => setToast(null), 3000);
-      }
-    } catch (err) {
-      console.warn('[SAVE-REPRO] lets go save threw', err);
-      setPlanStates(prev => ({ ...prev, [planMsgId]: 'idle' }));
-      setToast('save failed');
-      window.setTimeout(() => setToast(null), 3000);
-    }
-  }, [userId, planStates, savePlanDirect, onEnterPlanMode, onPlanSaved]);
-
-  // Share: open the native iOS share sheet so the user can text a friend
-  // their 3-stop plan. Falls back to clipboard on web (where the native
-  // sheet isn't available) so localhost still works. We share TEXT (the
-  // spots) — not a deep-link; shareable plan-links are a later thing.
-  const handleSharePlan = useCallback(async (plan: Plan) => {
-    hapticLight();
-    const lines: string[] = [];
-    lines.push(plan.title);
-    if (plan.summary) lines.push(plan.summary);
-    lines.push('');
-    plan.stops.forEach((s, i) => {
-      const meta = [s.arrival_time, s.estimated_cost != null ? `~$${s.estimated_cost}` : null]
-        .filter(Boolean)
-        .join(' · ');
-      lines.push(`${i + 1}. ${s.venue_name}${meta ? ` (${meta})` : ''}`);
-      if (s.vibe_note) lines.push(`   ${s.vibe_note}`);
-    });
-    if (plan.total_estimated_cost != null) {
-      lines.push('');
-      lines.push(`total: ~$${plan.total_estimated_cost} / person`);
-    }
-    lines.push('');
-    lines.push('— planned with venuu');
-    const text = lines.join('\n');
-    const title = plan.title || 'My venuu plan tonight';
-
-    try {
-      const { Capacitor } = await import('@capacitor/core');
-      if (Capacitor.isNativePlatform()) {
-        // Native iOS/Android share sheet (@capacitor/share, already in
-        // package.json) — lets the user send the plan via Messages, etc.
-        const { Share } = await import('@capacitor/share');
-        await Share.share({ title, text, dialogTitle: 'Share your plan' });
-        return; // the native sheet owns its UX — no toast needed
-      }
-      // Web fallback — native sheet unavailable, copy to clipboard.
-      await navigator.clipboard.writeText(text);
-      setToast('plan copied');
-      window.setTimeout(() => setToast(null), 2400);
-    } catch (err) {
-      // User dismissed the share sheet → stay silent. Anything else →
-      // fall back to clipboard so they still get the text.
-      if ((err as { name?: string })?.name === 'AbortError') return;
-      try {
-        await navigator.clipboard.writeText(text);
-        setToast('plan copied');
-      } catch {
-        setToast('share unavailable');
-      }
-      window.setTimeout(() => setToast(null), 2400);
-    }
-  }, []);
-
   return (
     <AnimatePresence>
       {open && (
@@ -668,31 +424,6 @@ function VennySheetInner({
               zIndex: 700,
             }}
           />
-
-          {/* Toast — short-lived status messages (plan saved, copied, etc.) */}
-          {toast && (
-            <div
-              style={{
-                position: 'fixed',
-                top: 'calc(80px + env(safe-area-inset-top, 0px) + 24px)',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                padding: '8px 16px',
-                borderRadius: 18,
-                background: 'rgba(10, 10, 14, 0.95)',
-                border: '1px solid rgba(255, 130, 0, 0.45)',
-                color: '#FFD9B8',
-                fontFamily: 'Satoshi, sans-serif',
-                fontSize: 13,
-                fontWeight: 600,
-                boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
-                zIndex: 720,
-                pointerEvents: 'none',
-              }}
-            >
-              {toast}
-            </div>
-          )}
 
           {/* Sheet */}
           <motion.div
@@ -814,11 +545,6 @@ function VennySheetInner({
                   message={msg}
                   onFlyToVenue={onFlyToVenue}
                   onClose={onClose}
-                  planStates={planStates}
-                  onSavePlan={handleSavePlan}
-                  onSharePlan={handleSharePlan}
-                  onLetsGo={handleLetsGo}
-                  visitedStopIndices={visitedStopIndices}
                 />
               ))}
 
@@ -839,43 +565,6 @@ function VennySheetInner({
 
               <div ref={messagesEndRef} style={{ height: 12 }} />
             </div>
-
-            {/* Primary action — one clear plan CTA (replaces the old
-             *  quick-prompt chips). Sends the canonical plan-intent through
-             *  the same handleSuggestionTap → send path the chips used, so
-             *  compose_plan fires exactly as before. Free-form questions go
-             *  through the composer below. Same empty-state visibility the
-             *  chips had (messages empty AND not at MINI). */}
-            {messages.length === 0 && snapPoint !== 'mini' && (
-              <div style={{
-                padding: '4px 16px 8px', flexShrink: 0,
-              }}>
-                <button
-                  type="button"
-                  onClick={() => handleSuggestionTap('Make me a plan for tonight')}
-                  style={{
-                    width: '100%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    padding: '12px 16px',
-                    borderRadius: 20,
-                    background: '#FF8200',
-                    border: 'none',
-                    color: 'white',
-                    fontFamily: 'Satoshi, sans-serif',
-                    fontSize: 15, fontWeight: 700,
-                    letterSpacing: '-0.01em',
-                    cursor: 'pointer',
-                    WebkitTapHighlightColor: 'transparent',
-                    boxShadow: '0 4px 16px rgba(255, 130, 0, 0.3)',
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path d="M8 1.2 L9.35 5.9 L14 7.25 L9.35 8.6 L8 13.3 L6.65 8.6 L2 7.25 L6.65 5.9 Z" fill="white" />
-                  </svg>
-                  Make me a plan for tonight
-                </button>
-              </div>
-            )}
 
             {/* Composer */}
             <div style={{
@@ -953,20 +642,10 @@ function MessageBubble({
   message,
   onFlyToVenue,
   onClose,
-  planStates,
-  onSavePlan,
-  onSharePlan,
-  onLetsGo,
-  visitedStopIndices,
 }: {
   message: VennyMessage;
   onFlyToVenue: (venueId: string, lng: number, lat: number) => void;
   onClose: () => void;
-  planStates: Record<string, PlanSaveState>;
-  onSavePlan: (planMsgId: string, plan: Plan) => void;
-  onSharePlan: (plan: Plan) => void;
-  onLetsGo: (planMsgId: string, plan: Plan) => void;
-  visitedStopIndices?: number[];
 }) {
   const isUser = message.role === 'user';
   const showsLiveDot = !isUser && message.metadata?.used_live_data === true;
@@ -1048,22 +727,6 @@ function MessageBubble({
                     }}
                   />
                 ))}
-              </div>
-            );
-          }
-          if (block.type === 'plan') {
-            const state = planStates[block.planMsgId] ?? 'idle';
-            return (
-              <div key={i} style={{ width: '100%' }}>
-                <PlanCard
-                  plan={block.plan}
-                  onSave={() => onSavePlan(block.planMsgId, block.plan)}
-                  onShare={() => onSharePlan(block.plan)}
-                  onActivate={() => onLetsGo(block.planMsgId, block.plan)}
-                  saved={state === 'saved'}
-                  saving={state === 'saving'}
-                  visitedStopIndices={visitedStopIndices}
-                />
               </div>
             );
           }
@@ -1191,18 +854,6 @@ function appendVenuesToAssistant(
   return prev.map(m => {
     if (m.id !== asstId) return m;
     return { ...m, blocks: [...m.blocks, { type: 'venues', venues }] };
-  });
-}
-
-function appendPlanToAssistant(
-  prev: VennyMessage[],
-  asstId: string,
-  plan: Plan,
-  planMsgId: string,
-): VennyMessage[] {
-  return prev.map(m => {
-    if (m.id !== asstId) return m;
-    return { ...m, blocks: [...m.blocks, { type: 'plan', plan, planMsgId }] };
   });
 }
 

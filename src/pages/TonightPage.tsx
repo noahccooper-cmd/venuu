@@ -16,7 +16,7 @@ import type { ColdOpenPhase } from '../hooks/useColdOpen';
 import type { Map as MapboxMap } from 'mapbox-gl';
 import type { Venue, Headcount, VenueEvent } from '../lib/types';
 import type { CityKey } from '../lib/constants';
-import type { Plan as VennyPlan } from '../components/Venny/PlanCard';
+import type { Plan as VennyPlan } from '../lib/types';
 import type { CoverPriceInfo } from '../hooks/useCoverPricing';
 import type { PurchaseResult } from '../hooks/useCoverPurchase';
 
@@ -85,10 +85,6 @@ interface TonightPageProps {
   /** Tap handler for the resume pill — reopens plan mode on the
    *  existing plan id (gentle re-entry, progress preserved). */
   onResumePlan?: () => void;
-  /** Set of venue IDs the current user has captured. Forwarded to
-   *  MapView for heat-map weighting (pearl border + glow + breathing
-   *  on the user's own marked venues). */
-  userVenueIds?: Set<string>;
   /** Current map mode — forwarded to MapView to gate event layers. */
   mapMode?: 'vibe' | 'events';
   /** Events-mode pin tap → parent expands the lineup sheet + glows the
@@ -140,7 +136,6 @@ export function TonightPage({
   sheetState,
   resumablePlanId,
   onResumePlan,
-  userVenueIds,
   mapMode,
   onEventPinClick,
   glowEventId,
@@ -573,7 +568,6 @@ export function TonightPage({
         focusedStopIndex={focusedStopIndex ?? null}
         sheetState={sheetState ?? null}
         selectedVenueId={selectedVenue?.id ?? null}
-        userVenueIds={userVenueIds ?? new Set()}
         mapMode={mapMode}
         litEventVenueIds={litEventVenueIds}
         selectedRangeStart={selectedRangeStart}

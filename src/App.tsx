@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { hapticMedium } from './lib/haptics';
 import { AnimatePresence } from 'framer-motion';
 import type { Map as MapboxMap } from 'mapbox-gl';
-import { supabase, envReady } from './lib/supabase';
+import { envReady } from './lib/supabase';
 import { useCity } from './hooks/useCity';
 import { useVenues } from './hooks/useVenues';
 import { useHeadcounts } from './hooks/useHeadcounts';
@@ -27,27 +26,14 @@ import { VenueToast } from './components/EventsMode/VenueToast';
 import type { LineupEvent } from './hooks/useEventsLineup';
 import { getDefaultMapMode, broadcastMapMode, type MapMode } from './lib/mapMode';
 import { VennySheet } from './components/Venny/VennySheet';
-import PaintCeremony from './components/Paint/PaintCeremony';
-import CaptureSurface from './components/Capture/CaptureSurface';
-import MomentToast from './components/Moment/MomentToast';
-import { useMyVenueIds } from './hooks/useMyVenueIds';
-import type { VibeHueId } from './lib/hueMath';
-import type { Plan as VennyPlan } from './components/Venny/PlanCard';
 import { SignInSheet } from './components/Auth/SignInSheet';
 import { NicknameScreen } from './components/Auth/NicknameScreen';
 import { ProfileOverlay } from './components/Profile/ProfileOverlay';
 import { ProfileScreen } from './components/Profile/ProfileScreen';
-import { PlanSheet } from './components/PlanSheet/PlanSheet';
-import { PlanModeHeader } from './components/PlanMode/PlanModeHeader';
-import { EndNightCeremony } from './components/PlanExecution/EndNightCeremony';
-import type { LiveStopState } from './components/PlanExecution/StopCard';
-import { MiniVennyPill } from './components/PlanExecution/MiniVennyPill';
-import { hapticLight } from './lib/haptics';
 import { OnboardingScreen } from './components/Onboarding/OnboardingScreen';
 import { TasteFlow } from './components/Onboarding/TasteFlow';
 import { PushBanner } from './components/Notifications/PushBanner';
 import { usePushNotifications, markPushListenerReady } from './hooks/usePushNotifications';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { useEvents } from './hooks/useEvents';
 import { useUserLocation } from './hooks/useUserLocation';
 import { useProximityDetection } from './hooks/useProximityDetection';
@@ -87,15 +73,6 @@ export default function App() {
   // open the sheet with a message ready to auto-send so Venny starts
   // the taste-capture conversation in one tap.
   const [vennyInitialMessage, setVennyInitialMessage] = useState<string | null>(null);
-  // ── Ship 3 — passive visit credit for active-plan stops ──
-  // Updated when the proximity detector emits 'venuu-plan-stop-visited'
-  // for a venue that matches a stop in the current activePlan.
-  // Cleared whenever activePlan changes (different plan → fresh set).
-  const [visitedStopIndices, setVisitedStopIndices] = useState<number[]>([]);
-  // If the user saves the current plan, Venny returns the night_plans
-  // row id. We hold it so subsequent ENTER events can persist
-  // visited_at onto the matching index in night_plans.stops JSONB.
-  const [activePlanId, setActivePlanId] = useState<string | null>(null);
   // Tinder-style taste calibration flow — full-screen modal opened
   // from the profile's "Quick setup" CTA (Session B). Independent of
   // VennySheet so the user can finish/skip without involving Venny.
@@ -104,58 +81,7 @@ export default function App() {
   const [vennyOpen, setVennyOpen] = useState(false);
   const [highlightedVenueIds, setHighlightedVenueIds] = useState<string[]>([]);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // ── Venny v1.2 — active multi-stop plan ──
-  // Set when Venny's compose_plan returns; drives the MapView route
-  // line + numbered markers + the VennySheet's adaptive height.
-  const [activePlan, setActivePlan] = useState<VennyPlan | null>(null);
-  // ── Plan Execution Mode (Ship 4) — full-screen takeover when the
-  //    user activates a saved plan from the profile carousel or from
-  //    tapping a stop marker on the main map. focusStopIndex is set
-  //    only for the map-tap path so the page can scroll to that stop
-  //    instead of the derived current one.
-  // ── Plan Sheet — three-state bottom sheet that lives on the map.
-  //    App owns sheetState so MapView + map-dim-overlay can react.
-  //    The End-Night Ceremony is a separate full-screen moment fired
-  //    after the sheet dismisses on completion.
-  const [activePlanSheet, setActivePlanSheet] = useState<{
-    planId: string;
-    state: 'pill' | 'card' | 'full';
-    focusStopIndex?: number;
-  } | null>(null);
-  const [endNightCeremony, setEndNightCeremony] = useState<{ planId: string } | null>(null);
-  // Plan Mode (Step 4) — the header's current-stop index, sourced from
-  // PlanSheet's venuu-plan-sheet-stops-updated broadcast (NOT recomputed
-  // here — PlanSheet stays the single source of truth). Seeded on entry.
-  const [planModeStopIndex, setPlanModeStopIndex] = useState(0);
 
-  // Moments flow state. PaintCeremony state is reused across both
-  // the legacy (now-removed) PaintScreen path and the new CaptureSurface
-  // path — activePaintVenue + paintedHueId still drive the ceremony.
-  const [paintCeremonyOpen, setPaintCeremonyOpen] = useState(false);
-  const [activePaintVenue, setActivePaintVenue] = useState<{
-    id: string;
-    name: string;
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [paintedHueId, setPaintedHueId] = useState<VibeHueId | null>(null);
-  const [paintedMomentNumber, setPaintedMomentNumber] = useState<number | null>(null);
-  /** Closing toast after ceremony — {momentNumber, venueName} when active */
-  const [momentToast, setMomentToast] = useState<{
-    momentNumber: number;
-    venueName: string;
-  } | null>(null);
-  // PHASE 3 (49c) — production CaptureSurface, opened by VenueCard
-  // dispatching `venuu:request-capture` or by a paint_prompt push.
-  const [captureSurfaceOpen, setCaptureSurfaceOpen] = useState(false);
-  const [captureSurfaceVenue, setCaptureSurfaceVenue] = useState<{
-    id: string; name: string; lat?: number; lng?: number;
-  } | null>(null);
-  // PlanSheet expects a live-state lookup per venue. v1 ships with an
-  // empty Map (everything falls back to the `unknown` accent); a
-  // follow-up can populate from headcount_estimates when activePlan
-  // is mounted. Keeping the type concrete so Block 3 has a clear hook.
-  const planSheetLiveByVenueId = useMemo<Map<string, LiveStopState>>(() => new Map(), []);
   const { city, switchCity } = useCity();
 
   // ── Map mode — VIBE (default) or EVENTS (calendar discovery) ──
@@ -216,21 +142,6 @@ export default function App() {
     return () => document.body.classList.remove('events-mode-active');
   }, [mapMode]);
 
-  // Plan Mode (Step 4) — toggle the body class the dimming/nav-hide CSS
-  // keys off, mirroring the events-mode pattern above. Also seed the
-  // header's stop index on entry (the stops-updated listener keeps it in
-  // sync after PlanSheet's first broadcast). Keyed on the Step-2-fixed
-  // activePlanSheet lifecycle — no new state machine.
-  useEffect(() => {
-    if (activePlanSheet) {
-      document.body.classList.add('plan-mode-active');
-      setPlanModeStopIndex(activePlanSheet.focusStopIndex ?? 0);
-    } else {
-      document.body.classList.remove('plan-mode-active');
-    }
-    return () => document.body.classList.remove('plan-mode-active');
-  }, [activePlanSheet]);
-
   const { user, profile, needsOnboard, signInWithApple, sendMagicLink, createProfile, signOut, refreshProfile } = useAuth();
 
   // Username source-of-truth: profile.username (from useAuth → DB) is the
@@ -243,10 +154,6 @@ export default function App() {
     () => profile?.username ?? localStorage.getItem('venue_username') ?? 'Guest',
     [profile?.username],
   );
-  // The set of venues the current user has captured. Drives
-  // heat map weighting — venues in this set render with enhanced
-  // glow in MapView, WebGL shader, and LiveVenueBubble overlays.
-  const userVenueIds = useMyVenueIds(username ?? null);
   const { venues, error: venuesError, refetch: refetchVenues } = useVenues(city);
   const cityAggregatesData = useCityAggregates();
   const tonightMapRef = useRef<MapboxMap | null>(null);
@@ -385,12 +292,11 @@ export default function App() {
     setSheetSnap(prev => (prev === 'pill' ? 'mid' : prev));
   }, [venues, events]);
 
-  // ── Foreground location — tighter polling + high-accuracy when on
-  // a plan so the proximity detector can credit stops faster.
+  // ── Foreground location ──
   const userLocationFull = useUserLocation({
     enabled: !!user && !coldOpen.active,
-    pollIntervalMs: activePlan ? 30_000 : 60_000,
-    highAccuracy: !!activePlan,
+    pollIntervalMs: 60_000,
+    highAccuracy: false,
   });
   const userLocation = userLocationFull.location;
   const { coverPrices } = useCoverPricing(city);
@@ -398,20 +304,7 @@ export default function App() {
 
   // ── Passive presence — credits user_visits when the user lingers
   //    inside a venue's geofence (60m enter, 100m exit hysteresis,
-  //    20-min cooldown) and emits ENTER events that the active-plan
-  //    UI uses for per-stop checkmarks.
-  const handleVenueEnter = useCallback((venueId: string) => {
-    if (!activePlan) return;
-    const idx = activePlan.stops.findIndex(s => s.venue_id === venueId);
-    if (idx < 0) return;
-    const detail = { venueId, stopIndex: idx, visitedAt: new Date().toISOString() };
-    // Canonical event (Ship 4). Legacy alias kept so the PlanCard tick
-    // logic and other in-flight consumers keep working until they're
-    // migrated.
-    window.dispatchEvent(new CustomEvent('venuu-plan-stop-arrived', { detail }));
-    window.dispatchEvent(new CustomEvent('venuu-plan-stop-visited', { detail }));
-  }, [activePlan]);
-
+  //    20-min cooldown).
   useProximityDetection({
     userLat: userLocationFull.lat,
     userLng: userLocationFull.lng,
@@ -419,7 +312,6 @@ export default function App() {
     venues,
     enabled: !!profile?.id && !coldOpen.active,
     userId: profile?.id ?? null,
-    onVenueEnter: handleVenueEnter,
   });
 
   // Location permission prompt — show the floating card once per
@@ -552,72 +444,6 @@ export default function App() {
     setVennyOpen(false);
   }, []);
 
-  // ── Plan handlers ────────────────────────────────────────────────
-  // compose_plan returned a plan → render route line on the map, clear
-  // any leftover Venny highlight (the plan stops are the highlight now),
-  // and switch to the tonight tab so the map is visible.
-  const handleActivatePlan = useCallback((plan: VennyPlan | null) => {
-    setActivePlan(plan);
-    if (plan) {
-      setTab('tonight');
-      // Drop the bubble-highlight set: the route markers carry attention.
-      if (highlightTimerRef.current) {
-        clearTimeout(highlightTimerRef.current);
-        highlightTimerRef.current = null;
-      }
-      setHighlightedVenueIds([]);
-    }
-  }, []);
-
-  // Tap a numbered route marker on the main map. Behaviour depends
-  // on whether a plan sheet is already mounted for this plan:
-  //   • Sheet open for this plan  → shift focus to the tapped stop,
-  //                                  expand PILL → CARD if needed,
-  //                                  fly the camera.
-  //   • Sheet not open (yet)      → open the sheet focused on that
-  //                                  stop with fromMap=true so we
-  //                                  skip the cinematic tab/camera
-  //                                  sequence (we're already on map).
-  const handlePlanStopTap = useCallback(async (stopIndex: number) => {
-    const map = tonightMapRef.current;
-    const stop = activePlan?.stops?.[stopIndex];
-    if (!map || !stop || !activePlanId) return;
-
-    if (activePlanSheet?.planId === activePlanId) {
-      setActivePlanSheet(prev => prev ? {
-        ...prev,
-        focusStopIndex: stopIndex,
-        state: prev.state === 'pill' ? 'card' : prev.state,
-      } : null);
-      map.flyTo({
-        center: [stop.lng, stop.lat],
-        zoom: Math.max(map.getZoom(), 15.5),
-        speed: 1.4,
-        curve: 1.2,
-        essential: true,
-      });
-      return;
-    }
-
-    // No sheet yet — mount it focused on this stop. We can mount
-    // directly here (rather than calling handleOpenPlanSheet) because
-    // we're already on the tonight tab and the activePlan mirror was
-    // set when this plan was activated. Avoid forward-referencing the
-    // handler so handlePlanStopTap stays self-contained.
-    map.flyTo({
-      center: [stop.lng, stop.lat],
-      zoom: Math.max(map.getZoom(), 15.5),
-      speed: 1.4,
-      curve: 1.2,
-      essential: true,
-    });
-    setActivePlanSheet({
-      planId: activePlanId,
-      state: 'card',
-      focusStopIndex: stopIndex,
-    });
-  }, [activePlan, activePlanId, activePlanSheet]);
-
   // ── Profile → Venny bridges ──────────────────────────────────────
   // "Tell Venny more" / "Tell Venny your taste" CTAs from the profile.
   // Accepts an optional priming message that the sheet auto-sends on
@@ -628,195 +454,6 @@ export default function App() {
     setVennyOpen(true);
   }, []);
 
-  // ── Plan Sheet handlers (Block 2 — replaces the takeover path) ──
-
-  // Open the three-state plan sheet. Three activation modes:
-  //
-  //   • FRESH ACTIVATION  (planned, never run)
-  //     → medium haptic, optional tab switch + flyTo (cinematic),
-  //       slide-up animation. The "crossing the threshold" beat.
-  //
-  //   • RE-ENTRY          (status=active, activated_at set)
-  //     → light haptic, optional tab switch then easeTo(300ms),
-  //       no flyTo. Resume in place rather than re-do the
-  //       ceremony.
-  //
-  //   • RE-RUN            (post "run it again" — handled in
-  //                        PlanSheet itself by resetting status
-  //                        back to active + clearing activated_at,
-  //                        so when the sheet remounts it reads as
-  //                        fresh activation here).
-  //
-  // The check uses a single DB round-trip up front so we can also
-  // pull the focus-stop coordinates for the camera move.
-  const handleOpenPlanSheet = useCallback(async (
-    planId: string,
-    options?: { state?: 'pill' | 'card' | 'full'; focusStopIndex?: number; fromMap?: boolean },
-  ) => {
-    const { data: planData } = await supabase
-      .from('night_plans')
-      .select('id, title, summary, status, activated_at, stops, current_stop_index, total_estimated_cost, total_duration_min, start_time, end_time, vibe_tags')
-      .eq('id', planId)
-      .maybeSingle();
-    if (!planData) return;
-
-    const planRow = planData as {
-      id: string;
-      title?: string;
-      summary?: string | null;
-      status?: string;
-      activated_at?: string | null;
-      stops?: VennyPlan['stops'];
-      current_stop_index?: number;
-      total_estimated_cost?: number | null;
-      total_duration_min?: number | null;
-      start_time?: string | null;
-      end_time?: string | null;
-      vibe_tags?: string[];
-    };
-
-    // Mirror the plan into activePlan so MapView keeps rendering the
-    // route + markers behind the sheet.
-    const vennyPlan: VennyPlan = {
-      title: planRow.title ?? 'Plan',
-      summary: planRow.summary ?? null,
-      stops: planRow.stops ?? [],
-      vibe_tags: (planRow.vibe_tags ?? []) as string[],
-      total_estimated_cost: planRow.total_estimated_cost ?? null,
-      total_duration_min: planRow.total_duration_min ?? null,
-      start_time: planRow.start_time ?? null,
-      end_time: planRow.end_time ?? null,
-    };
-    setActivePlan(vennyPlan);
-    // Direct set — safe now that the [activePlan] effect no longer
-    // clears activePlanId. (Previously a queueMicrotask deferred this
-    // to win the ordering against that clear; the race is gone.)
-    setActivePlanId(planId);
-
-    const initialSheetState = options?.state ?? 'card';
-    const focusIdx = options?.focusStopIndex ?? planRow.current_stop_index ?? 0;
-    const focusStop = planRow.stops?.[focusIdx];
-
-    const isAlreadyActivated =
-      planRow.status === 'active' && !!planRow.activated_at;
-
-    if (isAlreadyActivated && !options?.fromMap) {
-      // ── RE-ENTRY path — gentle ────────────────────────────────
-      void hapticLight();
-      if (tab !== 'tonight') {
-        setTab('tonight');
-        await new Promise(r => setTimeout(r, 80));
-      }
-      const map = tonightMapRef.current;
-      if (map && focusStop && typeof focusStop.lat === 'number' && typeof focusStop.lng === 'number') {
-        map.easeTo({
-          center: [focusStop.lng, focusStop.lat],
-          zoom: 15,
-          duration: 300,
-        });
-      }
-      setActivePlanSheet({
-        planId,
-        state: initialSheetState,
-        focusStopIndex: options?.focusStopIndex,
-      });
-      return;
-    }
-
-    // ── FRESH ACTIVATION (or re-run) — full cinematic ─────────
-    void hapticMedium();
-    if (tab !== 'tonight' && !options?.fromMap) {
-      setTab('tonight');
-      await new Promise(r => setTimeout(r, 120));
-      const map = tonightMapRef.current;
-      if (map && focusStop && typeof focusStop.lat === 'number' && typeof focusStop.lng === 'number') {
-        map.flyTo({
-          center: [focusStop.lng, focusStop.lat],
-          zoom: 14,
-          speed: 1.0,
-          curve: 1.2,
-          essential: true,
-        });
-      }
-      await new Promise(r => setTimeout(r, 200));
-    }
-
-    setActivePlanSheet({
-      planId,
-      state: initialSheetState,
-      focusStopIndex: options?.focusStopIndex,
-    });
-  }, [tab]);
-
-  // ENTER PLAN MODE (Phase 2 Step 3 bridge) — user tapped LETS GO on a
-  // composed plan that VennySheet has already PERSISTED (save-first).
-  // Dismiss Venny and reuse the existing fresh-activation cinematic on
-  // the REAL night_plans id. Never receives a temp id — VennySheet's
-  // save-first contract guarantees a persisted row before this fires.
-  const handleEnterPlanMode = useCallback((planId: string) => {
-    setVennyOpen(false);
-    void handleOpenPlanSheet(planId, { state: 'card' });
-  }, [handleOpenPlanSheet]);
-
-  const handleDismissPlanSheet = useCallback(() => {
-    void hapticLight();
-    setActivePlanSheet(null);
-  }, []);
-
-  const handlePlanSheetCompleted = useCallback(() => {
-    setActivePlanSheet(prev => {
-      if (!prev) return null;
-      // Schedule the ceremony to fire just after the sheet's dismiss
-      // animation settles so the two overlays don't fight for the
-      // user's attention.
-      const completedPlanId = prev.planId;
-      window.setTimeout(() => {
-        setEndNightCeremony({ planId: completedPlanId });
-      }, 150);
-      return null;
-    });
-  }, []);
-
-  const handleSheetStateChange = useCallback((newState: 'pill' | 'card' | 'full') => {
-    setActivePlanSheet(prev => prev ? { ...prev, state: newState } : null);
-  }, []);
-
-  const handleFocusStopChange = useCallback((stopIndex: number) => {
-    setActivePlanSheet(prev => prev ? { ...prev, focusStopIndex: stopIndex } : null);
-  }, []);
-
-  const handleCeremonyComplete = useCallback(() => {
-    setEndNightCeremony(null);
-    // Drop the map's route + markers once the ceremony fades —
-    // MapView's plan-rendering effect tears the layers down on
-    // activePlan === null. Also clear the saved-plan id mirror so
-    // the next plan activation starts fresh.
-    setActivePlan(null);
-    setActivePlanId(null);
-  }, []);
-
-  // Tap a plan card on the profile → enter Plan Execution Mode.
-  // Translate the MyPlan shape to the snake_case Venny Plan so the
-  // main map's route line stays visible during the threshold-crossing
-  // beat, then run the cinematic activation sequence:
-  //
-  //   1. Haptic medium + brief card press feedback (CSS)
-  //   2. Switch tab to 'tonight' so the map becomes the stage
-  //   3. Beat ~120ms for the tab transition
-  //   4. Camera flyTo the focus stop (or stop 1) — speed 1.2, curve 1.3
-  //   5. Beat ~200ms for the camera to start moving
-  //   6. Mount the execution page with its slide-up animation
-  //
-  // If the user is already on 'tonight' (e.g. tap-from-map cinematic
-  // Mini Venny pill inside the plan sheet → open the Venny sheet
-  // with the live plan context as a priming message. The execution
-  // page stays mounted underneath so the user lands back on it when
-  // they dismiss the sheet.
-  const handleOpenVennyFromExecution = useCallback((context: string) => {
-    setVennyInitialMessage(context);
-    setVennyOpen(true);
-  }, []);
-
   // Clean up the auto-clear timer on unmount.
   useEffect(() => {
     return () => {
@@ -824,228 +461,13 @@ export default function App() {
     };
   }, []);
 
-  // Reset the visited-stop tracker whenever activePlan changes. We do
-  // NOT clear activePlanId here: a saved plan's id must survive a
-  // recompose / re-preview so the save-first plan-mode entry (Step 3)
-  // can rely on it. activePlanId is cleared only at genuine teardown —
-  // handleCeremonyComplete (end-night) and the activePlanSheet-dismiss
-  // effect below (mid-plan close).
+  // Push-notification listener readiness signal. usePushNotifications
+  // buffers cold-launch push events until this fires — PushBanner (and
+  // any other 'push-notification' consumer) depends on it firing exactly
+  // once per app launch, independent of which notification kinds exist.
   useEffect(() => {
-    setVisitedStopIndices([]);
-  }, [activePlan]);
-
-  // Listen for the proximity detector's ENTER events on plan stops
-  // (App.tsx itself dispatched these in handleVenueEnter above) and
-  // remember the index so the PlanCard can render a green checkmark
-  // next to that stop's row. If the plan has been saved (activePlanId
-  // is set), also persist arrived_at + the legacy visited_at alias
-  // into the matching index of night_plans.stops JSONB so a future
-  // re-open of the plan from the profile carousel remembers progress.
-  //
-  // NOTE: PlanSheet's own markArrived writes a richer patch (advances
-  // current_stop_index + sets confirmed_manually) for I'M HERE taps.
-  // The persist below is the proximity-detector path — fires when
-  // the sheet isn't necessarily mounted, so we always run it.
-  useEffect(() => {
-    if (!activePlan) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { stopIndex?: number; visitedAt?: string } | undefined;
-      const idx = detail?.stopIndex;
-      if (typeof idx !== 'number') return;
-      setVisitedStopIndices(prev => (prev.includes(idx) ? prev : [...prev, idx]));
-
-      if (activePlanId && envReady) {
-        const visitedAt = detail?.visitedAt ?? new Date().toISOString();
-        (async () => {
-          try {
-            const { data, error } = await supabase
-              .from('night_plans')
-              .select('stops')
-              .eq('id', activePlanId)
-              .maybeSingle();
-            if (error || !data) return;
-            const stops = Array.isArray(data.stops) ? [...(data.stops as unknown[])] : [];
-            if (idx < 0 || idx >= stops.length) return;
-            const existing = (stops[idx] ?? {}) as Record<string, unknown>;
-            if (existing.arrived_at || existing.visited_at) return; // first ENTER wins
-            stops[idx] = { ...existing, arrived_at: visitedAt, visited_at: visitedAt };
-            const { error: updErr } = await supabase
-              .from('night_plans')
-              .update({ stops })
-              .eq('id', activePlanId);
-            if (updErr) {
-              console.warn('[plan_stops] persist arrived_at failed:', updErr.message);
-            }
-          } catch (err) {
-            console.warn('[plan_stops] persist threw:', err);
-          }
-        })();
-      }
-    };
-    // Listen for both event names — canonical + legacy alias.
-    window.addEventListener('venuu-plan-stop-arrived', handler as EventListener);
-    window.addEventListener('venuu-plan-stop-visited', handler as EventListener);
-    return () => {
-      window.removeEventListener('venuu-plan-stop-arrived', handler as EventListener);
-      window.removeEventListener('venuu-plan-stop-visited', handler as EventListener);
-    };
-  }, [activePlan, activePlanId]);
-
-  // ── PlanSheet → main map sync. When PlanSheet writes to a stop
-  //    (arrived / skipped) it dispatches `venuu-plan-sheet-stops-
-  //    updated` with the latest stops array. Mirror that into
-  //    activePlan so MapView's plan markers re-paint with the right
-  //    arrived/skipped/current state.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as
-        | { planId?: string; stops?: VennyPlan['stops']; current_stop_index?: number }
-        | undefined;
-      if (!detail?.stops) return;
-      // Guard: only mirror updates for the currently mounted sheet's
-      // plan, so a stale event from a previously-dismissed sheet
-      // can't resurrect activePlan on the map.
-      if (!activePlanSheet || detail.planId !== activePlanSheet.planId) return;
-      setActivePlan(prev => (prev ? { ...prev, stops: detail.stops! } : prev));
-      // Step 4 — feed the PlanModeHeader's current stop from PlanSheet's
-      // owned pointer. Never recomputed here, so the header reflects
-      // PlanSheet's single source of truth (defect #2 stays out).
-      if (typeof detail.current_stop_index === 'number') {
-        setPlanModeStopIndex(detail.current_stop_index);
-      }
-    };
-    window.addEventListener('venuu-plan-sheet-stops-updated', handler as EventListener);
-    return () => window.removeEventListener('venuu-plan-sheet-stops-updated', handler as EventListener);
-  }, [activePlanSheet]);
-
-  // Listen for push-notification CustomEvents with paint_prompt type.
-  // 49c — opens CaptureSurface (replaces PaintScreen). The paint_prompt
-  // id itself is no longer threaded through; the production submit
-  // pipeline calls record_paint with null prompt id. If we ever want
-  // per-prompt analytics back, add p_paint_prompt_id support to
-  // submit_moment and thread it from here.
-  useEffect(() => {
-    const handler = async (ev: Event) => {
-      const detail = (ev as CustomEvent).detail;
-      if (!detail || detail?.data?.type !== 'paint_prompt') return;
-
-      const venueId = detail.data.venue_id as string;
-      if (!venueId) {
-        console.warn('[App] paint_prompt push missing venue_id', detail);
-        return;
-      }
-
-      // Fetch venue coords for the capture surface header + ceremony flyTo
-      const { data: venueRow } = await supabase
-        .from('venues')
-        .select('id, name, lat, lng')
-        .eq('id', venueId)
-        .single();
-
-      if (!venueRow) {
-        console.warn('[App] paint_prompt venue not found', venueId);
-        return;
-      }
-
-      setCaptureSurfaceVenue({
-        id: venueRow.id,
-        name: venueRow.name,
-        lat: venueRow.lat,
-        lng: venueRow.lng,
-      });
-      setCaptureSurfaceOpen(true);
-    };
-
-    window.addEventListener('push-notification', handler);
     markPushListenerReady();
-    return () => window.removeEventListener('push-notification', handler);
   }, []);
-
-  // PROMPT 50 — 8am develop notification, tap handler.
-  // When the user taps the local notification fired at the moment's
-  // 8am develop time, deep-link them straight to the 'you' tab so
-  // they see their newly developed orb in My Venues. (showProfile
-  // is only used by the guest-only ProfileOverlay — the real profile
-  // with the moments grid lives on the 'you' tab.)
-  useEffect(() => {
-    let listener: { remove: () => Promise<void> } | undefined;
-    (async () => {
-      try {
-        listener = await LocalNotifications.addListener(
-          'localNotificationActionPerformed',
-          (action) => {
-            const kind = action?.notification?.extra?.kind;
-            console.log('[App] local notification tap, kind:', kind);
-            if (kind === 'moment_develop') {
-              setTab('you');
-              // Future enhancement: scroll to the specific orb via
-              // action.notification.extra.recapId
-            }
-          }
-        );
-      } catch (err) {
-        console.warn('[App] LocalNotifications listener failed:', err);
-      }
-    })();
-
-    return () => {
-      if (listener && typeof listener.remove === 'function') {
-        listener.remove();
-      }
-    };
-  }, []);
-
-  // 49c — in-app capture entry. The venue card dispatches a
-  // request-capture event when a user inside a geofenced venue taps
-  // the "✦ capture {venue}" CTA. Opens CaptureSurface for that venue.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { venueId: string; venueName: string; lat: number; lng: number };
-      if (!detail?.venueId || !detail?.venueName) {
-        console.warn('[App] venuu:request-capture missing venue data', detail);
-        return;
-      }
-      console.log('[App] opening CaptureSurface for', detail.venueName);
-      setCaptureSurfaceVenue({
-        id: detail.venueId,
-        name: detail.venueName,
-        lat: detail.lat,
-        lng: detail.lng,
-      });
-      setCaptureSurfaceOpen(true);
-    };
-    window.addEventListener('venuu:request-capture', handler);
-    return () => window.removeEventListener('venuu:request-capture', handler);
-  }, []);
-
-  // ── activePlan lifecycle bound to activePlanSheet. When the
-  //    sheet dismisses (close X, swipe-down past PILL, end-night
-  //    completion sequence, etc.) we clear activePlan so the map's
-  //    route line + stop markers tear down.
-  //    NOTE: activePlanId deliberately SURVIVES a mid-plan close —
-  //    it's the signal the "Resume Plan" pill reads to offer hopping
-  //    back in. It's only cleared on genuine completion
-  //    (handleCeremonyComplete) or when a new plan replaces it.
-  useEffect(() => {
-    if (activePlanSheet) return;
-    setActivePlan(null);
-  }, [activePlanSheet]);
-
-  // ── Mirror sheet state onto the body so global CSS rules can
-  //    hide the Drop pill, Venny bar, and side controls when the
-  //    sheet covers them. PILL keeps everything visible; CARD and
-  //    FULL fade pills out. The map-dim-overlay already uses the
-  //    same attribute on its own element — this version covers
-  //    body-level surfaces (TheDrop / VennyBar) that aren't
-  //    descendants of the overlay.
-  useEffect(() => {
-    if (!activePlanSheet) {
-      document.body.removeAttribute('data-sheet-state');
-      return;
-    }
-    document.body.setAttribute('data-sheet-state', activePlanSheet.state);
-    return () => { document.body.removeAttribute('data-sheet-state'); };
-  }, [activePlanSheet]);
 
   // Build counts map from headcounts — any venue with count > 0 tonight shows on map.
   // Headcounts persist for the entire night regardless of whether the bouncer is still connected.
@@ -1276,16 +698,6 @@ export default function App() {
           onShareGlobe={shareGlobe.share}
           sharingGlobe={shareGlobe.sharing}
           highlightedVenueIds={highlightedVenueIds}
-          activePlan={activePlan}
-          onPlanStopTap={handlePlanStopTap}
-          focusedStopIndex={activePlanSheet?.focusStopIndex ?? null}
-          sheetState={activePlanSheet?.state ?? null}
-          // Resume-pill signal: a plan id that survives a mid-plan close
-          // (sheet dismissed) so the user can hop back in. Null while the
-          // plan sheet is open (already in plan mode) or no active plan.
-          resumablePlanId={activePlanSheet ? null : activePlanId}
-          onResumePlan={() => { if (activePlanId) void handleOpenPlanSheet(activePlanId, { state: 'card' }); }}
-          userVenueIds={userVenueIds}
           mapMode={mapMode}
           onEventPinClick={handleEventPinClick}
           glowEventId={glowingEventId}
@@ -1313,7 +725,6 @@ export default function App() {
             onClose={() => setTab('tonight')}
             onSignOut={signOut}
             onProfileRefresh={refreshProfile}
-            onOpenPlanExecution={(plan) => { void handleOpenPlanSheet(plan.id); }}
             onOpenVenny={handleOpenVennyFromProfile}
             onOpenTasteFlow={() => setTasteFlowOpen(true)}
             locationPermissionStatus={userLocationFull.permissionStatus}
@@ -1338,67 +749,6 @@ export default function App() {
           setTab(next);
         }}
       />
-
-      {/* Plan Sheet — three-state bottom sheet (PILL / CARD / FULL)
-       *  that sits over the map. The dim overlay below it darkens the
-       *  underlying map UI proportional to sheet state. */}
-      {activePlanSheet && (
-        <>
-          <div
-            className="map-dim-overlay"
-            data-sheet-state={activePlanSheet.state}
-            aria-hidden
-          />
-          {/* Plan Mode header — fixed top bar. Current stop comes from
-           *  PlanSheet's broadcast (planModeStopIndex), never recomputed.
-           *  Clamp guards the all-resolved edge (index == stops.length). */}
-          {activePlan && (activePlan.stops?.length ?? 0) > 0 && (() => {
-            const stops = activePlan.stops ?? [];
-            const idx = Math.min(Math.max(planModeStopIndex, 0), stops.length - 1);
-            return (
-              <PlanModeHeader
-                planTitle={activePlan.title ?? 'Tonight'}
-                currentStopName={stops[idx]?.venue_name ?? null}
-                currentStopIndex={idx}
-                totalStops={stops.length}
-                onExit={() => setActivePlanSheet(null)}
-              />
-            );
-          })()}
-          <PlanSheet
-            planId={activePlanSheet.planId}
-            sheetState={activePlanSheet.state}
-            initialFocusStopIndex={activePlanSheet.focusStopIndex}
-            onStateChange={handleSheetStateChange}
-            onDismiss={handleDismissPlanSheet}
-            onPlanCompleted={handlePlanSheetCompleted}
-            onFocusStopChange={handleFocusStopChange}
-            profileId={profile?.id ?? null}
-            liveByVenueId={planSheetLiveByVenueId}
-            userLocation={userLocation ? { lat: userLocation.lat, lng: userLocation.lng } : null}
-          />
-          {/* Mini Venny pill — slides above the sheet via animated
-           *  bottom offset so the user can summon Venny with plan
-           *  context preloaded without losing access to the sheet. */}
-          <MiniVennyPill
-            contextHasUpdate={false}
-            onTap={() => handleOpenVennyFromExecution(
-              `currently on ${activePlanSheet.planId.slice(0, 8)} plan`,
-            )}
-            sheetState={activePlanSheet.state}
-          />
-        </>
-      )}
-
-      {/* End-Night Ceremony — full-screen wrap-up moment fired after
-       *  the sheet dismisses on completion. */}
-      {endNightCeremony && (
-        <EndNightCeremony
-          planId={endNightCeremony.planId}
-          liveByVenueId={planSheetLiveByVenueId}
-          onComplete={handleCeremonyComplete}
-        />
-      )}
 
       {/* Cinematic cold open — 7-phase intro on first/returning launch. */}
       <AnimatePresence>
@@ -1448,105 +798,8 @@ export default function App() {
         focusedVenueName={focusedVenue?.venue.name ?? null}
         onHighlight={handleVennyHighlight}
         onFlyToVenue={handleVennyFlyToVenue}
-        onActivatePlan={handleActivatePlan}
-        activePlan={activePlan}
         initialMessage={vennyInitialMessage}
         onInitialMessageHandled={() => setVennyInitialMessage(null)}
-        visitedStopIndices={visitedStopIndices}
-        onPlanSaved={(planId) => setActivePlanId(planId)}
-        onEnterPlanMode={handleEnterPlanMode}
-      />
-
-      <PaintCeremony
-        open={paintCeremonyOpen}
-        hueId={paintedHueId}
-        venue={activePaintVenue}
-        map={tonightMapRef.current}
-        momentNumber={paintedMomentNumber}
-        onComplete={() => {
-          // Capture toast data BEFORE clearing the painted state
-          if (paintedMomentNumber != null && activePaintVenue != null) {
-            setMomentToast({
-              momentNumber: paintedMomentNumber,
-              venueName: activePaintVenue.name,
-            });
-          }
-          // Clear ceremony state
-          setPaintCeremonyOpen(false);
-          setPaintedHueId(null);
-          setPaintedMomentNumber(null);
-          setActivePaintVenue(null);
-        }}
-      />
-
-      {/* Closing toast — appears after PaintCeremony completes,
-          auto-dismisses after 3 seconds. Pearlescent ✦ + moment word
-          receipt at top of map. */}
-      {momentToast && (
-        <MomentToast
-          key={`${momentToast.venueName}-${momentToast.momentNumber}`}
-          momentNumber={momentToast.momentNumber}
-          venueName={momentToast.venueName}
-          onDismissed={() => setMomentToast(null)}
-        />
-      )}
-
-      {/* 49c — production WebRTC capture surface. Entry points:
-       *  1) venue-card "✦ capture {venue}" CTA → venuu:request-capture
-       *  2) paint_prompt push notification → push-notification handler */}
-      <CaptureSurface
-        open={captureSurfaceOpen}
-        venueId={captureSurfaceVenue?.id ?? ''}
-        venueName={captureSurfaceVenue?.name ?? ''}
-        username={username ?? null}
-        onPainted={(hueId, recapId, momentNumber) => {
-          console.log('[App] CaptureSurface onPainted, firing ceremony:', { hueId, recapId, momentNumber });
-
-          // CRITICAL ORDER: dismiss the venue card FIRST so it starts
-          // animating closed UNDER the still-open CaptureSurface. By the
-          // time CaptureSurface's exit animation completes (~300ms), the
-          // card is also fully gone. This is how iOS native dismisses
-          // chained sheets — the underneath one closes during the over
-          // one's exit.
-          setFocusedVenue(null);
-          window.dispatchEvent(new CustomEvent('venuu:dismiss-venue-card'));
-
-          // NOW close CaptureSurface — its exit animation plays over the
-          // already-dismissing card.
-          setCaptureSurfaceOpen(false);
-
-          const venueForCeremony = captureSurfaceVenue;
-          setCaptureSurfaceVenue(null);
-
-          if (venueForCeremony && venueForCeremony.lat != null && venueForCeremony.lng != null) {
-            const ceremonyVenueId = venueForCeremony.id;
-            const ceremonyVenueName = venueForCeremony.name;
-            const ceremonyLat = venueForCeremony.lat;
-            const ceremonyLng = venueForCeremony.lng;
-
-            // 500ms gives BOTH animations time to complete: CaptureSurface
-            // exit (~300ms) + venue card sheet dismiss (~350-450ms). When
-            // ceremony fires, both surfaces are gone, map is clean and
-            // ready for the cinematic.
-            setTimeout(() => {
-              setActivePaintVenue({
-                id: ceremonyVenueId,
-                name: ceremonyVenueName,
-                lat: ceremonyLat,
-                lng: ceremonyLng,
-              });
-              setPaintedHueId(hueId as VibeHueId);
-              setPaintedMomentNumber(momentNumber);
-              setPaintCeremonyOpen(true);
-            }, 500);
-          } else {
-            console.warn('[App] missing lat/lng for ceremony — skipping fly');
-          }
-        }}
-        onClose={() => {
-          setCaptureSurfaceOpen(false);
-          setCaptureSurfaceVenue(null);
-        }}
       />
 
       {/* Profile Overlay — sign-in prompt for guests */}
