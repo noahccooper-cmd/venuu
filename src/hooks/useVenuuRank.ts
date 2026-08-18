@@ -66,7 +66,6 @@ export function useVenuuRank(profileId: string | null): UseVenuuRankResult {
     const ch = supabase
       .channel(`venuu_rank_rt:${profileId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_visits', filter: `user_id=eq.${profileId}` }, () => { void refetch(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'night_plans', filter: `user_id=eq.${profileId}` }, () => { void refetch(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [profileId, refetch]);

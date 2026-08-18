@@ -114,7 +114,6 @@ export function ClickerView({
 
   // ── Portal analytics state ──
   const [tonightCheckins, setTonightCheckins] = useState<number | null>(null);
-  const [tonightMomentsCount, setTonightMomentsCount] = useState<number | null>(null);
   const [weekVisitors, setWeekVisitors] = useState<number | null>(null);
   const [weekAvgPeak, setWeekAvgPeak] = useState<number | null>(null);
 
@@ -149,22 +148,6 @@ export function ClickerView({
         .eq('venue_id', venue.id)
         .eq('night_of', nightOf);
       setTonightCheckins(checkinCount ?? 0);
-
-      // Moments captured at this venue today. Replaces the stars-based
-      // avg rating that was removed in migration 00063 (recaps → moments
-      // pivot). Counts ALL rows including those still developing — the
-      // operator wants to see engagement happening live.
-      const { count: momentsCount, error: momentsErr } = await supabase
-        .from('venue_recaps')
-        .select('*', { count: 'exact', head: true })
-        .eq('venue_id', venue.id)
-        .eq('day_of', nightOf);
-      if (momentsErr) {
-        console.warn('[clicker] moments count failed', momentsErr.message);
-        setTonightMomentsCount(null);
-      } else {
-        setTonightMomentsCount(momentsCount ?? 0);
-      }
 
       // This week: total loyalty check-ins
       const { count: weekCount } = await supabase
@@ -760,22 +743,6 @@ export function ClickerView({
             </p>
             <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '11px', color: '#8A8A95', marginTop: '4px' }}>
               Check-ins
-            </p>
-          </div>
-          {/* Moments count */}
-          <div style={{
-            flex: 1,
-            background: '#111114',
-            border: '1px solid #2a2a2e',
-            borderRadius: '12px',
-            padding: '12px 8px',
-            textAlign: 'center',
-          }}>
-            <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '24px', fontWeight: 800, color: '#FF8200', lineHeight: 1 }}>
-              {tonightMomentsCount !== null ? `${tonightMomentsCount}` : '--'}
-            </p>
-            <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '11px', color: '#8A8A95', marginTop: '4px' }}>
-              Moments tonight
             </p>
           </div>
         </div>

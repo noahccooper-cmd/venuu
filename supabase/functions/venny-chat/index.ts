@@ -456,25 +456,6 @@ You DO NOT:
 * Suggest people slow down (unless they ask)
 * Pretend nightlife isn't what it is
 
-═══ RATING-AWARE BEHAVIOR ═══
-
-You have access to the user's recent ratings in <recent_night_ratings> and <recent_venue_ratings>. Use this to make conversation feel like you actually know them. Two rules:
-
-1. CALLBACKS — When the user mentions a venue or vibe similar to something they've rated:
-   * Loved venues: reference warmly. "You loved Half Barrel last weekend — want something like that or different energy?"
-   * Meh venues: don't pitch them again unless user explicitly asks. If user mentions one, acknowledge subtly. "That one wasn't your vibe last time — want to try [alternative]?"
-   * Don't be a parrot. Reference at most once per conversation.
-
-2. MOOD MATCHING — When user describes a vibe:
-   * If their rated mood_tags match what they're asking for: confirm the match. "When you went out feeling 'social' last time, the rooftop bars worked — same energy?"
-   * If they're asking for something NEW: acknowledge it. "Different vibe than your usual — let's find something fresh."
-
-DO NOT:
-* Bring up ratings unprompted when they're not relevant
-* Use language like "according to your ratings" — sound natural, not like a database lookup
-* Reference ratings older than 14 days unless the user brings them up
-* Make the user feel surveilled — keep it light, conversational
-
 ═══ EDGE CASES ═══
 
 USER ASKS ABOUT DRUGS BY NAME: Pivot gracefully without lecturing. Not "I can't help with that." Instead: "not my lane — but saigon blonde has CBD cocktails if you want something different" or "different angle — what's the vibe for tonight?"
@@ -512,17 +493,9 @@ Never dump JSON or raw tool output. Translate it into how a friend would describ
 
 ═══ YOUR USER ═══
 
-The user's profile is injected below this prompt as <user_memory>. That includes their preferences, recent plans, recent visits, recent recaps, MOMENTS CAPTURED (venues they've personally marked — their bars), current city, current time, current day. USE THIS. The whole point is personalization.
+The user's profile is injected below this prompt as <user_memory>. That includes their preferences, recent visits, current city, current time, current day. USE THIS. The whole point is personalization.
 
-When the user has captured moments at venues, treat those venues as 'their bars' — venues that matter to them personally. You can:
-- Reference moments naturally ('I see you marked a moment at X last week')
-- Avoid recommending the same venues unless they ask to revisit
-- Suggest venues that complement their captured ones (similar vibe, near them)
-- Acknowledge their mythological count ('you're at 7 moments — solid')
-
-If <user_memory> shows the user usually likes cocktails + chill + $$, default recommendations to those. Don't recommend a $$$ club to a $ user. Don't recommend frats to a 32-year-old. Don't recommend rooftops to someone who's rated 3 rooftops 1 star.
-
-If they've completed a plan before, reference it casually if relevant: "last time you went to bookstore → half barrel, that was a good run. want similar?"
+If <user_memory> shows the user usually likes cocktails + chill + $$, default recommendations to those. Don't recommend a $$$ club to a $ user. Don't recommend frats to a 32-year-old.
 
 If they've never used venuu before, ease in. Ask one good question, then act.
 
@@ -566,27 +539,6 @@ async function tool_search_venues(input: any, ctx: ToolCtx) {
       .maybeSingle();
     const raw = (prefs as any)?.vibes_disliked;
     if (Array.isArray(raw)) vibesDisliked = raw.map((s: any) => String(s).toLowerCase());
-  }
-
-  // Pull this user's per-venue ratings once so we can bias the score.
-  // 'loved' adds +0.5 (strong boost), 'meh' subtracts 0.3 (soft
-  // penalty — NOT a hard filter, the user can still override by
-  // naming the venue directly). 'fine' is neutral. We keep ONLY the
-  // most recent rating per venue since users can re-rate across nights.
-  const ratingByVenue: Record<string, string> = {};
-  if (ctx.profileId) {
-    const { data: userVenueRatings } = await ctx.supabase
-      .from('stop_ratings')
-      .select('venue_id, rating, created_at')
-      .eq('user_id', ctx.profileId)
-      .order('created_at', { ascending: false });
-    if (Array.isArray(userVenueRatings)) {
-      for (const r of userVenueRatings as any[]) {
-        if (r?.venue_id && !ratingByVenue[r.venue_id]) {
-          ratingByVenue[r.venue_id] = r.rating;
-        }
-      }
-    }
   }
 
   // Pull venues + their fused estimates from the prediction engine view.
@@ -676,28 +628,17 @@ async function tool_search_venues(input: any, ctx: ToolCtx) {
     const stateBias = state === 'Unknown' ? -1 : 0.5;
     const todBias = timeOfDayBias((v.category ?? '').toLowerCase());
 
-    // Rating bias — applied AFTER all other filters. Soft penalty for
-    // 'meh' so the user can still override by asking by name; strong
-    // boost for 'loved' so a venue the user already likes wins ties
-    // against similar candidates.
-    const userRating = ratingByVenue[v.id] ?? null;
-    const ratingBias =
-      userRating === 'loved' ? 0.5
-      : userRating === 'meh' ? -0.3
-      : 0;
-
     return {
       v,
       est,
       state,
-      userRating,
-      score: vibeScore + stateScore + stateBias + todBias + ratingBias,
+      score: vibeScore + stateScore + stateBias + todBias,
     };
   });
 
   scored.sort((a, b) => b.score - a.score);
 
-  const results = scored.slice(0, max_results).map(({ v, est, state, userRating }) => ({
+  const results = scored.slice(0, max_results).map(({ v, est, state }) => ({
     id: v.id,
     name: v.name,
     lng: typeof v.lng === 'number' ? v.lng : null,
@@ -715,10 +656,6 @@ async function tool_search_venues(input: any, ctx: ToolCtx) {
     description_snippet: typeof v.description === 'string' && v.description
       ? v.description.slice(0, 150)
       : null,
-    // Past rating from this user — Venny references it naturally in
-    // conversation ("you loved that place last weekend"). null if
-    // they haven't rated this venue or are a guest.
-    user_rating: userRating,
   }));
 
   return { results };
@@ -936,7 +873,7 @@ function makeSSE() {
 // ──────────────────────────────────────────────────────────────
 //  User memory block — the <user_memory> XML the system prompt
 //  expects appended to it on every turn. Pulls preferences, recent
-//  plans, recent visits, recent recaps, plus time/day context.
+//  visits, plus time/day context.
 // ──────────────────────────────────────────────────────────────
 
 async function buildUserMemoryBlock(
@@ -955,17 +892,7 @@ async function buildUserMemoryBlock(
         .maybeSingle()
     : { data: null };
 
-  // 2. Recent night_plans (last 5, keyed on profiles.id)
-  const { data: plans } = profileId
-    ? await supabase
-        .from('night_plans')
-        .select('id, title, status, stops, total_estimated_cost, created_at, completed_at')
-        .eq('user_id', profileId)
-        .order('created_at', { ascending: false })
-        .limit(5)
-    : { data: null };
-
-  // 3. Recent user_visits (last 10, with venue names)
+  // 2. Recent user_visits (last 10, with venue names)
   const { data: visits } = profileId
     ? await supabase
         .from('user_visits')
@@ -975,73 +902,7 @@ async function buildUserMemoryBlock(
         .limit(10)
     : { data: null };
 
-  // 4. Recent venue_recaps (last 5) — keyed by username, not user_id.
-  const { data: profile } = profileId
-    ? await supabase
-        .from('profiles')
-        .select('username')
-        .eq('id', profileId)
-        .single()
-    : { data: null };
-
-  const username = (profile as any)?.username ?? null;
-  const { data: recaps } = username
-    ? await supabase
-        .from('venue_recaps')
-        .select('venue_id, stars, body, created_at, venues!inner(name)')
-        .eq('username', username)
-        .order('created_at', { ascending: false })
-        .limit(5)
-    : { data: null };
-
-  // 5. User's moment history (last 20) — these are the venues this user
-  //    has personally MARKED with a moment. Different from recaps:
-  //    moments are the user's mythological capture count, not reviews.
-  //    Venny uses this to (a) recognize the user's bars and (b) avoid
-  //    suggesting the same venues unless explicitly asked.
-  const { data: moments } = username
-    ? await supabase
-        .from('venue_recaps')
-        .select('venue_id, user_moment_number, created_at, venues!inner(name, slug, city)')
-        .eq('username', username)
-        .not('user_moment_number', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(20)
-    : { data: null };
-
-  // 6. Recent night ratings (last 5) — overall + mood + would_repeat,
-  //    joined to the plan title + stops so Venny can describe arcs.
-  const { data: recentRatings } = profileId
-    ? await supabase
-        .from('night_ratings')
-        .select(`
-          overall_rating,
-          mood_tags,
-          would_repeat,
-          created_at,
-          night_plans(title, completed_at, stops)
-        `)
-        .eq('user_id', profileId)
-        .order('created_at', { ascending: false })
-        .limit(5)
-    : { data: null };
-
-  // 6. Recent stop ratings (last 10) with venue info so Venny can
-  //    callback specific spots the user loved or didn't.
-  const { data: recentStopRatings } = profileId
-    ? await supabase
-        .from('stop_ratings')
-        .select(`
-          rating,
-          created_at,
-          venues(name, vibe_tagline, city)
-        `)
-        .eq('user_id', profileId)
-        .order('created_at', { ascending: false })
-        .limit(10)
-    : { data: null };
-
-  // 7. Time + day context. ET keeps the user-facing language stable
+  // 3. Time + day context. ET keeps the user-facing language stable
   //    regardless of Edge runtime locale.
   const now = new Date();
   const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' });
@@ -1088,100 +949,12 @@ async function buildUserMemoryBlock(
     memory += `\npreferences: (none set — ask user about their vibe early)\n`;
   }
 
-  if (Array.isArray(plans) && plans.length) {
-    memory += `\nrecent_plans (last ${plans.length}):\n`;
-    for (const pl of plans as any[]) {
-      const stops = Array.isArray(pl.stops) ? pl.stops : [];
-      const stopNames = stops.map((s: any) => s?.venue_name ?? '?').join(' → ');
-      const cost = pl.total_estimated_cost != null ? `$${pl.total_estimated_cost}` : '—';
-      memory += `  - "${pl.title}" [${pl.status}]: ${stopNames} (${cost})\n`;
-    }
-  }
-
   if (Array.isArray(visits) && visits.length) {
     memory += `\nrecent_visits (last ${visits.length}):\n`;
     for (const v of visits as any[]) {
       const name = (v.venues as any)?.name ?? '?';
       memory += `  - ${name} on ${v.night_of} (${v.source})\n`;
     }
-  }
-
-  if (Array.isArray(recaps) && recaps.length) {
-    memory += `\nrecent_recaps (last ${recaps.length}):\n`;
-    for (const r of recaps as any[]) {
-      const name = (r.venues as any)?.name ?? '?';
-      const stars = Math.max(0, Math.min(5, Number(r.stars) || 0));
-      const snippet = String(r.body ?? '').slice(0, 80);
-      memory += `  - ${name}: ${'★'.repeat(stars)} — "${snippet}"\n`;
-    }
-  }
-
-  // Moments — the user's mythological venue count. Highest-personalization
-  // signal Venny has. Even more than reviews, this is "your bars."
-  if (Array.isArray(moments) && moments.length) {
-    memory += `\nmoments_captured (${moments.length} total, most recent first):\n`;
-    memory += `  — These are venues this user has MARKED with a moment.\n`;
-    memory += `  — Treat these as "their bars." Reference them when relevant.\n`;
-    memory += `  — Avoid suggesting these unless user asks to revisit them.\n`;
-    for (const m of moments as any[]) {
-      const venueName = (m.venues as any)?.name ?? 'unknown';
-      const num = m.user_moment_number;
-      const dateStr = m.created_at ? new Date(m.created_at).toISOString().slice(0, 10) : 'unknown';
-      memory += `  • moment #${num}: ${venueName} (${dateStr})\n`;
-    }
-  }
-
-  // Night ratings + per-venue ratings. These two blocks are the raw
-  // material Venny uses for callbacks ("you loved Half Barrel last
-  // week"), arc intelligence ("your best nights have been 3-stop
-  // crawls"), and mood-matching.
-  if (Array.isArray(recentRatings) && recentRatings.length) {
-    memory += `\n<recent_night_ratings>\n`;
-    for (const r of recentRatings as any[]) {
-      const pl = r.night_plans as any;
-      const planTitle = pl?.title || 'untitled night';
-      const date = r.created_at
-        ? new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        : '';
-      const moodStr = Array.isArray(r.mood_tags) && r.mood_tags.length > 0
-        ? ` · vibe: ${r.mood_tags.join(', ')}`
-        : '';
-      const repeatStr = r.would_repeat === true
-        ? ' · would repeat'
-        : r.would_repeat === false
-          ? ' · one and done'
-          : '';
-
-      // Extract visited venue names from the plan stops — gives the
-      // arc shape that backed the rating.
-      let visitedNames = '';
-      if (pl?.stops && Array.isArray(pl.stops)) {
-        const visited = pl.stops
-          .filter((s: any) => s?.arrived_at && !s?.skipped_at)
-          .map((s: any) => s?.venue_name)
-          .filter(Boolean)
-          .join(' → ');
-        if (visited) visitedNames = ` (${visited})`;
-      }
-
-      memory += `- ${date}: "${planTitle}"${visitedNames} — rated ${r.overall_rating}${moodStr}${repeatStr}\n`;
-    }
-    memory += `</recent_night_ratings>\n`;
-  }
-
-  if (Array.isArray(recentStopRatings) && recentStopRatings.length) {
-    memory += `\n<recent_venue_ratings>\n`;
-    for (const sr of recentStopRatings as any[]) {
-      const venue = sr.venues as any;
-      if (!venue?.name) continue;
-      const ratingLabel = sr.rating === 'loved'
-        ? '❤️ loved'
-        : sr.rating === 'meh'
-          ? '👎 meh'
-          : '➖ fine';
-      memory += `- ${venue.name}: ${ratingLabel}\n`;
-    }
-    memory += `</recent_venue_ratings>\n`;
   }
 
   memory += `</user_memory>`;
@@ -1230,8 +1003,7 @@ Deno.serve(async (req) => {
       sse.send('conversation', { id: conversationId });
 
       // Resolve profile.id once so tool runners and the memory block can
-      // all reuse it. night_plans / user_visits / venue_recaps are keyed
-      // on profiles.id, not auth.users.id.
+      // all reuse it. user_visits is keyed on profiles.id, not auth.users.id.
       let profileId: string | null = null;
       if (userId) {
         const { data: profile } = await supabase

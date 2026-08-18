@@ -44,9 +44,7 @@ export interface UserAccountStats {
 /** Public return shape of useUserAccountStats. `refetch` lives here
  *  rather than on UserAccountStats so the data shape stays pure. */
 export interface UseUserAccountStatsResult extends UserAccountStats {
-  /** Force a refresh of every counter — used by ProfileScreen on
-   *  the venuu-plan-completed-celebrate event since night_plans
-   *  realtime can lag a few hundred ms behind the dispatch. */
+  /** Force a refresh of every counter. */
   refetch: () => Promise<void>;
 }
 
@@ -143,10 +141,10 @@ export function useUserAccountStats({
 
     // Pull the aggregate counters AND raw dates for the weekend
     // streak in parallel. The streak can't go in the view because
-    // it depends on the current calendar week. The streak now reads
-    // from user_visits (the new source of truth) so passive visits
-    // count toward the streak even without an NFC tap.
-    const [viewRes, visitDatesRes, firstVisitRes, coverDatesRes, planDatesRes, stopRatingsRes] = await Promise.all([
+    // it depends on the current calendar week. The streak reads from
+    // user_visits + cover_purchases (night_plans dropped from this
+    // calc — night_plans/stop_ratings tables retired with the v3 strip).
+    const [viewRes, visitDatesRes, firstVisitRes, coverDatesRes] = await Promise.all([
       supabase
         .from('user_account_stats')
         .select('*')
@@ -176,19 +174,6 @@ export function useUserAccountStats({
             .order('purchased_at', { ascending: false })
             .limit(500)
         : Promise.resolve({ data: null, error: null } as const),
-      supabase
-        .from('night_plans')
-        .select('created_at')
-        .eq('user_id', profileId)
-        .order('created_at', { ascending: false })
-        .limit(500),
-      // Stop ratings drive the Taste % stat: (loved + fine*0.5) / total
-      // expressed as a percentage. Reads the raw rows so the formula
-      // can evolve without a view migration.
-      supabase
-        .from('stop_ratings')
-        .select('rating')
-        .eq('user_id', profileId),
     ]);
 
     if (viewRes.error || !viewRes.data) {
@@ -199,7 +184,7 @@ export function useUserAccountStats({
     }
     const data = viewRes.data;
 
-    // Build the active-dates Set from all three sources.
+    // Build the active-dates Set from both sources.
     const active = new Set<string>();
     const visits = (visitDatesRes.data ?? []) as Array<{ night_of: string }>;
     for (const v of visits) {
@@ -211,12 +196,6 @@ export function useUserAccountStats({
         active.add(c.purchased_at.slice(0, 10));
       }
     }
-    const planRows = (planDatesRes.data ?? []) as Array<{ created_at: string }>;
-    for (const p of planRows) {
-      if (typeof p.created_at === 'string' && p.created_at) {
-        active.add(p.created_at.slice(0, 10));
-      }
-    }
     const weekendStreak = computeWeekendStreak(active, new Date());
 
     // accountSince — earliest user_visits.first_seen_at if present,
@@ -226,22 +205,11 @@ export function useUserAccountStats({
     const earliestFirstSeen = (firstVisitRes.data as { first_seen_at?: string | null } | null)?.first_seen_at ?? null;
     const accountSince: string | null = earliestFirstSeen ?? profileCreatedAt ?? null;
 
-    // Taste accuracy — (loved + fine * 0.5) / total * 100. Falls
-    // back to the view's value (zero today) when there are no
-    // stop_ratings rows yet.
-    const ratingRows = (stopRatingsRes.data ?? []) as Array<{ rating: 'loved' | 'fine' | 'meh' }>;
-    let tasteAccuracy = (data.taste_accuracy_pct ?? 0) as number;
-    if (ratingRows.length > 0) {
-      const loved = ratingRows.filter(r => r.rating === 'loved').length;
-      const fine  = ratingRows.filter(r => r.rating === 'fine').length;
-      tasteAccuracy = Math.round(((loved + fine * 0.5) / ratingRows.length) * 100);
-    }
-
     setStats({
       nightsOut:        (data.nights_out ?? 0) as number,
       venuesDiscovered: (data.venues_discovered ?? 0) as number,
       totalRecaps:      (data.total_recaps ?? 0) as number,
-      tasteAccuracyPct: tasteAccuracy,
+      tasteAccuracyPct: (data.taste_accuracy_pct ?? 0) as number,
       totalPlans:       (data.total_plans ?? 0) as number,
       plansCompleted:   (data.plans_completed ?? 0) as number,
       totalRewards:     (data.total_rewards ?? 0) as number,
@@ -287,8 +255,7 @@ export function useUserAccountStats({
     return () => { supabase.removeChannel(channel); };
   }, [authId, refetch]);
 
-  // night_plans + user_visits + venue_recaps key on profile.id /
-  // username respectively. user_visits is the most active table now
+  // user_visits keys on profile.id. It's the most active table now
   // (proximity detector writes to it) — subscribing makes Nights Out
   // and Venues Discovered counters update LIVE as visits land.
   useEffect(() => {
@@ -297,31 +264,7 @@ export function useUserAccountStats({
       .channel(`user_stats_profile_rt:${profileId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'night_plans', filter: `user_id=eq.${profileId}` },
-        () => { void refetch(); },
-      )
-      .on(
-        'postgres_changes',
         { event: '*', schema: 'public', table: 'user_visits', filter: `user_id=eq.${profileId}` },
-        () => { void refetch(); },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [profileId, refetch]);
-
-  // venue_recaps is keyed on username (denormalized — no FK), so
-  // realtime filter has to be by username. The channel rebuilds when
-  // username changes (rare).
-  // NOTE: we read `stats.username` indirectly via the view; the hook
-  // doesn't keep username in state, so we skip a filter and re-fetch
-  // on any recap change is acceptable cost — recaps are low-volume.
-  useEffect(() => {
-    if (!envReady || !profileId) return;
-    const channel = supabase
-      .channel(`user_stats_recaps_rt:${profileId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'venue_recaps' },
         () => { void refetch(); },
       )
       .subscribe();
