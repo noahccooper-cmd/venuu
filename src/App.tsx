@@ -14,6 +14,7 @@ import { CinematicIntro } from './components/Intro/CinematicIntro';
 import { Header } from './components/Layout/Header';
 import { BottomNav, type Tab } from './components/Layout/BottomNav';
 import { TonightPage } from './pages/TonightPage';
+import { CommunityPage } from './pages/CommunityPage';
 import { PortalPage } from './pages/PortalPage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
 import { VennyBar } from './components/Venny/VennyBar';
@@ -64,6 +65,9 @@ export default function App() {
   const [publicShareToken] = useState<string | null>(getPublicProfileToken);
 
   const [tab, setTab] = useState<Tab>('tonight');
+  // Venue-staff tools (Clicker/Security/Admin/Frat portals) — reached
+  // via a discreet entry point in ProfileScreen, not the consumer nav.
+  const [portalOpen, setPortalOpen] = useState(false);
   const [focusedVenue, setFocusedVenue] = useState<{ venue: Venue; headcount: Headcount | null } | null>(null);
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('venuu_onboarded') === 'true');
   const [showSignIn, setShowSignIn] = useState(false);
@@ -710,9 +714,11 @@ export default function App() {
         />
       </div>
 
-      {/* Portal tab — fullscreen clicker */}
-      <div className={tab === 'portal' ? '' : 'hidden'}>
-        <PortalPage onExit={() => setTab('tonight')} />
+      {/* Community tab — leaderboard/bar-ownership, a first-class
+       *  destination like Tonight. Public data (readable signed out or
+       *  in), so unlike the You tab it isn't gated on a signed-in user. */}
+      <div className={tab === 'community' ? '' : 'hidden'}>
+        <CommunityPage />
       </div>
 
       {/* You tab — profile as a first-class destination. Only mounted
@@ -727,9 +733,24 @@ export default function App() {
             onProfileRefresh={refreshProfile}
             onOpenVenny={handleOpenVennyFromProfile}
             onOpenTasteFlow={() => setTasteFlowOpen(true)}
+            onOpenPortal={() => setPortalOpen(true)}
             locationPermissionStatus={userLocationFull.permissionStatus}
             onRequestLocationPermission={handleAllowLocation}
           />
+        </div>
+      )}
+
+      {/* Venue-staff tools — full-screen takeover, reached only via
+       *  ProfileScreen's "Venue / Partner Login" entry. Not part of the
+       *  tab bar; PortalPage owns its own PIN/org-code auth, independent
+       *  of consumer sign-in. */}
+      {portalOpen && (
+        // zIndex must clear the app-level Header's hardcoded 1000 (not
+        // the documented --z-modal:200 token, which sits BELOW it) —
+        // this is a full takeover that needs to cover the venuu chrome
+        // entirely, header included.
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1001, background: '#050507' }}>
+          <PortalPage onExit={() => setPortalOpen(false)} />
         </div>
       )}
 
@@ -774,6 +795,7 @@ export default function App() {
           onClose={() => setShowSignIn(false)}
           onSignedIn={() => setShowSignIn(false)}
           signInWithApple={signInWithApple}
+          onOpenPortal={() => { setShowSignIn(false); setPortalOpen(true); }}
         />
       )}
 

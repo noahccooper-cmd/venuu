@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, LogOut, MapPin, Beer, Star, Ticket, Bell, Sparkles,
   Pencil, Share2, Award,
-  Crown, Trophy, Footprints, Flame, LocateOff,
+  Crown, Trophy, Footprints, Flame, LocateOff, Radio,
   type LucideIcon,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
@@ -35,6 +35,11 @@ interface ProfileScreenProps {
   /** "Quick setup" CTA on the missing-taste banner opens the
    *  Tinder-style structured taste flow. */
   onOpenTasteFlow?: () => void;
+  /** Discreet entry point into the venue-staff tools (Clicker/
+   *  Security/Admin/Frat portals) — PIN/org-code gated on its own,
+   *  independent of consumer sign-in. Lives here, not the bottom
+   *  nav, since it's not a consumer destination. */
+  onOpenPortal?: () => void;
   /** Current GPS permission status (forwarded from useUserLocation
    *  via App.tsx) — drives the persistent "Location is off" banner
    *  at the top of the profile. */
@@ -337,6 +342,7 @@ export function ProfileScreen({
   onProfileRefresh,
   onOpenVenny,
   onOpenTasteFlow,
+  onOpenPortal,
   locationPermissionStatus,
   onRequestLocationPermission,
 }: ProfileScreenProps) {
@@ -1642,7 +1648,27 @@ export function ProfileScreen({
         </div>
 
         {/* ── 11. ACCOUNT ──────────────────────────────────── */}
-        <div style={{ padding: '24px 20px 0', textAlign: 'center' }}>
+        {onOpenPortal && (
+          <div style={{ padding: '24px 20px 0', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => { hapticLight(); onOpenPortal(); }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'none', border: 'none',
+                color: 'var(--text-faded)',
+                fontFamily: FONT, fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', padding: '8px 24px', minHeight: 36,
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <Radio size={12} strokeWidth={1.5} />
+              Venue / Partner Login
+            </button>
+          </div>
+        )}
+
+        <div style={{ padding: onOpenPortal ? '4px 20px 0' : '24px 20px 0', textAlign: 'center' }}>
           <button
             type="button"
             onClick={handleSignOut}

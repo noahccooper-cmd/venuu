@@ -1,6 +1,11 @@
-import { MapPin, Radio, User } from 'lucide-react';
+import { MapPin, Trophy, User } from 'lucide-react';
 
-export type Tab = 'tonight' | 'portal' | 'you';
+/** Consumer-facing primary destinations. 'portal' (venue-staff tools)
+ *  deliberately lives outside this nav — see ProfileScreen's
+ *  "Venue / Partner Login" entry point instead. A 4th tab (events)
+ *  slots in here later; the flex-1/justify-around layout below
+ *  doesn't need any rework to accommodate it. */
+export type Tab = 'tonight' | 'community' | 'you';
 
 interface BottomNavProps {
   active: Tab;
@@ -8,10 +13,20 @@ interface BottomNavProps {
 }
 
 const tabs: { key: Tab; label: string; icon: typeof MapPin }[] = [
-  { key: 'tonight', label: 'Tonight', icon: MapPin },
-  { key: 'portal',  label: 'Portal',  icon: Radio },
-  { key: 'you',     label: 'You',     icon: User },
+  { key: 'tonight',   label: 'Tonight',   icon: MapPin },
+  { key: 'community', label: 'Community', icon: Trophy },
+  { key: 'you',       label: 'You',       icon: User },
 ];
+
+/** Active color per tab. Community uses the gold ownership/leadership
+ *  accent (#FFD24A — same as LeaderboardOverlay's crown/rank-1 color)
+ *  instead of brand orange, since it's the leaderboard/ownership
+ *  surface. Everything else stays on brand orange. */
+const ACTIVE_COLOR: Record<Tab, string> = {
+  tonight: '#FF8200',
+  community: '#FFD24A',
+  you: '#FF8200',
+};
 
 export function BottomNav({ active, onChange }: BottomNavProps) {
   return (
@@ -23,23 +38,20 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
       }}>
       {tabs.map(({ key, label, icon: Icon }) => {
         const isActive = key === active;
+        const color = isActive ? ACTIVE_COLOR[key] : 'rgba(255, 255, 255, 0.4)';
         return (
           <button
             key={key}
             onClick={() => onChange(key)}
             className="flex-1 flex flex-col items-center gap-1 py-2"
           >
-            <Icon
-              size={28}
-              strokeWidth={1.5}
-              color={isActive ? '#FF8200' : 'rgba(255, 255, 255, 0.4)'}
-            />
+            <Icon size={28} strokeWidth={1.5} color={color} />
             <span
               style={{
                 fontFamily: 'Satoshi, sans-serif',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: isActive ? '#FF8200' : 'rgba(255, 255, 255, 0.4)',
+                color,
               }}
             >
               {label}

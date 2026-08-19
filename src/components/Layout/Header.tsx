@@ -3,8 +3,8 @@ import type { CityKey } from '../../lib/constants';
 import { CityToggle } from './CityToggle';
 
 /**
- * Header — the top strip: venuu wordmark on the left, city dropdown on
- * the right (Portal tab swaps the right side for a small Portal label).
+ * Header — the top strip: venuu wordmark on the left, city dropdown
+ * on the right.
  *
  * The live "people out" subtitle was removed — that count now lives in
  * the city pulse line (street zoom) and the centered globe card (globe
@@ -20,8 +20,6 @@ interface HeaderProps {
 }
 
 export function Header({ city, onCityChange, activeTab }: HeaderProps) {
-  const isPortal = activeTab === 'portal';
-
   // Hide the city selector at globe zoom on the tonight tab — at the
   // universe view the user is looking at all cities, not one. Driven by
   // the venuu:globe-state broadcast from TonightPage (single source).
@@ -54,26 +52,13 @@ export function Header({ city, onCityChange, activeTab }: HeaderProps) {
         >
           venuu
         </h1>
-        {isPortal ? (
-          <span style={{
-            fontFamily: 'Satoshi, sans-serif',
-            fontSize: '13px',
-            fontWeight: 700,
-            color: 'rgba(255,255,255,0.35)',
-            letterSpacing: '1px',
-            textTransform: 'uppercase',
-          }}>
-            Portal
-          </span>
-        ) : (
-          <div style={{
-            opacity: concealAtGlobe ? 0 : 1,
-            pointerEvents: concealAtGlobe ? 'none' : 'auto',
-            transition: 'opacity 0.3s ease',
-          }}>
-            <CityToggle city={city} onChange={onCityChange} />
-          </div>
-        )}
+        <div style={{
+          opacity: concealAtGlobe ? 0 : 1,
+          pointerEvents: concealAtGlobe ? 'none' : 'auto',
+          transition: 'opacity 0.3s ease',
+        }}>
+          <CityToggle city={city} onChange={onCityChange} />
+        </div>
       </div>
     </header>
   );

@@ -5,9 +5,15 @@ interface SignInSheetProps {
   onClose: () => void;
   onSignedIn: () => void;
   signInWithApple: () => Promise<{ error: Error | null | unknown }>;
+  /** Discreet unauthenticated escape hatch for venue staff who don't
+   *  have (and don't need) a consumer account — reaches PortalPage's
+   *  own PIN/org-code login directly, bypassing consumer sign-in
+   *  entirely. Optional so this sheet doesn't require App.tsx wiring
+   *  it everywhere it's ever rendered. */
+  onOpenPortal?: () => void;
 }
 
-export function SignInSheet({ onClose, onSignedIn, signInWithApple }: SignInSheetProps) {
+export function SignInSheet({ onClose, onSignedIn, signInWithApple, onOpenPortal }: SignInSheetProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -105,6 +111,20 @@ export function SignInSheet({ onClose, onSignedIn, signInWithApple }: SignInShee
           >
             Maybe later
           </button>
+
+          {/* Venue/partner staff escape hatch — deliberately understated,
+           *  no icon, smaller than "Maybe later" — this is for the small
+           *  population of staff-only users, not a consumer-facing CTA. */}
+          {onOpenPortal && (
+            <button
+              type="button"
+              onClick={onOpenPortal}
+              className="mt-2 text-[#3A3A42] text-xs transition-colors active:text-[#55555F]"
+              style={{ fontFamily: 'Satoshi, sans-serif', minHeight: 32, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+            >
+              Venue / Partner Login
+            </button>
+          )}
         </div>
       </div>
 
