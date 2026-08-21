@@ -718,7 +718,7 @@ export default function App() {
        *  destination like Tonight. Public data (readable signed out or
        *  in), so unlike the You tab it isn't gated on a signed-in user. */}
       <div className={tab === 'community' ? '' : 'hidden'}>
-        <CommunityPage />
+        <CommunityPage profileId={profile?.id ?? null} onOpenSignIn={() => setShowSignIn(true)} />
       </div>
 
       {/* You tab — profile as a first-class destination. Only mounted

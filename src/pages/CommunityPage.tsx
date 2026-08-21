@@ -1,15 +1,41 @@
 import { Trophy } from 'lucide-react';
+import { useCommunityLeaderboard } from '../hooks/useCommunityLeaderboard';
+import { YourVenuuHero } from '../components/Community/YourVenuuHero';
+import { CommunityPodium } from '../components/Community/CommunityPodium';
+import { CommunityBoardBubble } from '../components/Community/CommunityBoardBubble';
+import { BarWall } from '../components/Community/BarWall';
 
 const FONT = 'Satoshi, sans-serif';
+
+/** Board caps at top 100, not the full Knoxville roster — the podium
+ *  (1-3) slices off the front; everything from rank 4 on lives in
+ *  CommunityBoardBubble's own scrollable container, which finds and
+ *  auto-scrolls to the signed-in user if they're in range. */
+const BOARD_SIZE = 100;
+
+interface CommunityPageProps {
+  profileId: string | null;
+  onOpenSignIn?: () => void;
+}
 
 /**
  * CommunityPage — the Community tab's persistent shell. First-class
  * consumer destination (Map / Community / You), not an overlay.
- * Content lands section by section (global rank hero, bar-ownership
- * wall, per-venue drill-down) on top of this shell — see
- * useCommunityLeaderboard / useBarOwnership / useVenueBoard / useVenuuRank.
+ *
+ * Descends personal -> aspirational -> the race -> the bars:
+ *   1. YourVenuuHero — the Venuu # hero, first thing seen
+ *   2. CommunityPodium — top 3, the lit-stage centerpiece
+ *   3. CommunityBoardBubble — rank 4+, narrow scrollable pedestal
+ *      base sitting directly beneath the podium, find yourself here
+ *   4. BarWall — who owns Knoxville
+ *
+ * One useCommunityLeaderboard(BOARD_SIZE) call feeds 1-3 so the rank
+ * numbers a user sees in the hero, podium, and board are always the
+ * same consistent snapshot.
  */
-export function CommunityPage() {
+export function CommunityPage({ profileId, onOpenSignIn }: CommunityPageProps) {
+  const { rows, loading } = useCommunityLeaderboard(BOARD_SIZE);
+
   return (
     <div
       style={{
@@ -53,19 +79,22 @@ export function CommunityPage() {
           flex: 1,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 24,
+          padding: '16px 16px 0',
           paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 100px)',
         }}
       >
-        <div style={{ textAlign: 'center' }}>
-          <Trophy size={32} style={{ color: 'var(--text-faded)', marginBottom: 10 }} />
-          <p style={{ fontFamily: FONT, fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-            The leaderboard and bar-ownership wall land here next.
-          </p>
-        </div>
+        <YourVenuuHero profileId={profileId} rows={rows} onSignIn={onOpenSignIn} />
+
+        <CommunityPodium rows={rows} loading={loading} meProfileId={profileId} />
+        <CommunityBoardBubble rows={rows} loading={loading} meProfileId={profileId} />
+
+        {/* Clear break between "the board" (hero/podium/4-5/bubble,
+         *  one continuous ranked list) and the bar registry below —
+         *  bigger gap here than anywhere within the board itself. */}
+        <div style={{ height: 34 }} />
+
+        {/* ── Bar wall — who owns Knoxville ────────────────────── */}
+        <BarWall />
       </div>
     </div>
   );
