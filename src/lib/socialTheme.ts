@@ -3,10 +3,11 @@
  *
  * One flag picks the theme: VITE_SOCIAL_THEME (build-time, defaults off).
  *   - unset / anything else → VENUU_THEME: neutral, category tabs, no brand names
- *   - 'suncruiser'          → SUNCRUISER_THEME: partner tabs + "Presented by"
+ *   - 'suncruiser'          → SUNCRUISER_THEME: partner tabs, the sun, "Presented by"
  *
- * Never ship brand theming to the App Store without a signed deal — keep
- * the flag in .env.local only.
+ * Brand assets are for a private, flag-gated demo build only. Never ship
+ * brand theming to the App Store without a signed deal — keep the flag in
+ * .env.local only.
  *
  * Applied ONLY as CSS variables on the Social root element (see
  * socialThemeVars), never on :root, so nothing bleeds into Tonight.
@@ -22,11 +23,24 @@ export interface SocialPartner {
   label: string;
   /** Hex — used by Mapbox paint expressions, so no CSS vars here. */
   color: string;
-  /** Resolved asset URL when a file exists in src/assets/social/, else null → text wordmark. */
+  /** Brand secondary — the center dot of this partner's map pins. */
+  secondary?: string;
+  /** Official logo file URL, or null → text wordmark. */
   logo: string | null;
   about: string;
   schedule: string | null;
-  instagram: string | null;
+  links: {
+    website?: string;
+    /** Full profile URL; null/absent hides the link. */
+    instagram?: string | null;
+    finder?: { url: string; label: string };
+  };
+  /** Shown on the About card, e.g. "21+ · Please drink responsibly". */
+  disclaimer?: string;
+  /** Replaces the place line when locations aren't fixed, and hides Directions. */
+  locationNote?: string;
+  /** Product images (cards may use one as a thumbnail). */
+  images?: string[];
   /** Where this partner's medallion is pinned on the globe (e.g. a run
    *  club's meeting area). Partners without one don't appear on the globe. */
   home?: [number, number];
@@ -36,37 +50,60 @@ export interface SocialPartner {
 
 export interface SocialTheme {
   id: 'venuu' | 'suncruiser';
-  presentedBy: { name: string; logo: string | null } | null;
+  presentedBy: { name: string; logo: string | null; partnerKey: string } | null;
   partners: SocialPartner[];
-  /** CSS color values (may be var(...)) — header, box border, city button glow. */
+  /** CSS color values (may be var(...)) — header, box border, city label glow. */
   cityAccents: Record<CityKey, string>;
   /** Hex per category — card accent line + map pins for unbranded events. */
   categoryColors: Record<SocialCategory, string>;
   globe: { space: string; fog: string; highColor: string };
+  /** The sun behind the globe (presenting partner only). Null → neutral space. */
+  sun: { core: string; mid: string; corona: string } | null;
 }
 
-// ── Logos ─────────────────────────────────────────────────────────
-// Drop official files into src/assets/social/<key>.(svg|png|webp).
-// Missing file → the brand name renders as a text wordmark. Never
-// draw or recreate a logo.
-const LOGO_FILES = import.meta.glob('../assets/social/*.{svg,png,webp}', {
+// ── Assets ────────────────────────────────────────────────────────
+// Official files live in src/assets/social/ — either <key>.<ext> or
+// <key>/logo.<ext>. Missing file → the brand name renders as a text
+// wordmark. Never draw or recreate a logo.
+const ASSET_FILES = import.meta.glob('../assets/social/**/*.{svg,png,webp,jpg}', {
   eager: true,
   query: '?url',
   import: 'default',
 }) as Record<string, string>;
 
+function asset(relPath: string): string | null {
+  return ASSET_FILES[`../assets/social/${relPath}`] ?? null;
+}
+
 function logoFor(key: string): string | null {
-  const hit = Object.entries(LOGO_FILES).find(([path]) =>
-    path.replace(/^.*\//, '').replace(/\.[^.]+$/, '') === key,
-  );
-  return hit ? hit[1] : null;
+  for (const ext of ['svg', 'png', 'webp']) {
+    const hit = asset(`${key}/logo.${ext}`) ?? asset(`${key}.${ext}`);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** A partner logo file exists for this key (e.g. the "Fueled by" slot). */
+export function hasPartnerLogo(key: string): boolean {
+  return logoFor(key) !== null;
+}
+export function partnerLogo(key: string): string | null {
+  return logoFor(key);
 }
 
 // ── Colors ────────────────────────────────────────────────────────
-// TODO(brand): replace with official hex from Sun Cruiser's brand guide.
-export const SUNCRUISER_BLUE_TODO = '#2F7FE0';
+// Sun Cruiser — sampled from their official logo.svg
+// (drinksuncruiser.com/wp-content/uploads/2024/02/logo.svg, <style> block):
+//   .st0 #00A0AF  teal        → primary (their only blue; 8 paths)
+//   .st5 #5FD0DF  light teal  → secondary
+//   .st3 #FFDD00  sun yellow  → sun core (16 paths)
+//   .st4 #FDB913  sun gold    → sun corona (14 paths)
+export const SUNCRUISER_TEAL = '#00A0AF';
+export const SUNCRUISER_SKY = '#5FD0DF';
+export const SUNCRUISER_SUN_YELLOW = '#FFDD00';
+export const SUNCRUISER_SUN_GOLD = '#FDB913';
 
-// Blue belongs to Sun Cruiser alone. Green = run club / fitness /
+// Blue/teal belongs to Sun Cruiser alone. Green = run club / fitness /
 // community, red = nightlife, warm ivory = unbranded pop-ups.
 const RUN_GREEN = '#2FBF71';
 const POPUP_IVORY = '#EDE6D6';
@@ -79,10 +116,18 @@ const CITY_ACCENTS: Record<CityKey, string> = {
   st_petersburg: '#9B5EFF',
 };
 
-const GLOBE = {
+const NEUTRAL_GLOBE = {
   space: '#050507',
   fog: 'rgba(40, 40, 52, 0.55)',
   highColor: 'rgba(28, 28, 46, 0.9)',
+};
+
+// Presenting-partner globe: transparent space so the DOM sun behind the
+// canvas shows through; a warm atmosphere so the rim reads as backlit.
+const SUN_GLOBE = {
+  space: 'rgba(0, 0, 0, 0)',
+  fog: 'rgba(253, 185, 19, 0.35)',
+  highColor: 'rgba(255, 221, 0, 0.18)',
 };
 
 // ── Themes ────────────────────────────────────────────────────────
@@ -92,55 +137,70 @@ export const VENUU_THEME: SocialTheme = {
   partners: [
     {
       key: 'run_club', label: 'Run Clubs', color: RUN_GREEN, logo: null,
-      about: 'Group runs open to anyone.', schedule: null, instagram: null,
+      about: 'Group runs open to anyone.', schedule: null, links: {},
       match: { category: 'run_club' },
     },
     {
       key: 'pop_up', label: 'Pop-Ups', color: POPUP_IVORY, logo: null,
-      about: 'Short-run brand and maker pop-ups.', schedule: null, instagram: null,
+      about: 'Short-run brand and maker pop-ups.', schedule: null, links: {},
       match: { category: 'pop_up' },
     },
     {
       key: 'nightlife', label: 'Nightlife', color: NIGHT_RED, logo: null,
-      about: 'Late-night events picked by Venuu.', schedule: null, instagram: null,
+      about: 'Late-night events picked by Venuu.', schedule: null, links: {},
       match: { category: 'nightlife' },
     },
   ],
   cityAccents: CITY_ACCENTS,
   categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED },
-  globe: GLOBE,
+  globe: NEUTRAL_GLOBE,
+  sun: null,
 };
 
 export const SUNCRUISER_THEME: SocialTheme = {
   id: 'suncruiser',
-  presentedBy: { name: 'Sun Cruiser', logo: logoFor('suncruiser') },
+  presentedBy: { name: 'Sun Cruiser', logo: logoFor('suncruiser'), partnerKey: 'suncruiser' },
   partners: [
     {
       key: 'pinellas_run_club', label: 'Pinellas Run Club', color: RUN_GREEN,
       logo: logoFor('pinellas_run_club'),
-      about: 'Weekly community run in St. Pete.',
-      schedule: 'Thursdays 6:30 PM', // TODO(schedule): confirm real day/time with the club
-      instagram: null,               // TODO(instagram): confirm handle
-      home: [-82.6268, 27.7812],     // Vinoy Park — TODO(schedule): confirm meeting spot
+      about: 'Community runs in St. Pete, twice a week.',
+      schedule: 'Thursdays 6:30 PM · Saturdays 7:00 AM',
+      links: {
+        instagram: null,             // TODO(instagram): set the club's profile URL — link stays hidden until then
+      },
+      locationNote: 'Location posted on Instagram',
+      home: [-82.6268, 27.7812],     // TODO(location): approximate downtown St. Pete area for the globe medallion
       match: { brand: 'pinellas_run_club' },
     },
     {
-      key: 'suncruiser', label: 'Sun Cruiser', color: SUNCRUISER_BLUE_TODO,
+      key: 'suncruiser', label: 'Sun Cruiser', color: SUNCRUISER_TEAL, secondary: SUNCRUISER_SKY,
       logo: logoFor('suncruiser'),
-      about: 'Pop-ups with Venuu across Tampa Bay.',
+      about: 'Pop-ups with Venuu across Tampa Bay and Knoxville.',
       schedule: null,
-      instagram: null,               // TODO(instagram): confirm handle
+      links: {
+        website: 'https://www.drinksuncruiser.com',
+        instagram: 'https://www.instagram.com/drinksuncruiser',
+        finder: { url: 'https://www.drinksuncruiser.com/find', label: 'Find Sun Cruiser near you' },
+      },
+      disclaimer: '21+ · Please drink responsibly',
+      images: [
+        asset('suncruiser/can-classic-iced-tea.webp'),
+        asset('suncruiser/can-classic-lemonade.webp'),
+        asset('suncruiser/can-half-and-half.webp'),
+      ].filter((u): u is string => !!u),
       match: { brand: 'suncruiser' },
     },
     {
       key: 'nightlife', label: 'Nightlife', color: NIGHT_RED, logo: null,
-      about: 'Late-night events picked by Venuu.', schedule: null, instagram: null,
+      about: 'Late-night events picked by Venuu.', schedule: null, links: {},
       match: { category: 'nightlife' },
     },
   ],
   cityAccents: CITY_ACCENTS,
   categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED },
-  globe: GLOBE,
+  globe: SUN_GLOBE,
+  sun: { core: SUNCRUISER_SUN_YELLOW, mid: SUNCRUISER_SUN_GOLD, corona: 'rgba(253, 185, 19, 0.28)' },
 };
 
 export const SOCIAL_THEME: SocialTheme =
@@ -176,7 +236,7 @@ export function brandPartnerFor(theme: SocialTheme, ev: SocialEvent): SocialPart
 }
 
 /** An event's signal color: its themed brand's color when branded
- *  (so blue only ever means Sun Cruiser), else its category color. */
+ *  (so teal only ever means Sun Cruiser), else its category color. */
 export function eventColor(theme: SocialTheme, ev: SocialEvent): string {
   return brandPartnerFor(theme, ev)?.color ?? theme.categoryColors[ev.category];
 }

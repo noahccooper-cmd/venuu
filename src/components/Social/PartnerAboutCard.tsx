@@ -19,7 +19,7 @@ export function PartnerAboutCard({ partner }: { partner: SocialPartner }) {
     return () => cancelAnimationFrame(raf);
   }, [partner.key]);
 
-  const handle = partner.instagram?.replace(/^@/, '');
+  const handle = partner.links.instagram?.replace(/\/+$/, '').split('/').pop();
 
   return (
     <div
