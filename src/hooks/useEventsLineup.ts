@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { VenueEvent } from '../lib/types';
+import { toCityKey } from '../lib/cityKey';
 
 /**
  * Curated events lineup for events mode. Fetches all events where
@@ -31,13 +32,13 @@ export const SECTION_LABELS: Record<LineupSection, string> = {
 };
 
 function partitionEvent(evt: VenueEvent & { marquee: boolean }, now: Date): LineupSection | null {
+  // Expired events never surface — same rule as useEvents (expires_at > now).
+  if (new Date(evt.expires_at).getTime() <= now.getTime()) return null;
+
   const start = new Date(evt.start_time);
   const hoursUntil = (start.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-  if (hoursUntil < 0) {
-    // Past event (still within expires_at window): treat as now_playing
-    return 'now_playing';
-  }
+  // Started but not yet expired = happening now → ON TONIGHT.
   if (hoursUntil <= 72) return 'now_playing';       // next 3 days = right now energy
   if (hoursUntil <= 336) return 'this_week';        // next 14 days = this week
   return 'on_horizon';                              // 14+ days out = horizon
@@ -58,7 +59,8 @@ export function useEventsLineup(city: string | null) {
 
   // Fetch curated events for the city
   useEffect(() => {
-    if (!city) {
+    const cityKey = toCityKey(city);
+    if (!cityKey) {
       setAllCurated([]);
       setLoading(false);
       return;
@@ -71,9 +73,10 @@ export function useEventsLineup(city: string | null) {
       const { data, error } = await supabase
         .from('events')
         .select('*')
-        .eq('city', city)
+        .eq('city', cityKey)
         .eq('curated', true)
         .eq('is_active', true)
+        .gt('expires_at', now.toISOString())
         .order('start_time', { ascending: true });
 
       if (cancelled) return;
