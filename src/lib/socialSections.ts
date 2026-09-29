@@ -63,3 +63,45 @@ export function socialTimeLabel(ev: SocialEvent, now: number = Date.now()): stri
   }
   return label;
 }
+
+export interface SocialGroup { key: string; label: string; events: SocialEvent[] }
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Partner lists: Today / Tomorrow / "Thu, Oct 2" for the coming week,
+ *  then one header per month further out. Events must be sorted. */
+export function groupSocialDays(events: SocialEvent[], now: number = Date.now()): SocialGroup[] {
+  const today = dayStart(now);
+  // Via dayStart so a DST change can't shift "tomorrow" by an hour.
+  const tomorrow = dayStart(today + DAY + 6 * 3_600_000);
+  const groups: SocialGroup[] = [];
+  const byKey = new Map<string, SocialGroup>();
+  for (const ev of events) {
+    const start = new Date(ev.start_time).getTime();
+    const day = start <= now ? today : dayStart(start);
+    const d = new Date(day);
+    let key: string;
+    let label: string;
+    if (day === today) { key = 'today'; label = 'Today'; }
+    else if (day === tomorrow) { key = 'tomorrow'; label = 'Tomorrow'; }
+    else if (day < today + 7 * DAY) {
+      key = `day-${day}`;
+      label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } else {
+      key = `month-${d.getFullYear()}-${d.getMonth()}`;
+      label = MONTH_NAMES[d.getMonth()];
+    }
+    let g = byKey.get(key);
+    if (!g) { g = { key, label, events: [] }; byKey.set(key, g); groups.push(g); }
+    g.events.push(ev);
+  }
+  return groups;
+}
+
+/** City lists: the three fixed sections, empty ones dropped. */
+export function sectionGroups(events: SocialEvent[], now: number = Date.now()): SocialGroup[] {
+  const g = groupSocialEvents(events, now);
+  return (['today', 'this_week', 'upcoming'] as const)
+    .filter(s => g[s].length > 0)
+    .map(s => ({ key: s, label: SOCIAL_SECTION_LABELS[s], events: g[s] }));
+}

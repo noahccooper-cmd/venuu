@@ -5,7 +5,8 @@ import {
   SOCIAL_THEME, SOCIAL_CITY_LABEL, socialThemeVars, partnersWithEvents, partnerMatches, type SocialTheme,
 } from '../lib/socialTheme';
 import type { SocialEvent } from '../lib/socialTypes';
-import { countThisWeek } from '../lib/socialSections';
+import { countThisWeek, groupSocialDays } from '../lib/socialSections';
+import { prefersReducedMotion } from '../lib/socialGeo';
 import { useSocialEvents } from '../hooks/useSocialEvents';
 import { SocialGlobe } from '../components/Social/SocialGlobe';
 import { PresentedBy } from '../components/Social/BrandMark';
@@ -33,6 +34,19 @@ export function SocialPage({ active }: SocialPageProps) {
   const [city, setCity] = useState<CityKey | null>(null);
   // Partner to pre-select when a city opens from a globe medallion.
   const [entryPartner, setEntryPartner] = useState<string | null>(null);
+  // World-level partner view (the sun → the presenting partner).
+  const [worldPartner, setWorldPartner] = useState<string | null>(null);
+  const worldRef = useRef<HTMLDivElement>(null);
+  const [worldH, setWorldH] = useState(0);
+  useEffect(() => {
+    const el = worldRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWorldH(el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const sheetHeight = Math.round(worldH * 0.5);
+  const reduced = prefersReducedMotion();
 
   // Replay the globe arrival each time the Social tab opens.
   const [arrivalKey, setArrivalKey] = useState(0);
@@ -57,6 +71,16 @@ export function SocialPage({ active }: SocialPageProps) {
     () => partnersWithEvents(theme, allEvents).filter(p => p.home),
     [theme, allEvents],
   );
+  const partnerView = useMemo(() => {
+    const partner = theme.partners.find(p => p.key === worldPartner);
+    if (!partner) return null;
+    const events = allEvents
+      .filter(e => partnerMatches(partner, e))
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    return { partner, events };
+  }, [theme, worldPartner, allEvents]);
+  const partnerGroups = useMemo(() => (partnerView ? groupSocialDays(partnerView.events) : []), [partnerView]);
+
   const counts = useMemo<Record<CityKey, number>>(() => ({
     knoxville: countThisWeek(knoxville.events),
     tampa: countThisWeek(tampa.events),
@@ -112,17 +136,51 @@ export function SocialPage({ active }: SocialPageProps) {
 
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         {/* World stays mounted behind the city screen so "back" is instant. */}
-        <div style={{ position: 'absolute', inset: 0, visibility: city ? 'hidden' : 'visible' }}>
+        <div ref={worldRef} style={{ position: 'absolute', inset: 0, visibility: city ? 'hidden' : 'visible', overflow: 'hidden' }}>
           <SocialGlobe
             theme={theme}
             counts={counts}
             pinnedPartners={pinnedPartners}
+            partnerView={partnerView}
+            sheetHeight={sheetHeight}
+            onSunTap={() => setWorldPartner(k => (k ? null : theme.presentedBy?.partnerKey ?? null))}
             visible={active && !city}
             arrivalKey={arrivalKey}
             onCityChosen={c => { setEntryPartner(null); setCity(c); }}
             // Interim until the run club page (Step 4): open St. Pete with the partner selected.
             onPartnerTap={key => { setEntryPartner(key); setCity('st_petersburg'); }}
           />
+
+          {/* Partner sheet: About card + every future event for the partner. */}
+          <div
+            aria-hidden={!partnerView}
+            style={{
+              position: 'absolute', left: 0, right: 0, bottom: 0, height: sheetHeight,
+              background: 'var(--social-bg)',
+              borderTop: '1px solid var(--social-hairline)',
+              borderRadius: '16px 16px 0 0',
+              overflowY: 'auto',
+              paddingTop: 16,
+              transform: partnerView ? 'translateY(0)' : 'translateY(100%)',
+              transition: reduced ? 'none' : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)',
+              pointerEvents: partnerView ? 'auto' : 'none',
+            }}
+          >
+            {partnerView && (
+              <>
+                <PartnerAboutCard partner={partnerView.partner} />
+                <SocialEventList
+                  events={partnerView.events}
+                  groups={partnerGroups}
+                  theme={theme}
+                  link={null}
+                  showCity
+                  emptyText={`No upcoming ${partnerView.partner.label} events.`}
+                  onCardTap={ev => { setEntryPartner(partnerView.partner.key); setCity(ev.city); }}
+                />
+              </>
+            )}
+          </div>
         </div>
         {city && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>

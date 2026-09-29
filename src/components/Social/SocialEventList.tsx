@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SocialTheme } from '../../lib/socialTheme';
 import type { SocialEvent } from '../../lib/socialTypes';
-import { groupSocialEvents, SOCIAL_SECTION_LABELS, type SocialSection } from '../../lib/socialSections';
+import { sectionGroups, type SocialGroup } from '../../lib/socialSections';
 import { prefersReducedMotion } from '../../lib/socialGeo';
 import { SocialEventCard } from './SocialEventCard';
 import type { SocialLink } from './SocialCityMap';
 
 const FONT = 'Satoshi, sans-serif';
-const SECTIONS: SocialSection[] = ['today', 'this_week', 'upcoming'];
 const LINK_MS = 1500;
 
 interface SocialEventListProps {
@@ -18,11 +17,13 @@ interface SocialEventListProps {
   emptyText: string;
   /** Tag each card with its city (cross-city partner lists). */
   showCity?: boolean;
+  /** Custom grouping (e.g. day headers); defaults to Today / This Week / Upcoming. */
+  groups?: SocialGroup[];
   onCardTap: (event: SocialEvent) => void;
 }
 
-export function SocialEventList({ events, theme, link, emptyText, showCity = false, onCardTap }: SocialEventListProps) {
-  const groups = useMemo(() => groupSocialEvents(events), [events]);
+export function SocialEventList({ events, theme, link, emptyText, showCity = false, groups: customGroups, onCardTap }: SocialEventListProps) {
+  const groups = useMemo(() => customGroups ?? sectionGroups(events), [customGroups, events]);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   const [lit, setLit] = useState<string | null>(null);
 
@@ -49,13 +50,13 @@ export function SocialEventList({ events, theme, link, emptyText, showCity = fal
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 16px 24px' }}>
-      {SECTIONS.map(section => groups[section].length > 0 && (
-        <section key={section} style={{ marginTop: 16 }}>
+      {groups.map(group => (
+        <section key={group.key} style={{ marginTop: 16 }}>
           <h3 className="social-label" style={{ margin: '0 0 8px', fontFamily: FONT, color: 'var(--text-muted)' }}>
-            {SOCIAL_SECTION_LABELS[section]}
+            {group.label}
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {groups[section].map(ev => (
+            {group.events.map(ev => (
               <SocialEventCard
                 key={ev.id}
                 ref={el => { if (el) cardRefs.current.set(ev.id, el); else cardRefs.current.delete(ev.id); }}

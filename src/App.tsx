@@ -15,7 +15,12 @@ import { Header } from './components/Layout/Header';
 import { BottomNav, type Tab } from './components/Layout/BottomNav';
 import { TonightPage } from './pages/TonightPage';
 import { CommunityPage } from './pages/CommunityPage';
-const SocialPage = lazy(() => import('./pages/SocialPage').then(m => ({ default: m.SocialPage })));
+// Social is code-split. Once the background preload lands, render the
+// loaded module directly — going through lazy/Suspense again would hold
+// the first paint behind React's ~300ms Suspense reveal throttle.
+let socialModule: typeof import('./pages/SocialPage') | null = null;
+const loadSocialPage = () => import('./pages/SocialPage').then(m => { socialModule = m; return m; });
+const SocialPage = lazy(() => loadSocialPage().then(m => ({ default: m.SocialPage })));
 import { PortalPage } from './pages/PortalPage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
 import { VennyBar } from './components/Venny/VennyBar';
@@ -72,6 +77,12 @@ export default function App() {
   useEffect(() => {
     if (tab === 'social') setSocialMounted(true);
   }, [tab]);
+  // Fetch the Social chunk in the background after launch so the first
+  // open paints immediately (the map itself still mounts only on open).
+  useEffect(() => {
+    const t = window.setTimeout(() => { loadSocialPage().catch(() => {}); }, 2000);
+    return () => window.clearTimeout(t);
+  }, []);
   // Venue-staff tools (Clicker/Security/Admin/Frat portals) — reached
   // via a discreet entry point in ProfileScreen, not the consumer nav.
   const [portalOpen, setPortalOpen] = useState(false);
@@ -724,9 +735,13 @@ export default function App() {
       {/* Social tab — events business (run clubs, pop-ups, nightlife). */}
       {socialMounted && (
         <div className={tab === 'social' ? '' : 'hidden'}>
-          <Suspense fallback={null}>
-            <SocialPage active={tab === 'social'} />
-          </Suspense>
+          {socialModule ? (
+            <socialModule.SocialPage active={tab === 'social'} />
+          ) : (
+            <Suspense fallback={null}>
+              <SocialPage active={tab === 'social'} />
+            </Suspense>
+          )}
         </div>
       )}
 

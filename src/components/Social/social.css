@@ -37,3 +37,16 @@
 [data-social-theme] .social-card:has(> .social-card-hit:active) {
   transform: scale(0.98);
 }
+
+/* The sun's corona breathes very slightly — the only ambient motion
+   in Social. Off entirely under reduced motion. */
+@keyframes social-breathe {
+  from { transform: scale(1); }
+  to   { transform: scale(1.02); }
+}
+[data-social-theme] .social-breathe {
+  animation: social-breathe 6s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] .social-breathe { animation: none; }
+}

@@ -121,6 +121,12 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       lat: 27.9776, lng: -82.8290, start: at(now, 9, 12), hours: 5,
     },
     {
+      id: 'demo-pin-popup-passagrille', city: 'st_petersburg', category: 'pop_up', brand: 'suncruiser',
+      title: 'Sunset Pop-Up', host_name: 'Venuu',
+      place: 'Pass-a-Grille Beach', address: '1000 Gulf Way, St. Pete Beach, FL 33706',
+      lat: 27.6917, lng: -82.7372, start: at(now, 30, 17), hours: 4,
+    },
+    {
       id: 'demo-pin-night-jannus', city: 'st_petersburg', category: 'nightlife', brand: null,
       title: 'Late Show on Central', host_name: 'Venuu',
       place: 'Jannus Live', address: '200 1st Ave N, St. Petersburg, FL 33701',
@@ -159,6 +165,12 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       title: 'Wharf Pop-Up', host_name: 'Venuu',
       place: 'Sparkman Wharf', address: '615 Channelside Dr, Tampa, FL 33602',
       lat: 27.9437, lng: -82.4487, start: at(now, 4, 15), hours: 5,
+    },
+    {
+      id: 'demo-tpa-popup-riverwalk', city: 'tampa', category: 'pop_up', brand: 'suncruiser',
+      title: 'Riverwalk Pop-Up', host_name: 'Venuu',
+      place: 'Curtis Hixon Park', address: '600 N Ashley Dr, Tampa, FL 33602',
+      lat: 27.9503, lng: -82.4617, start: at(now, 24, 13), hours: 5,
     },
     {
       id: 'demo-tpa-popup-hyde', city: 'tampa', category: 'pop_up', brand: null,
@@ -205,6 +217,18 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       title: 'Market Square Pop-Up', host_name: 'Venuu',
       place: 'Market Square', address: 'Market Square, Knoxville, TN 37902',
       lat: 35.9651, lng: -83.9192, start: nextAt(now, 17), hours: 4,
+    },
+    {
+      id: 'demo-knx-popup-landing', city: 'knoxville', category: 'pop_up', brand: 'suncruiser',
+      title: 'Riverfront Pop-Up', host_name: 'Venuu',
+      place: 'Volunteer Landing', address: '900 Volunteer Landing Ln, Knoxville, TN 37915',
+      lat: 35.9594, lng: -83.9170, start: at(now, 6, 16), hours: 4,
+    },
+    {
+      id: 'demo-knx-popup-worldsfair', city: 'knoxville', category: 'pop_up', brand: 'suncruiser',
+      title: 'Park Day Pop-Up', host_name: 'Venuu',
+      place: "World's Fair Park", address: '963 World Fair Park Dr, Knoxville, TN 37916',
+      lat: 35.9624, lng: -83.9252, start: at(now, 27, 12), hours: 5,
     },
     {
       id: 'demo-knx-night-oldcity', city: 'knoxville', category: 'nightlife', brand: null,
