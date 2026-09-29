@@ -27,6 +27,9 @@ export interface SocialPartner {
   about: string;
   schedule: string | null;
   instagram: string | null;
+  /** Where this partner's medallion is pinned on the globe (e.g. a run
+   *  club's meeting area). Partners without one don't appear on the globe. */
+  home?: [number, number];
   /** Which events belong to this partner. */
   match: { brand?: string; category?: SocialCategory };
 }
@@ -118,6 +121,7 @@ export const SUNCRUISER_THEME: SocialTheme = {
       about: 'Weekly community run in St. Pete.',
       schedule: 'Thursdays 6:30 PM', // TODO(schedule): confirm real day/time with the club
       instagram: null,               // TODO(instagram): confirm handle
+      home: [-82.6268, 27.7812],     // Vinoy Park — TODO(schedule): confirm meeting spot
       match: { brand: 'pinellas_run_club' },
     },
     {
@@ -144,11 +148,12 @@ export const SOCIAL_THEME: SocialTheme =
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-/** Social's own city labels — st_petersburg reads as Pinellas here. */
+/** Social's own city labels. st_petersburg's city screen still frames all
+ *  of Pinellas county (see socialGeo). */
 export const SOCIAL_CITY_LABEL: Record<CityKey, string> = {
   knoxville: 'Knoxville',
   tampa: 'Tampa',
-  st_petersburg: 'Pinellas',
+  st_petersburg: 'St. Pete',
 };
 
 /** Partners with ≥1 upcoming event in the given set (a city's events,

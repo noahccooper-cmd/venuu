@@ -31,6 +31,8 @@ interface SocialPageProps {
 export function SocialPage({ active }: SocialPageProps) {
   const theme = SOCIAL_THEME;
   const [city, setCity] = useState<CityKey | null>(null);
+  // Partner to pre-select when a city opens from a globe medallion.
+  const [entryPartner, setEntryPartner] = useState<string | null>(null);
 
   // Replay the globe arrival each time the Social tab opens.
   const [arrivalKey, setArrivalKey] = useState(0);
@@ -46,6 +48,15 @@ export function SocialPage({ active }: SocialPageProps) {
     tampa: tampa.events,
     st_petersburg: pinellas.events,
   };
+  const allEvents = useMemo(
+    () => [...knoxville.events, ...tampa.events, ...pinellas.events],
+    [knoxville.events, tampa.events, pinellas.events],
+  );
+  // Globe medallions: partners with a pinned home and ≥1 upcoming event.
+  const pinnedPartners = useMemo(
+    () => partnersWithEvents(theme, allEvents).filter(p => p.home),
+    [theme, allEvents],
+  );
   const counts = useMemo<Record<CityKey, number>>(() => ({
     knoxville: countThisWeek(knoxville.events),
     tampa: countThisWeek(tampa.events),
@@ -102,11 +113,20 @@ export function SocialPage({ active }: SocialPageProps) {
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         {/* World stays mounted behind the city screen so "back" is instant. */}
         <div style={{ position: 'absolute', inset: 0, visibility: city ? 'hidden' : 'visible' }}>
-          <SocialGlobe theme={theme} counts={counts} visible={active && !city} arrivalKey={arrivalKey} onCityChosen={setCity} />
+          <SocialGlobe
+            theme={theme}
+            counts={counts}
+            pinnedPartners={pinnedPartners}
+            visible={active && !city}
+            arrivalKey={arrivalKey}
+            onCityChosen={c => { setEntryPartner(null); setCity(c); }}
+            // Interim until the run club page (Step 4): open St. Pete with the partner selected.
+            onPartnerTap={key => { setEntryPartner(key); setCity('st_petersburg'); }}
+          />
         </div>
         {city && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
-            <SocialCityScreen key={city} city={city} theme={theme} events={eventsByCity[city]} visible={active} />
+            <SocialCityScreen key={city} city={city} theme={theme} events={eventsByCity[city]} visible={active} initialPartner={entryPartner} />
           </div>
         )}
       </div>
@@ -119,13 +139,14 @@ interface SocialCityScreenProps {
   theme: SocialTheme;
   events: SocialEvent[];
   visible: boolean;
+  initialPartner: string | null;
 }
 
 /** Screen 2 — contained map, partner tabs, grouped list, all linked. */
-function SocialCityScreen({ city, theme, events, visible }: SocialCityScreenProps) {
+function SocialCityScreen({ city, theme, events, visible, initialPartner }: SocialCityScreenProps) {
   // Only partners with ≥1 upcoming event in this city get a tile.
   const partners = useMemo(() => partnersWithEvents(theme, events), [theme, events]);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [activeKey, setActiveKey] = useState<string | null>(initialPartner);
   const [link, setLink] = useState<SocialLink | null>(null);
   // Bumped per tap so repeat taps on the same card/pin re-fire.
   const nonce = useRef(0);

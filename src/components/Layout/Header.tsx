@@ -29,7 +29,8 @@ export function Header({ city, onCityChange, activeTab }: HeaderProps) {
     window.addEventListener('venuu:globe-state', handler as EventListener);
     return () => window.removeEventListener('venuu:globe-state', handler as EventListener);
   }, []);
-  const concealAtGlobe = isAtGlobe && activeTab === 'tonight';
+  // Social has its own world/city navigation, so the dropdown hides there too.
+  const concealAtGlobe = (isAtGlobe && activeTab === 'tonight') || activeTab === 'social';
 
   return (
     <header className="fixed top-0 left-0 right-0 bg-[#050507]"

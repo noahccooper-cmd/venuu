@@ -27,10 +27,8 @@ export const SOCIAL_CITY_GEO: Record<CityKey, SocialCityGeo> = {
     zoom: 12.2,
   },
   st_petersburg: {
-    center: [
-      (PINELLAS_BOUNDS[0][0] + PINELLAS_BOUNDS[1][0]) / 2,
-      (PINELLAS_BOUNDS[0][1] + PINELLAS_BOUNDS[1][1]) / 2,
-    ],
+    // Globe pin sits on St. Pete itself; the city screen frames all of Pinellas.
+    center: [CITIES.st_petersburg.center.lng, CITIES.st_petersburg.center.lat],
     bounds: PINELLAS_BOUNDS,
     zoom: 10,
   },
