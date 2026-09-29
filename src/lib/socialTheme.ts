@@ -71,14 +71,19 @@ export interface SocialTheme {
 // Official files live in src/assets/social/ — either <key>.<ext> or
 // <key>/logo.<ext>. Missing file → the brand name renders as a text
 // wordmark. Never draw or recreate a logo.
-const ASSET_FILES = import.meta.glob('../assets/social/**/*.{svg,png,webp,jpg}', {
+// The @social-brand-assets alias (vite.config.ts) resolves to the real
+// folder only when VITE_SOCIAL_THEME=suncruiser, so a flag-off build
+// contains no brand files at all.
+const BRAND_THEME = import.meta.env.VITE_SOCIAL_THEME === 'suncruiser';
+const ASSET_FILES = import.meta.glob('@social-brand-assets/**/*.{svg,png,webp,jpg}', {
   eager: true,
   query: '?url',
   import: 'default',
 }) as Record<string, string>;
 
 function asset(relPath: string): string | null {
-  return ASSET_FILES[`../assets/social/${relPath}`] ?? null;
+  const hit = Object.entries(ASSET_FILES).find(([key]) => key.endsWith(`/${relPath}`));
+  return hit ? hit[1] : null;
 }
 
 function logoFor(key: string): string | null {
@@ -211,8 +216,7 @@ export const SUNCRUISER_THEME: SocialTheme = {
   sun: { core: SUNCRUISER_SUN_YELLOW, mid: SUNCRUISER_SUN_GOLD, corona: 'rgba(253, 185, 19, 0.28)' },
 };
 
-export const SOCIAL_THEME: SocialTheme =
-  import.meta.env.VITE_SOCIAL_THEME === 'suncruiser' ? SUNCRUISER_THEME : VENUU_THEME;
+export const SOCIAL_THEME: SocialTheme = BRAND_THEME ? SUNCRUISER_THEME : VENUU_THEME;
 
 // ── Helpers ───────────────────────────────────────────────────────
 
