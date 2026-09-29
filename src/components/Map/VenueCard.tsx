@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
+import { Crown } from 'lucide-react';
 import { formatCount, getCapacityPercent } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
 import { PunchCard } from '../Loyalty/PunchCard';
@@ -6,6 +7,8 @@ import { formatCoverPriceShort } from '../../lib/coverPricing';
 import { recordSignal } from '../../lib/signals';
 import { openDirectionsTo } from '../../lib/directions';
 import { getVenueStatus } from '../../lib/venueHours';
+import { useBarOwnership } from '../../hooks/useBarOwnership';
+import { CommunityAvatar } from '../Community/CommunityAvatar';
 import type { Venue, Headcount, VenueEvent } from '../../lib/types';
 import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
 
@@ -55,6 +58,32 @@ function TonightBanner({ venue }: { venue: Venue }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ── Owner badge (name-line, right side) — only mounted for Knoxville
+ *  bars (useBarOwnership has no city param, and its fetch is scoped
+ *  to Knoxville internally), same reasoning as PunchCard below: don't
+ *  fire the query on cards that can't use its data. Reuses
+ *  CommunityAvatar so the initials-circle-by-avatar_color look stays
+ *  identical to the Community tab's own bar wall. */
+function VenueOwnerBadge({ venueId }: { venueId: string }) {
+  const { bars, loading } = useBarOwnership();
+  if (loading) return null;
+  const bar = bars.find(b => b.venueId === venueId);
+  if (!bar) return null;
+  const { owner } = bar;
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+      <Crown size={13} style={{ color: '#FFD24A', opacity: owner ? 1 : 0.55, flexShrink: 0 }} />
+      {owner && (
+        <CommunityAvatar name={owner.displayName || owner.username} color={owner.avatarColor} size={18} />
+      )}
+      <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 13, fontWeight: 700, color: '#FFD24A', whiteSpace: 'nowrap' }}>
+        {owner ? owner.username : 'unclaimed'}
+      </span>
+    </span>
   );
 }
 
@@ -367,7 +396,16 @@ export function VenueSheet({
         {/* Name + Rating (hidden for fraternities — shown in frat header above) */}
         {venue.category !== 'fraternity' && <div className="sheet-info">
           <div className="sheet-name-row">
-            <h2 className="sheet-name" style={venue.featured ? { borderLeft: '3px solid #A855F7', paddingLeft: 10 } : undefined}>{venue.name}</h2>
+            <h2
+              className="sheet-name"
+              style={{
+                minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                ...(venue.featured ? { borderLeft: '3px solid #A855F7', paddingLeft: 10 } : {}),
+              }}
+            >
+              {venue.name}
+            </h2>
+            {venue.city === 'knoxville' && <VenueOwnerBadge venueId={venue.id} />}
           </div>
           {venue.address && (
             <button
