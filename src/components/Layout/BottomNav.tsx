@@ -1,11 +1,9 @@
-import { MapPin, Trophy, User } from 'lucide-react';
+import { MapPin, CalendarDays, Trophy, User } from 'lucide-react';
 
 /** Consumer-facing primary destinations. 'portal' (venue-staff tools)
  *  deliberately lives outside this nav — see ProfileScreen's
- *  "Venue / Partner Login" entry point instead. A 4th tab (events)
- *  slots in here later; the flex-1/justify-around layout below
- *  doesn't need any rework to accommodate it. */
-export type Tab = 'tonight' | 'community' | 'you';
+ *  "Venue / Partner Login" entry point instead. */
+export type Tab = 'tonight' | 'social' | 'community' | 'you';
 
 interface BottomNavProps {
   active: Tab;
@@ -14,6 +12,7 @@ interface BottomNavProps {
 
 const tabs: { key: Tab; label: string; icon: typeof MapPin }[] = [
   { key: 'tonight',   label: 'Tonight',   icon: MapPin },
+  { key: 'social',    label: 'Social',    icon: CalendarDays },
   { key: 'community', label: 'Community', icon: Trophy },
   { key: 'you',       label: 'You',       icon: User },
 ];
@@ -24,6 +23,7 @@ const tabs: { key: Tab; label: string; icon: typeof MapPin }[] = [
  *  surface. Everything else stays on brand orange. */
 const ACTIVE_COLOR: Record<Tab, string> = {
   tonight: '#FF8200',
+  social: '#FF8200',
   community: '#FFD24A',
   you: '#FF8200',
 };

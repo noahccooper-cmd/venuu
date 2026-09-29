@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { AnimatePresence } from 'framer-motion';
 import type { Map as MapboxMap } from 'mapbox-gl';
@@ -15,6 +15,7 @@ import { Header } from './components/Layout/Header';
 import { BottomNav, type Tab } from './components/Layout/BottomNav';
 import { TonightPage } from './pages/TonightPage';
 import { CommunityPage } from './pages/CommunityPage';
+const SocialPage = lazy(() => import('./pages/SocialPage').then(m => ({ default: m.SocialPage })));
 import { PortalPage } from './pages/PortalPage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
 import { VennyBar } from './components/Venny/VennyBar';
@@ -65,6 +66,12 @@ export default function App() {
   const [publicShareToken] = useState<string | null>(getPublicProfileToken);
 
   const [tab, setTab] = useState<Tab>('tonight');
+  // Social mounts on first visit and stays mounted (like the other tabs)
+  // so its maps aren't created at launch.
+  const [socialMounted, setSocialMounted] = useState(false);
+  useEffect(() => {
+    if (tab === 'social') setSocialMounted(true);
+  }, [tab]);
   // Venue-staff tools (Clicker/Security/Admin/Frat portals) — reached
   // via a discreet entry point in ProfileScreen, not the consumer nav.
   const [portalOpen, setPortalOpen] = useState(false);
@@ -713,6 +720,15 @@ export default function App() {
           eventWindowLabel={({ tonight: 'TONIGHT', week: 'THIS WEEK', month: 'THIS MONTH', specials: '' } as Record<EventWindow, string>)[scrubberWindow]}
         />
       </div>
+
+      {/* Social tab — events business (run clubs, pop-ups, nightlife). */}
+      {socialMounted && (
+        <div className={tab === 'social' ? '' : 'hidden'}>
+          <Suspense fallback={null}>
+            <SocialPage active={tab === 'social'} />
+          </Suspense>
+        </div>
+      )}
 
       {/* Community tab — leaderboard/bar-ownership, a first-class
        *  destination like Tonight. Public data (readable signed out or
