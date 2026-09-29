@@ -8,13 +8,16 @@ import { getSocialLocation } from '../lib/socialLocation';
 import { worldPalette } from '../lib/socialMapStyle';
 import { SUN_BRAND_SLUG, brandColor } from '../lib/brands';
 import {
-  buildPlaces, placeStatus, orderPlaces, hasNew, markSeen, CITY_CODE, type PlaceKey,
+  buildPlaces, placeStatus, orderPlaces, hasNew, markSeen, isLive, CITY_CODE, type PlaceKey,
 } from '../lib/socialPlaces';
-import { hapticLight, hapticMedium } from '../lib/haptics';
+import { hapticLight, hapticMedium, hapticWarning } from '../lib/haptics';
+import { SOCIAL_DEMO, takeLastVisit } from '../lib/socialMode';
+import { eventColor } from '../lib/socialTheme';
 import { HOST_DEMO_ENABLED } from '../lib/socialDemoStore';
 import { useSocialEvents } from '../hooks/useSocialEvents';
 import { useBrands } from '../hooks/useBrands';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import { useGoing } from '../hooks/useGoing';
 import {
   SocialMap, type CameraSnapshot, type PlaceFilter, type PullSun, type SocialLink, type SocialMapHandle, type SocialWorld,
 } from '../components/Social/SocialMap';
@@ -22,6 +25,8 @@ import { PlaceWorld, AgeGate, LogoDisc, CityBadge, type PlaceTab } from '../comp
 import { StoryRings, PlaceCarousel, RINGS_H } from '../components/Social/SocialHome';
 import { ageConfirmed, worldOrder, WORLD_TOP_PX, WORLD_BOTTOM_PX } from '../lib/partnerWorld';
 import { HostSheet } from '../components/Social/HostSheet';
+import { SocialFeed } from '../components/Social/SocialFeed';
+import { SocialToast, type ToastMsg } from '../components/Social/SocialToast';
 import '../components/Social/social.css';
 
 const FONT = 'Satoshi, sans-serif';
@@ -51,6 +56,10 @@ function matchesFilter(e: SocialEvent, f: PlaceFilter | 'all'): boolean {
 interface SocialPageProps {
   /** True while the Social tab is the visible tab. */
   active: boolean;
+  /** Signed-in profile (null signed out). */
+  profileId: string | null;
+  /** Opens the app's sign-in sheet (Going while signed out). */
+  onOpenSignIn: () => void;
 }
 
 /** Top of the usable map area: the bottom edge of the app's fixed header
@@ -76,7 +85,7 @@ function useTopInset(): number {
  * World, or a city with category filters). See docs/social-tab-spec.md.
  * Theme applies ONLY as CSS variables on this root.
  */
-export function SocialPage({ active }: SocialPageProps) {
+export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps) {
   const theme = SOCIAL_THEME;
   const mapRef = useRef<SocialMapHandle>(null);
   const topInset = useTopInset();
@@ -314,6 +323,83 @@ export function SocialPage({ active }: SocialPageProps) {
     return { key: `city:${open.city}`, brand: null, city: open.city, filter: open.filter === 'all' ? null : open.filter, palette: null };
   }, [open, openBrand]);
 
+  // ── Feed + Going ──
+  type FeedCtx = { title: string; events: SocialEvent[]; startId: string | null };
+  const [feed, setFeed] = useState<FeedCtx | null>(null);
+  const [newSince] = useState(() => takeLastVisit());
+  const [toast, setToast] = useState<ToastMsg | null>(null);
+  const say = useCallback((text: string, tone: ToastMsg['tone'] = 'ok') => setToast({ id: Date.now(), text, tone }), []);
+  const going = useGoing(profileId, useMemo(() => (feed ? feed.events : placeEvents).map(e => e.id), [feed, placeEvents]));
+  // Demo builds act as a signed-in demo user (RSVPs stay in this browser).
+  const signedIn = !!profileId || SOCIAL_DEMO;
+  const pendingGoing = useRef<SocialEvent | null>(null);
+
+  const onGoing = useCallback(async (ev: SocialEvent, on: boolean): Promise<boolean> => {
+    if (!signedIn) {
+      pendingGoing.current = on ? ev : null;
+      say('Sign in to say you’re going');
+      onOpenSignIn();
+      return false;
+    }
+    if (on) hapticMedium(); else hapticLight();
+    const ok = await going.toggle(ev, on);
+    if (!ok) { hapticWarning(); say('Couldn’t save that — try again', 'warn'); }
+    return ok;
+  }, [signedIn, going, say, onOpenSignIn]);
+
+  // Signed in from the prompt → finish the RSVP they started.
+  useEffect(() => {
+    const ev = pendingGoing.current;
+    if (!profileId || !ev) return;
+    pendingGoing.current = null;
+    void going.toggle(ev, true).then(ok => {
+      if (ok) { hapticMedium(); say(`You’re going · ${ev.title}`); } else { hapticWarning(); say('Couldn’t save that — try again', 'warn'); }
+    });
+  }, [profileId, going, say]);
+
+  const feedOrder = (a: SocialEvent, b: SocialEvent) => {
+    const la = isLive(a, now) ? 0 : 1;
+    const lb = isLive(b, now) ? 0 : 1;
+    return la - lb || worldOrder(a, b);
+  };
+  const openFeedHome = () => {
+    const evs = allEvents.filter(e => e.date_tba || new Date(e.end_time ?? e.start_time).getTime() > now).sort(feedOrder);
+    const p = places.find(x => x.key === sel);
+    const startId = (p && status[p.key]?.next?.id) ?? evs[0]?.id ?? null;
+    hapticMedium();
+    setFeed({ title: 'All places', events: evs, startId });
+  };
+  const openFeedPlace = () => {
+    if (!open) return;
+    hapticMedium();
+    if (open.kind === 'brand') {
+      const evs = allEvents.filter(e => e.brand === open.slug).sort(feedOrder);
+      setFeed({ title: `${openBrand?.name ?? ''} World`, events: evs, startId: placeSel });
+    } else {
+      const tabLabel = open.filter === 'all' ? '' : ` · ${CITY_TABS.find(t => t.key === open.filter)?.label}`;
+      setFeed({ title: `${SOCIAL_CITY_LABEL[open.city]}${tabLabel}`, events: [...placeEvents].sort(feedOrder), startId: placeSel });
+    }
+  };
+  const closeFeed = (currentId: string | null) => {
+    setFeed(null);
+    const ev = currentId ? allEvents.find(e => e.id === currentId) : null;
+    if (!ev) return;
+    if (!open) {
+      // Home: land on the event's place (its partner World, else its city).
+      const key = (ev.brand && places.some(p => p.key === `brand:${ev.brand}`) ? `brand:${ev.brand}` : `city:${ev.city}`) as PlaceKey;
+      selectPlace(key);
+      return;
+    }
+    if (open.kind === 'brand' && ev.city !== open.city) {
+      setOpen({ ...open, city: ev.city });
+      setPlaceSel(ev.id);
+      flyNext(false);
+      return;
+    }
+    setPlaceSel(ev.id);
+    mapRef.current?.panToEvent(ev, WORLD_BOTTOM_PX);
+  };
+
   // ── Story rings ──
   const fresh = useMemo(() => Object.fromEntries(brands.map(b => [b.slug, hasNew(allEvents.filter(e => e.brand === b.slug), b.slug)])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -365,6 +451,7 @@ export function SocialPage({ active }: SocialPageProps) {
         topInset={topInset}
         onSelect={onPlaceSwipe}
         onClose={leavePlace}
+        onOpenFeed={openFeedPlace}
       />
     );
   } else if (open?.kind === 'city') {
@@ -391,6 +478,7 @@ export function SocialPage({ active }: SocialPageProps) {
         topInset={topInset}
         onSelect={onPlaceSwipe}
         onClose={leavePlace}
+        onOpenFeed={openFeedPlace}
       />
     );
   }
@@ -464,11 +552,30 @@ export function SocialPage({ active }: SocialPageProps) {
             onSelect={selectPlace}
             onOpen={key => enterPlace(key)}
             onPost={onPost}
+            onOpenFeed={openFeedHome}
           />
         </>
       )}
 
       {placeView}
+
+      {feed && (
+        <SocialFeed
+          title={feed.title}
+          events={feed.events}
+          startId={feed.startId}
+          brandOf={brandOf}
+          colorOf={ev => eventColor(theme, ev)}
+          going={going}
+          now={now}
+          newSince={newSince}
+          topInset={topInset}
+          onGoing={onGoing}
+          onClose={closeFeed}
+        />
+      )}
+
+      <SocialToast toast={toast} onDone={() => setToast(null)} />
 
       {picking && (
         <div

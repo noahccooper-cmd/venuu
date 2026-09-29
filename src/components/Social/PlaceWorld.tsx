@@ -3,10 +3,12 @@ import { ArrowUpRight, BadgeCheck, Mail, Navigation, Share2, X } from 'lucide-re
 import { hapticLight, hapticSelection } from '../../lib/haptics';
 import type { SocialEvent } from '../../lib/socialTypes';
 import { brandColor, type Brand } from '../../lib/brands';
-import { openAppleMapsDirections, openEmail, openExternal, shareText } from '../../lib/socialLinks';
+import { openAppleMapsDirections, openEmail, openExternal, shareEvent } from '../../lib/socialLinks';
 import { prefersReducedMotion } from '../../lib/socialGeo';
 import { BrandMark } from './BrandMark';
 import { EventCover } from './EventCover';
+import { FeedHandle } from './FeedHandle';
+import { useDragUp } from '../../hooks/useDragUp';
 import { WORLD_LAYOUT, rememberAge, applyCarouselParallax } from '../../lib/partnerWorld';
 
 const FONT = 'Satoshi, sans-serif';
@@ -136,14 +138,22 @@ export function EventBadge({ brand, event, size = TEXT }: { brand: Brand | null;
 
 // ── Detail + About ────────────────────────────────────────────────
 
+/** The event detail sheet (shared by places and the feed). */
+export function EventDetailSheet({ event, brand, onClose }: { event: SocialEvent; brand: Brand | null; onClose: () => void }) {
+  return (
+    <WorldSheet title={event.title} onClose={onClose}>
+      <WorldEventDetail brand={brand} event={event} />
+    </WorldSheet>
+  );
+}
+
 function WorldEventDetail({ brand, event }: { brand: Brand | null; event: SocialEvent }) {
   const [shareNote, setShareNote] = useState<string | null>(null);
   const place = placeOf(event);
   const showAddress = !!event.address && event.address !== place;
   const canDirect = !event.date_tba;
   const share = async () => {
-    const text = [event.title, fullWhen(event), place, `on Venuu`].filter(Boolean).join(' · ');
-    const r = await shareText(event.title, text);
+    const r = await shareEvent(event);
     setShareNote(r === 'copied' ? 'Copied to clipboard' : r === 'failed' ? 'Couldn’t share — try again' : null);
   };
   const btn: React.CSSProperties = {
@@ -389,6 +399,8 @@ interface PlaceWorldProps {
   /** The carousel settled on a card (swipe). */
   onSelect: (ev: SocialEvent) => void;
   onClose: () => void;
+  /** Feed handle / drag the carousel up → full-screen feed. */
+  onOpenFeed: (() => void) | null;
 }
 
 /**
@@ -398,8 +410,9 @@ interface PlaceWorldProps {
  * are the only sheets.
  */
 export function PlaceWorld({
-  mark, title, name, accent, about, tabs, tab, tabsLabel, onTab, events, brandOf, selectedId, empty, topInset, onSelect, onClose,
+  mark, title, name, accent, about, tabs, tab, tabsLabel, onTab, events, brandOf, selectedId, empty, topInset, onSelect, onClose, onOpenFeed,
 }: PlaceWorldProps) {
+  const dragUp = useDragUp(onOpenFeed);
   const reduced = prefersReducedMotion();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const settleTimer = useRef(0);
@@ -502,12 +515,15 @@ export function PlaceWorld({
         </div>
       </div>
 
+      {onOpenFeed && events.length > 0 && <FeedHandle bottom={CAROUSEL_BOTTOM + CARD_H} onOpen={onOpenFeed} />}
+
       {/* Carousel */}
       <div
         key={tab}
         ref={scrollerRef}
         className="social-carousel"
         onScroll={onScroll}
+        {...dragUp}
         style={{
           position: 'absolute', zIndex: 10, left: 0, right: 0, bottom: CAROUSEL_BOTTOM,
           display: 'flex', gap: CARD_GAP, overflowX: 'auto', overflowY: 'hidden',
@@ -539,11 +555,7 @@ export function PlaceWorld({
         )}
       </div>
 
-      {detail && (
-        <WorldSheet title={detail.title} onClose={() => setDetail(null)}>
-          <WorldEventDetail brand={brandOf(detail)} event={detail} />
-        </WorldSheet>
-      )}
+      {detail && <EventDetailSheet event={detail} brand={brandOf(detail)} onClose={() => setDetail(null)} />}
       {aboutOpen && about && (
         <WorldSheet title={`About ${about.name}`} onClose={() => setAboutOpen(false)}>
           <WorldAbout brand={about} />

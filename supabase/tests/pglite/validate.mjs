@@ -268,6 +268,17 @@ await test('RSVP (fixed): insert + delete with own profile id works', async () =
   const d = await as('a', () => db.query(`delete from public.event_rsvps where user_id=$1 and event_id=$2`, [people.a.prof, T(1)]));
   return d.affectedRows === 1 || `deleted ${d.affectedRows}`;
 });
+await test('Going on a Social post by another user: going_count +1 / −1 through the trigger (guard allows it)', async () => {
+  const [ev] = await post('host', { title: 'Going test' });
+  const count = async () => (await q(`select going_count from public.events where id=$1`, [ev.id]))[0].going_count;
+  const before = await count();
+  await as('fan', () => q(`insert into public.event_rsvps (user_id, event_id) values ($1, $2)`, [people.fan.prof, ev.id]));
+  const on = await count();
+  const signedOut = await as(null, () => q(`select going_count from public.events where id=$1`, [ev.id]));
+  await as('fan', () => q(`delete from public.event_rsvps where user_id=$1 and event_id=$2`, [people.fan.prof, ev.id]));
+  const off = await count();
+  return (on === before + 1 && off === before && signedOut[0].going_count === on) || JSON.stringify({ before, on, off, signedOut });
+});
 await test("RSVP: can't RSVP as someone else", async () =>
   expectError(() => as('a', () => q(`insert into public.event_rsvps (user_id, event_id) values ($1, $2)`, [people.b.prof, T(1)])), 'row-level security'));
 

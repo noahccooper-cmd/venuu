@@ -36,4 +36,6 @@ export interface SocialEvent {
   verification?: 'community' | 'verified';
   /** Row creation time — drives "New" markers and story rings. */
   created_at?: string;
+  /** events.going_count (bump_event_going_count trigger). */
+  going_count?: number;
 }

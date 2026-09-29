@@ -7,14 +7,16 @@ interface OdometerProps {
   /** When false the digits sit at 0, ready to roll. */
   run: boolean;
   reduced: boolean;
+  /** false: mount showing the value (no roll-in); later changes still roll. */
+  rollIn?: boolean;
 }
 
 /**
  * Digits roll from 0 up to their value — one vertical strip per digit,
  * tabular so the width never jumps. Reduced motion: value, instantly.
  */
-export function Odometer({ value, delay = 0, run, reduced }: OdometerProps) {
-  const [shown, setShown] = useState(reduced ? value : 0);
+export function Odometer({ value, delay = 0, run, reduced, rollIn = true }: OdometerProps) {
+  const [shown, setShown] = useState(reduced || !rollIn ? value : 0);
 
   useEffect(() => {
     if (reduced) { setShown(value); return; }

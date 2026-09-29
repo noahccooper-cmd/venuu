@@ -154,13 +154,21 @@ interface EventCoverProps {
   event: SocialEvent;
   /** Load eagerly (visible / next cards) or lazily (the rest). */
   eager?: boolean;
+  /** Parallax direction: carousels scroll sideways, the feed vertically. */
+  axis?: 'x' | 'y';
 }
 
-export function EventCover({ event, eager = false }: EventCoverProps) {
+export function EventCover({ event, eager = false, axis = 'x' }: EventCoverProps) {
   const uid = useId().replace(/:/g, '');
   return (
     <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 'inherit' }}>
-      <div style={{ position: 'absolute', inset: '0 -8%', transform: 'translateX(var(--parallax, 0px))', willChange: 'transform' }}>
+      <div
+        style={{
+          position: 'absolute', inset: axis === 'x' ? '0 -8%' : '-8% 0',
+          transform: axis === 'x' ? 'translateX(var(--parallax, 0px))' : 'translateY(var(--parallax, 0px))',
+          willChange: 'transform',
+        }}
+      >
         {event.photo_url ? (
           <img
             src={event.photo_url}

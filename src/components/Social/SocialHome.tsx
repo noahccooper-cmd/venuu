@@ -7,6 +7,8 @@ import { prefersReducedMotion } from '../../lib/socialGeo';
 import { WORLD_LAYOUT } from '../../lib/partnerWorld';
 import { LogoDisc, CityBadge } from './PlaceWorld';
 import { Odometer } from './Odometer';
+import { FeedHandle } from './FeedHandle';
+import { useDragUp } from '../../hooks/useDragUp';
 
 const FONT = 'Satoshi, sans-serif';
 const TEXT = 13;
@@ -177,6 +179,8 @@ interface PlaceCarouselProps {
   onSelect: (key: PlaceKey) => void;
   onOpen: (key: PlaceKey) => void;
   onPost: (() => void) | null;
+  /** Feed handle / drag the carousel up → full-screen feed. */
+  onOpenFeed: (() => void) | null;
 }
 
 /**
@@ -184,7 +188,8 @@ interface PlaceCarouselProps {
  * to it). Reordering animates each card from its old spot (FLIP) while
  * the selected card stays put.
  */
-export function PlaceCarousel({ places, status, now, selected, run, animateReorder, onSelect, onOpen, onPost }: PlaceCarouselProps) {
+export function PlaceCarousel({ places, status, now, selected, run, animateReorder, onSelect, onOpen, onPost, onOpenFeed }: PlaceCarouselProps) {
+  const dragUp = useDragUp(onOpenFeed);
   const reduced = prefersReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
   const settle = useRef(0);
@@ -245,10 +250,13 @@ export function PlaceCarousel({ places, status, now, selected, run, animateReord
   useEffect(() => () => window.clearTimeout(settle.current), []);
 
   return (
+    <>
+    {onOpenFeed && <FeedHandle bottom={CAROUSEL_BOTTOM + CARD_H} onOpen={onOpenFeed} />}
     <div
       ref={ref}
       className="social-carousel"
       onScroll={onScroll}
+      {...dragUp}
       style={{
         position: 'absolute', zIndex: 6, left: 0, right: 0, bottom: CAROUSEL_BOTTOM,
         display: 'flex', gap: CARD_GAP, overflowX: 'auto', overflowY: 'hidden',
@@ -270,5 +278,6 @@ export function PlaceCarousel({ places, status, now, selected, run, animateReord
       ))}
       <span aria-hidden style={{ flex: `0 0 calc(15% + ${16 - CARD_GAP}px)` }} />
     </div>
+    </>
   );
 }

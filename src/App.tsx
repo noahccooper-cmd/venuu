@@ -736,10 +736,10 @@ export default function App() {
       {socialMounted && (
         <div className={tab === 'social' ? '' : 'hidden'}>
           {socialModule ? (
-            <socialModule.SocialPage active={tab === 'social'} />
+            <socialModule.SocialPage active={tab === 'social'} profileId={profile?.id ?? null} onOpenSignIn={() => setShowSignIn(true)} />
           ) : (
             <Suspense fallback={null}>
-              <SocialPage active={tab === 'social'} />
+              <SocialPage active={tab === 'social'} profileId={profile?.id ?? null} onOpenSignIn={() => setShowSignIn(true)} />
             </Suspense>
           )}
         </div>
