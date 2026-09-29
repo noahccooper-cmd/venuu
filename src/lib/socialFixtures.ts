@@ -23,7 +23,7 @@ function at(now: Date, dayOffset: number, h: number, m = 0): Date {
   return d;
 }
 
-/** A start later today: the preferred hour if still ahead, otherwise the
+/** Nightlife later today: the preferred hour if still ahead, otherwise the
  *  next half hour at least an hour out — so "today" always has events. */
 function laterToday(now: Date, h: number, m = 0): Date {
   const preferred = at(now, 0, h, m);
@@ -31,6 +31,13 @@ function laterToday(now: Date, h: number, m = 0): Date {
   const next = new Date(now.getTime() + HOUR);
   next.setMinutes(next.getMinutes() < 30 ? 30 : 60, 0, 0);
   return next;
+}
+
+/** Daytime events: today at h:m if still over an hour away, else
+ *  tomorrow at the same hour — never pushed into the late night. */
+function nextAt(now: Date, h: number, m = 0): Date {
+  const today = at(now, 0, h, m);
+  return today.getTime() - now.getTime() > HOUR ? today : at(now, 1, h, m);
 }
 
 /** Next occurrence of a weekday (0=Sun) at h:m, from today onward. */
@@ -105,7 +112,7 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       id: 'demo-pin-popup-pier', city: 'st_petersburg', category: 'pop_up', brand: 'suncruiser',
       title: 'Pier Pop-Up', host_name: 'Venuu',
       place: 'St. Pete Pier', address: '600 2nd Ave NE, St. Petersburg, FL 33701',
-      lat: 27.7733, lng: -82.6235, start: laterToday(now, 16), hours: 4,
+      lat: 27.7733, lng: -82.6235, start: nextAt(now, 16), hours: 4,
     },
     {
       id: 'demo-pin-popup-beach', city: 'st_petersburg', category: 'pop_up', brand: 'suncruiser',
@@ -145,7 +152,7 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       id: 'demo-tpa-run-curtis', city: 'tampa', category: 'run_club', brand: null,
       title: 'Riverwalk Evening Run', host_name: 'Venuu',
       place: 'Curtis Hixon Park', address: '600 N Ashley Dr, Tampa, FL 33602',
-      lat: 27.9497, lng: -82.4623, start: laterToday(now, 18), hours: 1,
+      lat: 27.9497, lng: -82.4623, start: nextAt(now, 18), hours: 1,
     },
     {
       id: 'demo-tpa-popup-sparkman', city: 'tampa', category: 'pop_up', brand: 'suncruiser',
@@ -197,7 +204,7 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       id: 'demo-knx-popup-market', city: 'knoxville', category: 'pop_up', brand: null,
       title: 'Market Square Pop-Up', host_name: 'Venuu',
       place: 'Market Square', address: 'Market Square, Knoxville, TN 37902',
-      lat: 35.9651, lng: -83.9192, start: laterToday(now, 17), hours: 4,
+      lat: 35.9651, lng: -83.9192, start: nextAt(now, 17), hours: 4,
     },
     {
       id: 'demo-knx-night-oldcity', city: 'knoxville', category: 'nightlife', brand: null,
