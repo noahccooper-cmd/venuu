@@ -26,4 +26,6 @@ export interface SocialEvent {
   /** Existing NOT NULL column; queries filter expires_at > now(). */
   expires_at: string;
   series_id: string | null;
+  /** Existing events.description column (one line from the host). */
+  description?: string | null;
 }

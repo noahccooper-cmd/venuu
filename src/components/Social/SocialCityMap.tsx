@@ -14,8 +14,9 @@ const LINK_MS = 1500;       // card + pin glow together this long
 const PULSE_CYCLES = 2;     // the only loop in Social: a just-tapped pin
 const PULSE_MS = 700;
 
-/** A card↔pin link. source 'card' → fly + pulse; 'pin' → glow only. */
-export interface SocialLink { id: string; nonce: number; source: 'card' | 'pin' }
+/** A card↔pin link. 'card' → map flies + pulses; 'pin' → list scrolls;
+ *  'post' (host demo) → both. The card and pin glow together either way. */
+export interface SocialLink { id: string; nonce: number; source: 'card' | 'pin' | 'post' }
 
 interface SocialCityMapProps {
   city: CityKey;
@@ -28,7 +29,13 @@ interface SocialCityMapProps {
   /** Tab visible — resize when the container comes back. */
   visible: boolean;
   onPinTap: (eventId: string) => void;
+  /** Host demo: while picking, any map tap drops the draft pin. */
+  pickMode?: boolean;
+  draftPin?: [number, number] | null;
+  onPick?: (lngLat: [number, number]) => void;
 }
+
+const DRAFT_SOURCE = 'social-draft';
 
 function toGeoJSON(events: SocialEvent[], theme: SocialTheme, partners: SocialPartner[]): GeoJSON.FeatureCollection {
   return {
@@ -49,12 +56,19 @@ function toGeoJSON(events: SocialEvent[], theme: SocialTheme, partners: SocialPa
   };
 }
 
-export function SocialCityMap({ city, theme, partners, events, activePartner, link, visible, onPinTap }: SocialCityMapProps) {
+export function SocialCityMap({
+  city, theme, partners, events, activePartner, link, visible, onPinTap,
+  pickMode = false, draftPin = null, onPick,
+}: SocialCityMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const loadedRef = useRef(false);
   const onPinTapRef = useRef(onPinTap);
   onPinTapRef.current = onPinTap;
+  const pickRef = useRef(pickMode);
+  pickRef.current = pickMode;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
   const latest = useRef({ events, theme, partners, activePartner });
   latest.current = { events, theme, partners, activePartner };
   const pulseFrame = useRef(0);
@@ -177,7 +191,19 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
         },
       });
 
+      // Host demo draft pin (white — it isn't an event yet).
+      map.addSource(DRAFT_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'social-draft-ring', type: 'circle', source: DRAFT_SOURCE,
+        paint: { 'circle-radius': 10, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-width': 2, 'circle-stroke-color': '#FFFFFF' },
+      });
+      map.addLayer({
+        id: 'social-draft-dot', type: 'circle', source: DRAFT_SOURCE,
+        paint: { 'circle-radius': 3, 'circle-color': '#FFFFFF' },
+      });
+
       map.on('click', 'social-pins', (e) => {
+        if (pickRef.current) return;   // picking: the general handler drops the pin
         // Everything under the finger (±14px). One event → link it; several
         // overlapping (e.g. a weekly series at one spot) → fan them out.
         const { x, y } = e.point;
@@ -195,6 +221,11 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
         if (items.length > 1) setFan({ x, y, items: items.slice(0, FAN_MAX) });
       });
       map.on('click', (e) => {
+        if (pickRef.current) {
+          hapticLight();
+          onPickRef.current?.([e.lngLat.lng, e.lngLat.lat]);
+          return;
+        }
         const onPin = map.queryRenderedFeatures(e.point, { layers: ['social-pins'] }).length > 0;
         if (!onPin) setFan(null);
       });
@@ -227,6 +258,22 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
     applyPartner(map, activePartner);
   }, [activePartner]);
 
+  // ── Host demo: draft pin + crosshair while picking ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    (map.getSource(DRAFT_SOURCE) as mapboxgl.GeoJSONSource | undefined)?.setData({
+      type: 'FeatureCollection',
+      features: draftPin ? [{ type: 'Feature', geometry: { type: 'Point', coordinates: draftPin }, properties: {} }] : [],
+    });
+  }, [draftPin]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getCanvas().style.cursor = pickMode ? 'crosshair' : '';
+    if (pickMode) setFan(null);
+  }, [pickMode]);
+
   // ── Resize when the tab comes back ──
   useEffect(() => {
     if (!visible) return;
@@ -249,7 +296,7 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
     }, LINK_MS));
 
     cancelAnimationFrame(pulseFrame.current);
-    if (link.source === 'card') {
+    if (link.source !== 'pin') {
       const center: [number, number] = [ev.longitude, ev.latitude];
       const zoom = Math.max(map.getZoom(), 13.5);
       if (reduced) map.jumpTo({ center, zoom });

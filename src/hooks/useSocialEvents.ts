@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CityKey } from '../lib/constants';
 import type { SocialEvent } from '../lib/socialTypes';
 import { buildSocialFixtures } from '../lib/socialFixtures';
+import { HOST_DEMO_ENABLED, loadDemoEvents, subscribeDemoEvents } from '../lib/socialDemoStore';
 
 export interface SocialEventsResult {
   events: SocialEvent[];
@@ -32,11 +33,17 @@ export function useSocialEvents(city: CityKey | null): SocialEventsResult {
       setResult({ events: [], loading: false, error: null });
       return;
     }
-    const now = Date.now();
-    const events = buildSocialFixtures(new Date(now))
-      .filter(e => e.city === city && new Date(e.expires_at).getTime() > now)
-      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-    setResult({ events, loading: false, error: null });
+    const read = () => {
+      const now = Date.now();
+      // DEMO: host-mode posts (localStorage) merge with the fixtures.
+      const demo = HOST_DEMO_ENABLED ? loadDemoEvents() : [];
+      const events = [...buildSocialFixtures(new Date(now)), ...demo]
+        .filter(e => e.city === city && new Date(e.expires_at).getTime() > now)
+        .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+      setResult({ events, loading: false, error: null });
+    };
+    read();
+    return HOST_DEMO_ENABLED ? subscribeDemoEvents(read) : undefined;
   }, [city]);
 
   return result;

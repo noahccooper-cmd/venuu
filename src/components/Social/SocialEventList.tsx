@@ -29,7 +29,7 @@ export function SocialEventList({ events, theme, link, emptyText, showCity = fal
 
   useEffect(() => {
     if (!link) return;
-    if (link.source === 'pin') {
+    if (link.source !== 'card') {
       cardRefs.current.get(link.id)?.scrollIntoView({
         block: 'center',
         behavior: prefersReducedMotion() ? 'auto' : 'smooth',

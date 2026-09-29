@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Plus } from 'lucide-react';
 import type { CityKey } from '../lib/constants';
 import {
   SOCIAL_THEME, SOCIAL_CITY_LABEL, socialThemeVars, partnersWithEvents, partnerMatches, type SocialTheme,
@@ -17,6 +17,8 @@ import { SocialEventList } from '../components/Social/SocialEventList';
 import { hapticLight } from '../lib/haptics';
 import { RunClubPage } from '../components/Social/RunClubPage';
 import { Medallion } from '../components/Social/Medallion';
+import { HostSheet } from '../components/Social/HostSheet';
+import { HOST_DEMO_ENABLED } from '../lib/socialDemoStore';
 import '../components/Social/social.css';
 
 const FONT = 'Satoshi, sans-serif';
@@ -238,6 +240,19 @@ function SocialCityScreen({ city, theme, events, visible, initialPartner, onOpen
   // Bumped per tap so repeat taps on the same card/pin re-fire.
   const nonce = useRef(0);
 
+  // Host mode · demo (VITE_SOCIAL_HOST_DEMO): compose → pick a pin → post.
+  const [hostOpen, setHostOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [draftPin, setDraftPin] = useState<[number, number] | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  // Once a posted event shows up in the list, glow it (card + pin, fly-to).
+  useEffect(() => {
+    if (!pendingId || !events.some(e => e.id === pendingId)) return;
+    setActiveKey(null);
+    setLink({ id: pendingId, nonce: ++nonce.current, source: 'post' });
+    setPendingId(null);
+  }, [pendingId, events]);
+
   const activePartner = partners.find(p => p.key === activeKey) ?? null;
   const listEvents = useMemo(
     () => (activePartner ? events.filter(e => partnerMatches(activePartner, e)) : events),
@@ -271,7 +286,42 @@ function SocialCityScreen({ city, theme, events, visible, initialPartner, onOpen
         link={link}
         visible={visible}
         onPinTap={handlePinTap}
+        pickMode={picking}
+        draftPin={draftPin}
+        onPick={p => { setDraftPin(p); setPicking(false); }}
       />
+      {HOST_DEMO_ENABLED && !picking && (
+        <button
+          className="social-press"
+          aria-label="Host mode: add an event"
+          onClick={() => { hapticLight(); setHostOpen(true); }}
+          style={{
+            position: 'absolute', top: 28, right: 28, zIndex: 3, width: 36, height: 36, borderRadius: 18,
+            display: 'grid', placeItems: 'center', cursor: 'pointer',
+            background: 'var(--social-bg)', border: '1px solid var(--social-hairline)',
+          }}
+        >
+          <Plus size={18} color="var(--text-primary)" />
+        </button>
+      )}
+      {picking && (
+        <div
+          style={{
+            position: 'absolute', top: 28, left: 28, right: 28, zIndex: 3,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            padding: '8px 12px', borderRadius: 10, background: 'var(--social-bg)', border: '1px solid var(--social-hairline)',
+          }}
+        >
+          <span style={{ fontFamily: FONT, fontSize: 13, color: 'var(--text-primary)' }}>Tap the map to place the pin</span>
+          <button
+            className="social-press"
+            onClick={() => { hapticLight(); setPicking(false); }}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <PartnerTabs partners={partners} active={activeKey} onChange={setActiveKey} onOpenPage={onOpenPartnerPage} />
       {activePartner && <PartnerAboutCard partner={activePartner} />}
       <SocialEventList
@@ -281,6 +331,18 @@ function SocialCityScreen({ city, theme, events, visible, initialPartner, onOpen
         emptyText={emptyText}
         onCardTap={handleCardTap}
       />
+      {HOST_DEMO_ENABLED && (
+        <HostSheet
+          theme={theme}
+          city={city}
+          open={hostOpen}
+          picking={picking}
+          draftPin={draftPin}
+          onPickLocation={() => setPicking(true)}
+          onClose={() => { setHostOpen(false); setPicking(false); }}
+          onPosted={id => { setHostOpen(false); setDraftPin(null); setPendingId(id); }}
+        />
+      )}
     </>
   );
 }

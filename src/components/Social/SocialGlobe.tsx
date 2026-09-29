@@ -81,7 +81,7 @@ function hangsOffGlobe(
                             [[ex - w / 2, ey + h], [ex + w / 2, ey + h]];
   const inset = g.r - 4;
   return corners.some(([cx, cy]) =>
-    Math.hypot(cx - g.cx, cy - g.cy) > inset || cx < 4 || cx > viewW - 4 || cy < 4 || cy > viewH - 4);
+    Math.hypot(cx - g.cx, cy - g.cy) > inset || cx < 0 || cx > viewW || cy < 0 || cy > viewH);
 }
 
 /** Great-circle angle in degrees between two lng/lat points. */
@@ -296,7 +296,11 @@ export function SocialGlobe({
         const p = map.project(coord);
         const isPartner = key.startsWith('partner:');
         const base = isPartner ? PARTNER_OFFSET : CITY_OFFSETS[key as CityKey];
-        const [w, h] = isPartner ? [MEDALLION_SIZE, MEDALLION_SIZE] : [LABEL_W, LABEL_H];
+        // Measure the real label/medallion (fallback: typical footprint).
+        const btn = pinElsRef.current[key]?.querySelector('button');
+        // City label buttons carry 8px of invisible tap padding — test the text.
+        const w = btn ? btn.offsetWidth - (isPartner ? 0 : 8) : (isPartner ? MEDALLION_SIZE : LABEL_W);
+        const h = btn?.offsetHeight || (isPartner ? MEDALLION_SIZE : LABEL_H);
         const box = map.getContainer();
         const flip = hangsOffGlobe(p.x, p.y, base, w, h, g, box.clientWidth, box.clientHeight);
         if (!!nextFlips[key] !== flip) { nextFlips[key] = flip; changed = true; }
