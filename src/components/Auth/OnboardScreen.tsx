@@ -24,11 +24,12 @@ export function OnboardScreen({ onComplete }: OnboardScreenProps) {
     }
 
     setUsernameStatus('checking');
+    // public_profiles: other users' rows are private on profiles (00079).
     const { data } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id')
       .eq('username', name.toLowerCase())
-      .single();
+      .maybeSingle();
 
     setUsernameStatus(data ? 'taken' : 'available');
   }, []);

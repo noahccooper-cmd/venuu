@@ -3,7 +3,6 @@ import { Minus, Plus, LogOut } from 'lucide-react';
 import { formatCount, formatTime } from '../../lib/utils';
 import type { Venue, Headcount } from '../../lib/types';
 import type { EndNightSummary } from '../../hooks/usePortal';
-import { EventCreator } from './EventCreator';
 import { CoverPortalSection } from './CoverPortalSection';
 
 const FONT = 'Satoshi, sans-serif';
@@ -186,8 +185,10 @@ export function FratPortal({
         {/* Cover Pricing */}
         <CoverPortalSection venue={venue} />
 
-        {/* Event Creator */}
-        <EventCreator venue={venue} />
+        {/* Event creation is hidden: after 00077, events can't be inserted
+            from the portal's PIN session, so the button would fail silently.
+            Tonight events are created by Venuu for now. EventCreator.tsx is
+            kept for when portal posting moves to a PIN-checked edge function. */}
       </div>
     </div>
   );

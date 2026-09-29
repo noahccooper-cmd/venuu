@@ -4,7 +4,6 @@ import { supabase } from '../../lib/supabase';
 import { formatCount, formatTime, timeAgo, getTonightDate } from '../../lib/utils';
 import type { Venue, Headcount } from '../../lib/types';
 import type { EndNightSummary } from '../../hooks/usePortal';
-import { EventCreator } from './EventCreator';
 import { CoverPortalSection } from './CoverPortalSection';
 import { hapticLight } from '../../lib/haptics';
 
@@ -1123,8 +1122,10 @@ export function ClickerView({
           )}
         </div>
 
-        {/* Event Creator */}
-        <EventCreator venue={venue} />
+        {/* Event creation is hidden: after 00077, events can't be inserted
+            from the portal's PIN session, so the button would fail silently.
+            Tonight events are created by Venuu for now. EventCreator.tsx is
+            kept for when portal posting moves to a PIN-checked edge function. */}
       </div>
     </div>
   );

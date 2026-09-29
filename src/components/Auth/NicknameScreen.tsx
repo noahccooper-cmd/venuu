@@ -45,8 +45,9 @@ export function NicknameScreen({ onComplete }: NicknameScreenProps) {
       return;
     }
     setAvailability('checking');
+    // public_profiles: other users' rows are private on profiles (00079).
     const { data, error: queryErr } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id')
       .eq('username', candidate)
       .maybeSingle();

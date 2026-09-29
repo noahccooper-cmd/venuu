@@ -15,6 +15,8 @@ export function useEvents(city: CityKey) {
       .from('events')
       .select('*')
       .eq('city', cityKey)
+      // Social posts live on the Social tab only — never on Tonight.
+      .eq('surface', 'tonight')
       .eq('is_active', true)
       .gt('expires_at', new Date().toISOString())
       .order('start_time');
@@ -43,7 +45,7 @@ export function useEvents(city: CityKey) {
         { event: 'INSERT', schema: 'public', table: 'events' },
         (payload) => {
           const row = payload.new as VenueEvent;
-          if (isSameCity(row.city, city) && row.is_active && new Date(row.expires_at) > new Date()) {
+          if (row.surface !== 'social' && isSameCity(row.city, city) && row.is_active && new Date(row.expires_at) > new Date()) {
             setEvents(prev => [row, ...prev]);
           }
         }
@@ -53,7 +55,7 @@ export function useEvents(city: CityKey) {
         { event: 'UPDATE', schema: 'public', table: 'events' },
         (payload) => {
           const row = payload.new as VenueEvent;
-          const matches = isSameCity(row.city, city) && row.is_active && new Date(row.expires_at) > new Date();
+          const matches = row.surface !== 'social' && isSameCity(row.city, city) && row.is_active && new Date(row.expires_at) > new Date();
           setEvents(prev => {
             const exists = prev.some(e => e.id === row.id);
             if (matches && exists) return prev.map(e => e.id === row.id ? row : e);

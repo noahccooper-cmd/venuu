@@ -180,6 +180,8 @@ export interface VenueEvent {
   tickets_sold: number;
   sale_starts_at: string | null;
   sale_ends_at: string | null;
+  /** 'tonight' (venue/curated events) or 'social' (the Social tab). */
+  surface?: 'tonight' | 'social';
   // Events-mode curation fields (DB-backed; optional for older rows)
   curated?: boolean;
   marquee?: boolean;

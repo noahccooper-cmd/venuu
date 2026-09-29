@@ -149,16 +149,14 @@ export function PublicProfilePage({ shareToken, onClose, viewerProfileId }: Publ
     // Lookup the profile.id behind the token so the FK lands cleanly.
     let cancelled = false;
     (async () => {
-      const { data: profileRow } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('profile_share_token', shareToken)
-        .maybeSingle();
-      if (cancelled || !profileRow) return;
+      // profiles is owner-only (00079); resolve the token server-side.
+      const { data: profileId } = await supabase
+        .rpc('profile_id_for_share_token', { p_token: shareToken });
+      if (cancelled || !profileId) return;
       const { error } = await supabase
         .from('profile_share_views')
         .insert({
-          profile_id: (profileRow as { id: string }).id,
+          profile_id: profileId as string,
           viewer_user_id: viewerProfileId ?? null,
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
           referrer: typeof document !== 'undefined' ? (document.referrer || null) : null,
