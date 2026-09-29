@@ -84,27 +84,38 @@ function row(s: Seed): SocialEvent {
   };
 }
 
-// TODO(schedule): placeholder run club day/time — Thursdays 6:30 PM.
-// Confirm with Pinellas Run Club and update here + socialTheme.ts.
-const RUN_CLUB_WEEKDAY = 4;
-const RUN_CLUB_HOUR = 18;
-const RUN_CLUB_MINUTE = 30;
-const RUN_CLUB_SERIES = 'demo-series-pinellas-run-club';
+// Pinellas Run Club — two weekly series. Days/times match the theme's
+// schedule line ("Thursdays 6:30 PM · Saturdays 7:00 AM").
+// TODO(schedule): confirm both with the club.
+const RUN_CLUB_SERIES = [
+  { id: 'demo-series-prc-thu', weekday: 4, h: 18, m: 30, title: 'Thursday Evening Run', hours: 1.5 },
+  { id: 'demo-series-prc-sat', weekday: 6, h: 7, m: 0, title: 'Saturday Morning Run', hours: 1.5 },
+];
+const RUN_CLUB_OCCURRENCES = 5;   // per series → the page shows the next 8 overall
+
+/** The next `count` weekly dates for a weekday at h:m — built from calendar
+ *  days (not +7×24h) so a DST change can't shift the time. */
+function weeklyDates(now: Date, weekday: number, h: number, m: number, count: number): Date[] {
+  const first = nextWeekday(now, weekday, h, m);
+  const firstOffset = Math.round((new Date(first).setHours(12, 0, 0, 0) - new Date(now).setHours(12, 0, 0, 0)) / DAY);
+  return Array.from({ length: count }, (_, i) => at(now, firstOffset + i * 7, h, m));
+}
 
 export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
   const seeds: Seed[] = [];
 
   // ── Pinellas (st_petersburg) ────────────────────────────────────
-  // Weekly run club series — next 4 occurrences (the + Add flow will
-  // create 8; 4 keeps the demo list readable).
-  const firstRun = nextWeekday(now, RUN_CLUB_WEEKDAY, RUN_CLUB_HOUR, RUN_CLUB_MINUTE);
-  for (let i = 0; i < 4; i++) {
-    seeds.push({
-      id: `demo-pin-run-${i + 1}`, city: 'st_petersburg', category: 'run_club',
-      brand: 'pinellas_run_club', title: 'Weekly Social Run', host_name: 'Pinellas Run Club',
-      place: 'Vinoy Park', address: '701 Bayshore Dr NE, St. Petersburg, FL 33701',
-      lat: 27.7812, lng: -82.6268, start: new Date(firstRun.getTime() + i * 7 * DAY), hours: 1.5,
-      series_id: RUN_CLUB_SERIES,
+  // Run locations are posted on the club's Instagram; pins sit at an
+  // approximate downtown point. TODO(location): real meeting spots.
+  for (const series of RUN_CLUB_SERIES) {
+    weeklyDates(now, series.weekday, series.h, series.m, RUN_CLUB_OCCURRENCES).forEach((start, i) => {
+      seeds.push({
+        id: `${series.id}-${i + 1}`, city: 'st_petersburg', category: 'run_club',
+        brand: 'pinellas_run_club', title: series.title, host_name: 'Pinellas Run Club',
+        place: 'Downtown St. Pete', address: 'Downtown St. Petersburg, FL',
+        lat: 27.7812, lng: -82.6268, start, hours: series.hours,
+        series_id: series.id,
+      });
     });
   }
   seeds.push(

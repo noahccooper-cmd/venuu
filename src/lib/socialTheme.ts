@@ -39,6 +39,9 @@ export interface SocialPartner {
   disclaimer?: string;
   /** Replaces the place line when locations aren't fixed, and hides Directions. */
   locationNote?: string;
+  /** "Fueled by <partner>" — a partner key; shown only if that partner's
+   *  logo file exists in src/assets/social/. */
+  fueledBy?: { key: string; name: string };
   /** Product images (cards may use one as a thumbnail). */
   images?: string[];
   /** Where this partner's medallion is pinned on the globe (e.g. a run
@@ -170,6 +173,7 @@ export const SUNCRUISER_THEME: SocialTheme = {
         instagram: null,             // TODO(instagram): set the club's profile URL — link stays hidden until then
       },
       locationNote: 'Location posted on Instagram',
+      fueledBy: { key: 'oasis', name: 'Oasis' },   // renders once src/assets/social/oasis/logo.* exists
       home: [-82.6268, 27.7812],     // TODO(location): approximate downtown St. Pete area for the globe medallion
       match: { brand: 'pinellas_run_club' },
     },

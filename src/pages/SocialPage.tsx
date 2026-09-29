@@ -15,6 +15,8 @@ import { PartnerTabs } from '../components/Social/PartnerTabs';
 import { PartnerAboutCard } from '../components/Social/PartnerAboutCard';
 import { SocialEventList } from '../components/Social/SocialEventList';
 import { hapticLight } from '../lib/haptics';
+import { RunClubPage } from '../components/Social/RunClubPage';
+import { Medallion } from '../components/Social/Medallion';
 import '../components/Social/social.css';
 
 const FONT = 'Satoshi, sans-serif';
@@ -34,6 +36,8 @@ export function SocialPage({ active }: SocialPageProps) {
   const [city, setCity] = useState<CityKey | null>(null);
   // Partner to pre-select when a city opens from a globe medallion.
   const [entryPartner, setEntryPartner] = useState<string | null>(null);
+  // A partner's own page (e.g. the run club), over world or city.
+  const [partnerPage, setPartnerPage] = useState<string | null>(null);
   // World-level partner view (the sun → the presenting partner).
   const [worldPartner, setWorldPartner] = useState<string | null>(null);
   const worldRef = useRef<HTMLDivElement>(null);
@@ -79,6 +83,13 @@ export function SocialPage({ active }: SocialPageProps) {
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
     return { partner, events };
   }, [theme, worldPartner, allEvents]);
+  const pagePartner = theme.partners.find(p => p.key === partnerPage) ?? null;
+  const pageRuns = useMemo(
+    () => (pagePartner
+      ? allEvents.filter(e => partnerMatches(pagePartner, e)).sort((a, b) => a.start_time.localeCompare(b.start_time))
+      : []),
+    [pagePartner, allEvents],
+  );
   const partnerGroups = useMemo(() => (partnerView ? groupSocialDays(partnerView.events) : []), [partnerView]);
 
   const counts = useMemo<Record<CityKey, number>>(() => ({
@@ -113,7 +124,22 @@ export function SocialPage({ active }: SocialPageProps) {
           minHeight: 20,
         }}
       >
-        {city ? (
+        {pagePartner ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              className="social-press"
+              onClick={() => { hapticLight(); setPartnerPage(null); }}
+              aria-label="Back"
+              style={{ display: 'flex', alignItems: 'center', marginLeft: -6, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+            >
+              <ChevronLeft size={20} color="var(--text-secondary)" />
+            </button>
+            <Medallion partner={pagePartner} size={32} />
+            <span style={{ fontFamily: FONT, fontSize: 16, fontWeight: 800, color: pagePartner.color, letterSpacing: '-0.01em' }}>
+              {pagePartner.label}
+            </span>
+          </div>
+        ) : city ? (
           <button
             className="social-press"
             onClick={() => { hapticLight(); setCity(null); }}
@@ -147,8 +173,7 @@ export function SocialPage({ active }: SocialPageProps) {
             visible={active && !city}
             arrivalKey={arrivalKey}
             onCityChosen={c => { setEntryPartner(null); setCity(c); }}
-            // Interim until the run club page (Step 4): open St. Pete with the partner selected.
-            onPartnerTap={key => { setEntryPartner(key); setCity('st_petersburg'); }}
+            onPartnerTap={key => setPartnerPage(key)}
           />
 
           {/* Partner sheet: About card + every future event for the partner. */}
@@ -186,6 +211,9 @@ export function SocialPage({ active }: SocialPageProps) {
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
             <SocialCityScreen key={city} city={city} theme={theme} events={eventsByCity[city]} visible={active} initialPartner={entryPartner} />
           </div>
+        )}
+        {pagePartner && (
+          <RunClubPage partner={pagePartner} runs={pageRuns} />
         )}
       </div>
     </div>
