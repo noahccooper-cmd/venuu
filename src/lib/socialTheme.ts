@@ -47,6 +47,9 @@ export interface SocialPartner {
   /** Where this partner's medallion is pinned on the globe (e.g. a run
    *  club's meeting area). Partners without one don't appear on the globe. */
   home?: [number, number];
+  /** Tapping this partner's medallion opens its own page (e.g. a run
+   *  club) instead of filtering the city list. */
+  hasPage?: boolean;
   /** Which events belong to this partner. */
   match: { brand?: string; category?: SocialCategory };
 }
@@ -173,7 +176,8 @@ export const SUNCRUISER_THEME: SocialTheme = {
         instagram: null,             // TODO(instagram): set the club's profile URL — link stays hidden until then
       },
       locationNote: 'Location posted on Instagram',
-      fueledBy: { key: 'oasis', name: 'Oasis' },   // renders once src/assets/social/oasis/logo.* exists
+      fueledBy: { key: 'oasis', name: 'Oasis' },
+      hasPage: true,   // renders once src/assets/social/oasis/logo.* exists
       home: [-82.6268, 27.7812],     // TODO(location): approximate downtown St. Pete area for the globe medallion
       match: { brand: 'pinellas_run_club' },
     },

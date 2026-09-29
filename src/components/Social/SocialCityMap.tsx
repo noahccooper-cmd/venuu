@@ -1,10 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { hapticLight } from '../../lib/haptics';
 import mapboxgl from 'mapbox-gl';
 import { MAPBOX_STYLE, type CityKey } from '../../lib/constants';
 import { mapboxToken, mapboxReady } from '../../lib/supabase';
 import { SOCIAL_CITY_GEO, prefersReducedMotion } from '../../lib/socialGeo';
-import { eventColor, partnerMatches, type SocialPartner, type SocialTheme } from '../../lib/socialTheme';
+import { brandPartnerFor, eventColor, partnerMatches, type SocialPartner, type SocialTheme } from '../../lib/socialTheme';
 import type { SocialEvent } from '../../lib/socialTypes';
 
 const SOURCE = 'social-events';
@@ -40,6 +40,9 @@ function toGeoJSON(events: SocialEvent[], theme: SocialTheme, partners: SocialPa
         id: ev.id,
         start: new Date(ev.start_time).getTime(),
         color: eventColor(theme, ev),
+        // Branded pins carry the brand's secondary as a center dot.
+        secondary: brandPartnerFor(theme, ev)?.secondary ?? '',
+        day: new Date(ev.start_time).getDate(),
         partner: partners.find(p => partnerMatches(p, ev))?.key ?? '',
       },
     })),
@@ -55,6 +58,8 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
   const latest = useRef({ events, theme, partners, activePartner });
   latest.current = { events, theme, partners, activePartner };
   const pulseFrame = useRef(0);
+  // Overlapping pins fanned out around the tap point (container px).
+  const [fan, setFan] = useState<{ x: number; y: number; items: FanItem[] } | null>(null);
 
   // ── Init (one instance per city visit) ──
   useEffect(() => {
@@ -74,7 +79,21 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
     mapRef.current = map;
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
-    if (geo.bounds) map.fitBounds(geo.bounds, { padding: 16, duration: 0 });
+    // Frame the city's actual pins, not the whole region.
+    const evs0 = latest.current.events;
+    if (evs0.length > 1) {
+      const lngs = evs0.map(e => e.longitude);
+      const lats = evs0.map(e => e.latitude);
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 40, maxZoom: 14, duration: 0 },
+      );
+    } else if (evs0.length === 1) {
+      map.jumpTo({ center: [evs0[0].longitude, evs0[0].latitude], zoom: 14 });
+    } else if (geo.bounds) {
+      map.fitBounds(geo.bounds, { padding: 16, duration: 0 });
+    }
+    map.on('movestart', () => setFan(null));
 
     map.on('style.load', () => {
       for (const layer of map.getStyle()?.layers ?? []) {
@@ -128,35 +147,56 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
           'circle-stroke-opacity': 0,
         },
       });
+      // Medallion-style pins: a ring in the signal color around a dark
+      // center; branded events add a center dot in the brand's secondary.
       map.addLayer({
         id: 'social-pins',
         type: 'circle',
         source: SOURCE,
         paint: {
           'circle-radius': PIN_RADIUS,
-          'circle-color': ['get', 'color'],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#0B0A09',
+          'circle-color': '#0B0A09',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': ['get', 'color'],
           'circle-opacity': 1,
           'circle-stroke-opacity': 1,
           'circle-opacity-transition': fade,
           'circle-stroke-opacity-transition': fade,
         },
       });
+      map.addLayer({
+        id: 'social-pin-dot',
+        type: 'circle',
+        source: SOURCE,
+        filter: ['!=', ['get', 'secondary'], ''],
+        paint: {
+          'circle-radius': 2.5,
+          'circle-color': ['get', 'secondary'],
+          'circle-opacity': 1,
+          'circle-opacity-transition': fade,
+        },
+      });
 
       map.on('click', 'social-pins', (e) => {
-        // Topmost pin wins; a weekly series stacks at that exact spot, so
-        // among pins sharing its coordinates the tap means the next one.
-        const feats = e.features ?? [];
-        const top = feats[0];
-        if (!top || top.geometry.type !== 'Point') return;
-        const [tx, ty] = top.geometry.coordinates;
-        const soonest = feats
-          .filter(f => f.geometry.type === 'Point'
-            && f.geometry.coordinates[0] === tx && f.geometry.coordinates[1] === ty)
-          .sort((a, b) => Number(a.properties?.start) - Number(b.properties?.start))[0];
-        const id = soonest?.properties?.id;
-        if (typeof id === 'string') { hapticLight(); onPinTapRef.current(id); }
+        // Everything under the finger (±14px). One event → link it; several
+        // overlapping (e.g. a weekly series at one spot) → fan them out.
+        const { x, y } = e.point;
+        const hits = map.queryRenderedFeatures([[x - 14, y - 14], [x + 14, y + 14]], { layers: ['social-pins'] });
+        const seen = new Set<string>();
+        const items: FanItem[] = [];
+        for (const f of hits.sort((a, b) => Number(a.properties?.start) - Number(b.properties?.start))) {
+          const id = f.properties?.id;
+          if (typeof id !== 'string' || seen.has(id)) continue;
+          seen.add(id);
+          items.push({ id, color: String(f.properties?.color), secondary: String(f.properties?.secondary ?? ''), day: Number(f.properties?.day) });
+        }
+        hapticLight();
+        if (items.length === 1) { setFan(null); onPinTapRef.current(items[0].id); return; }
+        if (items.length > 1) setFan({ x, y, items: items.slice(0, FAN_MAX) });
+      });
+      map.on('click', (e) => {
+        const onPin = map.queryRenderedFeatures(e.point, { layers: ['social-pins'] }).length > 0;
+        if (!onPin) setFan(null);
       });
       map.on('mouseenter', 'social-pins', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'social-pins', () => { map.getCanvas().style.cursor = ''; });
@@ -270,13 +310,63 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, li
       }}
     >
       <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+      {fan && <PinFan fan={fan} onPick={id => { setFan(null); onPinTap(id); }} />}
     </div>
   );
 }
+
+interface FanItem { id: string; color: string; secondary: string; day: number }
+const FAN_MAX = 6;
+const FAN_RADIUS = 48;
+const FAN_SIZE = 32;
 
 function applyPartner(map: mapboxgl.Map, active: string | null) {
   const isActive: mapboxgl.ExpressionSpecification = ['==', ['get', 'partner'], active ?? ''];
   map.setPaintProperty('social-pins', 'circle-opacity', active ? ['case', isActive, 1, 0.25] : 1);
   map.setPaintProperty('social-pins', 'circle-stroke-opacity', active ? ['case', isActive, 1, 0.25] : 1);
+  map.setPaintProperty('social-pin-dot', 'circle-opacity', active ? ['case', isActive, 1, 0.25] : 1);
   map.setPaintProperty('social-glow', 'circle-opacity', active ? ['case', isActive, 0.45, 0] : 0);
+}
+
+/** Overlapping pins fanned out on a small ring around the tap point, each
+ *  a mini medallion showing its date. */
+function PinFan({ fan, onPick }: { fan: { x: number; y: number; items: FanItem[] }; onPick: (id: string) => void }) {
+  const reduced = prefersReducedMotion();
+  const [open, setOpen] = useState(reduced);
+  useEffect(() => {
+    if (reduced) return;
+    const raf = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(raf);
+  }, [reduced]);
+  const n = fan.items.length;
+  return (
+    <div style={{ position: 'absolute', left: fan.x, top: fan.y, width: 0, height: 0, zIndex: 2 }}>
+      {fan.items.map((it, i) => {
+        const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+        const dx = open ? Math.cos(a) * FAN_RADIUS : 0;
+        const dy = open ? Math.sin(a) * FAN_RADIUS : 0;
+        return (
+          <button
+            key={it.id}
+            className="social-press"
+            aria-label={`Event on the ${it.day}`}
+            onClick={() => { hapticLight(); onPick(it.id); }}
+            style={{
+              position: 'absolute', left: -FAN_SIZE / 2, top: -FAN_SIZE / 2, width: FAN_SIZE, height: FAN_SIZE,
+              borderRadius: '50%', padding: 0, cursor: 'pointer',
+              background: '#0B0A09', border: `2.5px solid ${it.color}`,
+              boxShadow: `0 0 10px -2px ${it.color}`,
+              transform: `translate(${dx}px, ${dy}px)`,
+              transition: reduced ? 'none' : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
+              display: 'grid', placeItems: 'center',
+              fontFamily: 'Satoshi, sans-serif', fontSize: 13, fontWeight: 800, color: 'var(--text-primary)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {it.day}
+          </button>
+        );
+      })}
+    </div>
+  );
 }

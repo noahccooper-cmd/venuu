@@ -1,16 +1,21 @@
-import { hapticLight } from '../../lib/haptics';
 import type { SocialPartner } from '../../lib/socialTheme';
-
-const FONT = 'Satoshi, sans-serif';
+import { Medallion } from './Medallion';
 
 interface PartnerTabsProps {
   partners: SocialPartner[];
   active: string | null;
-  /** Tapping the active tab again returns to All (null). */
+  /** Tapping the active medallion again returns to All (null). */
   onChange: (key: string | null) => void;
+  /** Partners with their own page (hasPage) open it instead of filtering. */
+  onOpenPage: (key: string) => void;
 }
 
-export function PartnerTabs({ partners, active, onChange }: PartnerTabsProps) {
+const SIZE = 56;
+
+/** Partner medallions (same component as the globe), horizontally
+ *  scrollable. Vertical padding leaves room for the selected lift + glow
+ *  so nothing is clipped by the scroll container. */
+export function PartnerTabs({ partners, active, onChange, onOpenPage }: PartnerTabsProps) {
   if (partners.length === 0) return null;
   return (
     <div
@@ -18,9 +23,10 @@ export function PartnerTabs({ partners, active, onChange }: PartnerTabsProps) {
       aria-label="Partners"
       style={{
         display: 'flex',
-        gap: 8,
-        padding: '16px 16px 8px',
+        gap: 16,
+        padding: '16px 16px 12px',
         overflowX: 'auto',
+        overflowY: 'hidden',
         flexShrink: 0,
         scrollbarWidth: 'none',
       }}
@@ -28,33 +34,28 @@ export function PartnerTabs({ partners, active, onChange }: PartnerTabsProps) {
       {partners.map(p => {
         const on = p.key === active;
         return (
-          <button
+          <div
             key={p.key}
             role="tab"
             aria-selected={on}
-            className="social-press"
-            onClick={() => { hapticLight(); onChange(on ? null : p.key); }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexShrink: 0,
-              height: 32,
-              padding: '0 16px',
-              borderRadius: 16,
-              background: 'transparent',
-              // Color only as light: an edge + glow when selected, never a fill.
-              border: `1px solid ${on ? p.color : 'var(--social-hairline)'}`,
-              boxShadow: on ? `0 0 12px -4px ${p.color}` : 'none',
-              transition: 'border-color 200ms ease-out, box-shadow 200ms ease-out',
-              cursor: 'pointer',
-            }}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '4px 2px', flexShrink: 0, width: SIZE + 20 }}
           >
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 4, background: p.color, boxShadow: on ? `0 0 8px ${p.color}` : 'none' }} />
-            <span style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, color: on ? 'var(--text-primary)' : 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+            <Medallion
+              partner={p}
+              size={SIZE}
+              selected={on}
+              onTap={() => (p.hasPage ? onOpenPage(p.key) : onChange(on ? null : p.key))}
+            />
+            <span
+              className="social-label"
+              style={{
+                fontFamily: 'Satoshi, sans-serif', textAlign: 'center', lineHeight: 1.2,
+                letterSpacing: '0.06em', color: on ? p.color : 'var(--text-secondary)',
+              }}
+            >
               {p.label}
             </span>
-          </button>
+          </div>
         );
       })}
     </div>

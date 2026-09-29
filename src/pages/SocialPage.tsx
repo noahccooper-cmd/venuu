@@ -209,7 +209,7 @@ export function SocialPage({ active }: SocialPageProps) {
         </div>
         {city && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
-            <SocialCityScreen key={city} city={city} theme={theme} events={eventsByCity[city]} visible={active} initialPartner={entryPartner} />
+            <SocialCityScreen key={city} city={city} theme={theme} events={eventsByCity[city]} visible={active} initialPartner={entryPartner} onOpenPartnerPage={setPartnerPage} />
           </div>
         )}
         {pagePartner && (
@@ -226,10 +226,11 @@ interface SocialCityScreenProps {
   events: SocialEvent[];
   visible: boolean;
   initialPartner: string | null;
+  onOpenPartnerPage: (key: string) => void;
 }
 
 /** Screen 2 — contained map, partner tabs, grouped list, all linked. */
-function SocialCityScreen({ city, theme, events, visible, initialPartner }: SocialCityScreenProps) {
+function SocialCityScreen({ city, theme, events, visible, initialPartner, onOpenPartnerPage }: SocialCityScreenProps) {
   // Only partners with ≥1 upcoming event in this city get a tile.
   const partners = useMemo(() => partnersWithEvents(theme, events), [theme, events]);
   const [activeKey, setActiveKey] = useState<string | null>(initialPartner);
@@ -271,7 +272,7 @@ function SocialCityScreen({ city, theme, events, visible, initialPartner }: Soci
         visible={visible}
         onPinTap={handlePinTap}
       />
-      <PartnerTabs partners={partners} active={activeKey} onChange={setActiveKey} />
+      <PartnerTabs partners={partners} active={activeKey} onChange={setActiveKey} onOpenPage={onOpenPartnerPage} />
       {activePartner && <PartnerAboutCard partner={activePartner} />}
       <SocialEventList
         events={listEvents}

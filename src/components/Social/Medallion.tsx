@@ -1,5 +1,14 @@
+import { Footprints, Moon, Store } from 'lucide-react';
 import { hapticLight } from '../../lib/haptics';
 import type { SocialPartner } from '../../lib/socialTheme';
+import type { SocialCategory } from '../../lib/socialTypes';
+
+// Venuu's own categories (not brands) get a plain icon, never a mark.
+const CATEGORY_ICON: Record<SocialCategory, typeof Moon> = {
+  run_club: Footprints,
+  pop_up: Store,
+  nightlife: Moon,
+};
 
 const FONT = 'Satoshi, sans-serif';
 
@@ -11,12 +20,15 @@ interface MedallionProps {
 }
 
 /**
- * Round partner mark: the official logo file inside a thin ring in the
- * partner color, or — with no file — the partner name as a plain text
- * wordmark stacked inside the ring. Never draws or imitates a logo.
+ * Round partner mark inside a thin ring in the partner color: the official
+ * logo file; else, for Venuu's own categories, a plain icon; else the
+ * partner name as a stacked text wordmark. Never draws or imitates a logo.
  */
 export function Medallion({ partner, size = 48, selected = false, onTap }: MedallionProps) {
   const words = partner.label.toUpperCase().split(/\s+/);
+  const Icon = !partner.logo && !partner.match.brand && partner.match.category
+    ? CATEGORY_ICON[partner.match.category]
+    : null;
   const textSize = Math.max(7, Math.round(size / (words.length > 2 ? 6.5 : 5.5)));
 
   return (
@@ -44,6 +56,8 @@ export function Medallion({ partner, size = 48, selected = false, onTap }: Medal
     >
       {partner.logo ? (
         <img src={partner.logo} alt="" style={{ width: '64%', height: '64%', objectFit: 'contain' }} />
+      ) : Icon ? (
+        <Icon size={Math.round(size * 0.4)} strokeWidth={1.75} color="var(--text-primary)" />
       ) : (
         <span
           style={{
