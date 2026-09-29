@@ -16,12 +16,14 @@ interface SocialEventListProps {
   /** Card↔pin link — the card glows with its pin; pin taps also scroll here. */
   link: SocialLink | null;
   emptyText: string;
+  /** Tag each card with its city (cross-city partner lists). */
+  showCity?: boolean;
   onCardTap: (event: SocialEvent) => void;
 }
 
-export function SocialEventList({ events, theme, link, emptyText, onCardTap }: SocialEventListProps) {
+export function SocialEventList({ events, theme, link, emptyText, showCity = false, onCardTap }: SocialEventListProps) {
   const groups = useMemo(() => groupSocialEvents(events), [events]);
-  const cardRefs = useRef(new Map<string, HTMLButtonElement>());
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
   const [lit, setLit] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +62,7 @@ export function SocialEventList({ events, theme, link, emptyText, onCardTap }: S
                 event={ev}
                 theme={theme}
                 highlighted={lit === ev.id}
+                showCity={showCity}
                 onTap={() => onCardTap(ev)}
               />
             ))}

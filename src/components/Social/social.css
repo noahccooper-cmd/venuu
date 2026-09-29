@@ -31,3 +31,9 @@
     animation-delay: 0ms !important;
   }
 }
+
+/* Cards: the whole card is one tap target (an absolutely positioned
+   button) with Directions layered above it; press scales the card. */
+[data-social-theme] .social-card:has(> .social-card-hit:active) {
+  transform: scale(0.98);
+}

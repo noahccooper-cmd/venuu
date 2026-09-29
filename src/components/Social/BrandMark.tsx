@@ -14,7 +14,7 @@ interface BrandMarkProps {
  */
 export function BrandMark({ name, logo, size = 14, color = 'var(--text-primary)' }: BrandMarkProps) {
   if (logo) {
-    return <img src={logo} alt={name} style={{ height: size * 1.4, width: 'auto', display: 'block' }} />;
+    return <img src={logo} alt={name} style={{ height: size * 1.4, width: 'auto', display: 'block', alignSelf: 'flex-start' }} />;
   }
   return (
     <span style={{ fontFamily: FONT, fontSize: size, fontWeight: 800, color, letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
@@ -30,7 +30,7 @@ export function PresentedBy({ name, logo }: { name: string; logo: string | null 
       <span style={{ fontFamily: FONT, fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.02em' }}>
         Presented by
       </span>
-      <BrandMark name={name} logo={logo} size={13} />
+      <BrandMark name={name} logo={logo} size={20} />
     </div>
   );
 }

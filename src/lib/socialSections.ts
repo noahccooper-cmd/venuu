@@ -43,6 +43,15 @@ export function countThisWeek(events: SocialEvent[], now: number = Date.now()): 
   return events.filter(e => new Date(e.start_time).getTime() < horizon).length;
 }
 
+/** Card time line: today → "11:00 PM"; any other day → "Thu · 6:30 PM". */
+export function socialCardTime(ev: SocialEvent, now: number = Date.now()): string {
+  const start = new Date(ev.start_time);
+  const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (dayStart(start.getTime()) === dayStart(now)) return time;
+  const dow = start.toLocaleDateString('en-US', { weekday: 'short' });
+  return `${dow} · ${time}`;
+}
+
 /** Card time label. Reuses eventUtils.formatEventTime; its "TONIGHT" is
  *  nightlife wording, so a daytime start today reads "TODAY" instead. */
 export function socialTimeLabel(ev: SocialEvent, now: number = Date.now()): string {

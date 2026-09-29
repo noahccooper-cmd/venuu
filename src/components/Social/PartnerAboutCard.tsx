@@ -1,11 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Browser } from '@capacitor/browser';
+import { ArrowUpRight } from 'lucide-react';
 import { hapticLight } from '../../lib/haptics';
 import type { SocialPartner } from '../../lib/socialTheme';
 import { prefersReducedMotion } from '../../lib/socialGeo';
+import { openExternal } from '../../lib/socialLinks';
 import { BrandMark } from './BrandMark';
 
 const FONT = 'Satoshi, sans-serif';
+
+function LinkButton({ label, url, color, strong = false }: { label: string; url: string; color: string; strong?: boolean }) {
+  return (
+    <button
+      className="social-press"
+      onClick={() => { hapticLight(); openExternal(url); }}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 0',
+        background: 'none', border: 'none', cursor: 'pointer',
+        fontFamily: FONT, fontSize: 13, fontWeight: 700, color: strong ? color : 'var(--text-primary)',
+      }}
+    >
+      {label}
+      <ArrowUpRight size={13} strokeWidth={2} />
+    </button>
+  );
+}
 
 /** About card for the active partner — slides in under the tabs. */
 export function PartnerAboutCard({ partner }: { partner: SocialPartner }) {
@@ -19,7 +37,7 @@ export function PartnerAboutCard({ partner }: { partner: SocialPartner }) {
     return () => cancelAnimationFrame(raf);
   }, [partner.key]);
 
-  const handle = partner.links.instagram?.replace(/\/+$/, '').split('/').pop();
+  const { website, instagram, finder } = partner.links;
 
   return (
     <div
@@ -36,31 +54,30 @@ export function PartnerAboutCard({ partner }: { partner: SocialPartner }) {
         flexShrink: 0,
         opacity: shown || reduced ? 1 : 0,
         transform: shown || reduced ? 'none' : 'translateY(-6px)',
-        transition: reduced ? 'none' : 'opacity 200ms ease, transform 200ms ease',
+        transition: reduced ? 'none' : 'opacity 250ms ease-out, transform 250ms ease-out',
       }}
     >
       <span aria-hidden style={{ position: 'absolute', left: 0, top: 12, bottom: 12, width: 2, borderRadius: 1, background: partner.color }} />
-      <BrandMark name={partner.label} logo={partner.logo} size={15} />
-      <span style={{ fontFamily: FONT, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+      <BrandMark name={partner.label} logo={partner.logo} size={24} />
+      <span style={{ fontFamily: FONT, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
         {partner.about}
       </span>
-      {(partner.schedule || handle) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          {partner.schedule && (
-            <span className="social-num" style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-              {partner.schedule}
-            </span>
-          )}
-          {handle && (
-            <button
-              className="social-press"
-              onClick={() => { hapticLight(); Browser.open({ url: `https://instagram.com/${handle}` }).catch(() => {}); }}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: partner.color }}
-            >
-              @{handle}
-            </button>
-          )}
+      {partner.schedule && (
+        <span className="social-num" style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+          {partner.schedule}
+        </span>
+      )}
+      {(finder || website || instagram) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          {finder && <LinkButton label={finder.label} url={finder.url} color={partner.color} strong />}
+          {website && <LinkButton label="Website" url={website} color={partner.color} />}
+          {instagram && <LinkButton label="Instagram" url={instagram} color={partner.color} />}
         </div>
+      )}
+      {partner.disclaimer && (
+        <span style={{ fontFamily: FONT, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
+          {partner.disclaimer}
+        </span>
       )}
     </div>
   );
