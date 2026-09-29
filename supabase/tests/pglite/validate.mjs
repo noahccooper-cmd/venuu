@@ -120,8 +120,22 @@ await test('signed-out read: live rows visible; inactive + expired hidden', asyn
   return (ids.includes(T(1)) && ids.includes(T(4)) && !ids.includes(T(2)) && !ids.includes(T(3))) || JSON.stringify(ids);
 });
 
+// Seeds ship inactive until go_live_social.sql (the installed App Store
+// build's Drop has no surface filter).
+const SEED_GO_LIVE = fs.readFileSync(path.resolve(M, '../go_live_social.sql'), 'utf8');
+const oldBuildDrop = (city) => q(`select id from public.events
+  where city = $1 and is_active = true and expires_at > now() order by start_time`, [city]);
+await test('seeds are inactive after 00077: hidden signed-out, and absent from the installed build\'s Drop (no surface filter)', async () => {
+  const pub = await as(null, () => q(`select id from public.events where created_by = 'seed:00077'`));
+  const drop = [];
+  for (const c of ['tampa', 'st_petersburg', 'knoxville']) drop.push(...await as(null, () => oldBuildDrop(c)));
+  const seedsInDrop = drop.filter(r => r.id.startsWith('5c077000')).length;
+  const active = (await q(`select count(*) filter (where is_active)::int n from public.events where created_by = 'seed:00077'`))[0].n;
+  return (pub.length === 0 && seedsInDrop === 0 && active === 0) || JSON.stringify({ pub: pub.length, seedsInDrop, active });
+});
+
 // Posting rules
-const post = (who, extra = {}) => as(who, () => q(
+const post =(who, extra = {}) => as(who, () => q(
   `insert into public.events (surface, category, title, city, latitude, longitude, start_time, host_profile_id, verification, date_tba, brand_id, host_name, description)
    values ('social', $1, $2, $3, 27.95, -82.45, now() + interval '2 days', $4, $5, $6, $7, $8, $9) returning id, host_profile_id, verification, host_name, event_type, expires_at, created_by`,
   [extra.category ?? 'pop_up', extra.title ?? 'Test post', extra.city ?? 'tampa', extra.host_profile_id ?? people[who].prof,
@@ -282,6 +296,21 @@ await test('Tonight query (useEvents) returns Tonight rows only — no Social po
   const adminRows = await as('mike', () => tonightQuery('tampa'));
   const leak = [...anonRows, ...userRows, ...adminRows].some(r => r.surface !== 'tonight');
   return (social > 0 && !leak && anonRows.length === 2) || JSON.stringify({ social, anon: anonRows.length, leak });
+});
+
+// go_live_social.sql (run in the SQL editor on launch day)
+await test('go_live_social.sql activates exactly the 8 seeds; signed-out users then see them; re-run is a no-op', async () => {
+  await db.exec(SEED_GO_LIVE);
+  const pub = await as(null, () => q(`select id from public.events where created_by = 'seed:00077'`));
+  await db.exec(SEED_GO_LIVE);
+  const again = await as(null, () => q(`select id from public.events where created_by = 'seed:00077'`));
+  const otherInactive = (await q(`select count(*)::int n from public.events where id = $1 and not is_active`, [T(2)]))[0].n;
+  return (pub.length === 8 && again.length === 8 && otherInactive === 1) || JSON.stringify({ pub: pub.length, again: again.length, otherInactive });
+});
+await test('after go-live the Tonight query still excludes the seeds (and every Social row)', async () => {
+  const rows = [];
+  for (const c of ['tampa', 'st_petersburg', 'knoxville']) rows.push(...await as(null, () => tonightQuery(c)));
+  return (!rows.some(r => r.surface !== 'tonight' || r.id.startsWith('5c077000'))) || JSON.stringify(rows);
 });
 
 // ═════════════════════════ 00079 ═════════════════════════════════

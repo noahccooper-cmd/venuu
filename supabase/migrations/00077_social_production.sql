@@ -549,6 +549,9 @@ ON CONFLICT (slug) DO NOTHING;
 --   start_time is a far-future placeholder used only for sorting (the app
 --   shows "Date TBA" whenever date_tba is true); expires_at = +1 year.
 --   Fixed ids → re-running inserts nothing new.
+--   Seeded INACTIVE: the App Store build on phones today has no surface
+--   filter, so active Social rows would appear in its Drop. Activate them
+--   with supabase/go_live_social.sql once the new build is approved.
 -- ═══════════════════════════════════════════════════════════════════
 INSERT INTO public.events
   (id, surface, category, event_type, brand_id, verification, date_tba,
@@ -560,7 +563,7 @@ SELECT
   'verified', true,
   s.title, s.host_name, s.city, s.lat, s.lng, 'Location announced soon',
   now() + interval '11 months', now() + interval '1 year',
-  'seed:00077', true, false, false
+  'seed:00077', false, false, false
 FROM (VALUES
   -- Sun Cruiser × Venuu — 2 per city (slightly offset so pins don't stack)
   ('5c077000-0000-4000-8000-000000000001'::uuid, 'sun_cruiser', 'Sun Cruiser × Venuu Pop-Up', 'Sun Cruiser', 'tampa',         27.9506, -82.4572),
