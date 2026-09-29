@@ -1,3 +1,4 @@
+import { hapticLight } from '../../lib/haptics';
 import type { SocialPartner } from '../../lib/socialTheme';
 
 const FONT = 'Satoshi, sans-serif';
@@ -10,6 +11,7 @@ interface PartnerTabsProps {
 }
 
 export function PartnerTabs({ partners, active, onChange }: PartnerTabsProps) {
+  if (partners.length === 0) return null;
   return (
     <div
       role="tablist"
@@ -17,7 +19,7 @@ export function PartnerTabs({ partners, active, onChange }: PartnerTabsProps) {
       style={{
         display: 'flex',
         gap: 8,
-        padding: '12px 16px 8px',
+        padding: '16px 16px 8px',
         overflowX: 'auto',
         flexShrink: 0,
         scrollbarWidth: 'none',
@@ -30,21 +32,25 @@ export function PartnerTabs({ partners, active, onChange }: PartnerTabsProps) {
             key={p.key}
             role="tab"
             aria-selected={on}
-            onClick={() => onChange(on ? null : p.key)}
+            className="social-press"
+            onClick={() => { hapticLight(); onChange(on ? null : p.key); }}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 7,
+              gap: 8,
               flexShrink: 0,
-              height: 34,
-              padding: '0 12px',
-              borderRadius: 17,
-              border: `1px solid ${on ? p.color : 'var(--border-card)'}`,
-              background: on ? `${p.color}1F` : 'transparent',
+              height: 32,
+              padding: '0 16px',
+              borderRadius: 16,
+              background: 'transparent',
+              // Color only as light: an edge + glow when selected, never a fill.
+              border: `1px solid ${on ? p.color : 'var(--social-hairline)'}`,
+              boxShadow: on ? `0 0 12px -4px ${p.color}` : 'none',
+              transition: 'border-color 200ms ease-out, box-shadow 200ms ease-out',
               cursor: 'pointer',
             }}
           >
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 4, background: p.color }} />
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 4, background: p.color, boxShadow: on ? `0 0 8px ${p.color}` : 'none' }} />
             <span style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, color: on ? 'var(--text-primary)' : 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
               {p.label}
             </span>

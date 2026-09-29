@@ -1,16 +1,21 @@
 import { useEffect, useRef } from 'react';
+import { hapticLight } from '../../lib/haptics';
 import mapboxgl from 'mapbox-gl';
 import { MAPBOX_STYLE, type CityKey } from '../../lib/constants';
 import { mapboxToken, mapboxReady } from '../../lib/supabase';
 import { SOCIAL_CITY_GEO, prefersReducedMotion } from '../../lib/socialGeo';
-import { partnerMatches, type SocialPartner, type SocialTheme } from '../../lib/socialTheme';
+import { eventColor, partnerMatches, type SocialPartner, type SocialTheme } from '../../lib/socialTheme';
 import type { SocialEvent } from '../../lib/socialTypes';
 
 const SOURCE = 'social-events';
 const PULSE_SOURCE = 'social-pulse';
 const PIN_RADIUS = 7;
+const LINK_MS = 1500;       // card + pin glow together this long
+const PULSE_CYCLES = 2;     // the only loop in Social: a just-tapped pin
+const PULSE_MS = 700;
 
-export interface MapFocus { id: string; nonce: number }
+/** A card↔pin link. source 'card' → fly + pulse; 'pin' → glow only. */
+export interface SocialLink { id: string; nonce: number; source: 'card' | 'pin' }
 
 interface SocialCityMapProps {
   city: CityKey;
@@ -18,8 +23,8 @@ interface SocialCityMapProps {
   partners: SocialPartner[];
   events: SocialEvent[];
   activePartner: string | null;
-  /** Card tap → fly to this event's pin and pulse it. */
-  focus: MapFocus | null;
+  /** Linked highlight — the pin glows with its card; card taps also fly + pulse. */
+  link: SocialLink | null;
   /** Tab visible — resize when the container comes back. */
   visible: boolean;
   onPinTap: (eventId: string) => void;
@@ -34,14 +39,14 @@ function toGeoJSON(events: SocialEvent[], theme: SocialTheme, partners: SocialPa
       properties: {
         id: ev.id,
         start: new Date(ev.start_time).getTime(),
-        color: theme.categoryColors[ev.category],
+        color: eventColor(theme, ev),
         partner: partners.find(p => partnerMatches(p, ev))?.key ?? '',
       },
     })),
   };
 }
 
-export function SocialCityMap({ city, theme, partners, events, activePartner, focus, visible, onPinTap }: SocialCityMapProps) {
+export function SocialCityMap({ city, theme, partners, events, activePartner, link, visible, onPinTap }: SocialCityMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const loadedRef = useRef(false);
@@ -98,6 +103,19 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, fo
           'circle-opacity-transition': fade,
         },
       });
+      // Linked glow: the pin whose card is highlighted (filter set per link).
+      map.addLayer({
+        id: 'social-link',
+        type: 'circle',
+        source: SOURCE,
+        filter: ['==', ['get', 'id'], ''],
+        paint: {
+          'circle-radius': 20,
+          'circle-color': ['get', 'color'],
+          'circle-blur': 0.6,
+          'circle-opacity': 0.7,
+        },
+      });
       map.addLayer({
         id: 'social-pulse',
         type: 'circle',
@@ -118,7 +136,7 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, fo
           'circle-radius': PIN_RADIUS,
           'circle-color': ['get', 'color'],
           'circle-stroke-width': 2,
-          'circle-stroke-color': '#050507',
+          'circle-stroke-color': '#0B0A09',
           'circle-opacity': 1,
           'circle-stroke-opacity': 1,
           'circle-opacity-transition': fade,
@@ -138,7 +156,7 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, fo
             && f.geometry.coordinates[0] === tx && f.geometry.coordinates[1] === ty)
           .sort((a, b) => Number(a.properties?.start) - Number(b.properties?.start))[0];
         const id = soonest?.properties?.id;
-        if (typeof id === 'string') onPinTapRef.current(id);
+        if (typeof id === 'string') { hapticLight(); onPinTapRef.current(id); }
       });
       map.on('mouseenter', 'social-pins', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'social-pins', () => { map.getCanvas().style.cursor = ''; });
@@ -176,52 +194,66 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, fo
     return () => cancelAnimationFrame(raf);
   }, [visible]);
 
-  // ── Card tap → fly to pin + brief pulse ──
+  // ── Linked highlight: pin glows with its card; card taps fly + pulse ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !focus) return;
-    const ev = latest.current.events.find(e => e.id === focus.id);
+    if (!map || !link || !loadedRef.current) return;
+    const ev = latest.current.events.find(e => e.id === link.id);
     if (!ev) return;
     const reduced = prefersReducedMotion();
-    const center: [number, number] = [ev.longitude, ev.latitude];
-    const zoom = Math.max(map.getZoom(), 13.5);
-    if (reduced) map.jumpTo({ center, zoom });
-    else map.flyTo({ center, zoom, duration: 600, essential: true });
+    const timers: number[] = [];
 
-    const src = map.getSource(PULSE_SOURCE) as mapboxgl.GeoJSONSource | undefined;
-    if (!src) return;
-    src.setData({
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: center },
-        properties: { color: latest.current.theme.categoryColors[ev.category] },
-      }],
-    });
+    map.setFilter('social-link', ['==', ['get', 'id'], ev.id]);
+    timers.push(window.setTimeout(() => {
+      if (map.getLayer('social-link')) map.setFilter('social-link', ['==', ['get', 'id'], '']);
+    }, LINK_MS));
 
     cancelAnimationFrame(pulseFrame.current);
-    if (reduced) {
-      // No animation: a static ring for a moment confirms the target.
-      map.setPaintProperty('social-pulse', 'circle-radius', PIN_RADIUS + 6);
-      map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0.9);
-      const t = window.setTimeout(() => map.getLayer('social-pulse') && map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0), 900);
-      return () => window.clearTimeout(t);
+    if (link.source === 'card') {
+      const center: [number, number] = [ev.longitude, ev.latitude];
+      const zoom = Math.max(map.getZoom(), 13.5);
+      if (reduced) map.jumpTo({ center, zoom });
+      else map.flyTo({ center, zoom, duration: 600, essential: true });
+
+      (map.getSource(PULSE_SOURCE) as mapboxgl.GeoJSONSource | undefined)?.setData({
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: center },
+          properties: { color: eventColor(latest.current.theme, ev) },
+        }],
+      });
+
+      if (reduced) {
+        // No animation: a static ring confirms the target.
+        map.setPaintProperty('social-pulse', 'circle-radius', PIN_RADIUS + 6);
+        map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0.9);
+        timers.push(window.setTimeout(() => {
+          if (map.getLayer('social-pulse')) map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0);
+        }, LINK_MS));
+      } else {
+        const t0 = performance.now() + 450;   // let the fly-to mostly settle
+        const tick = (t: number) => {
+          if (!map.getLayer('social-pulse')) return;
+          const elapsed = t - t0;
+          if (elapsed < 0) { pulseFrame.current = requestAnimationFrame(tick); return; }
+          if (elapsed >= PULSE_CYCLES * PULSE_MS) {
+            map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0);
+            return;
+          }
+          const p = (elapsed % PULSE_MS) / PULSE_MS;
+          map.setPaintProperty('social-pulse', 'circle-radius', PIN_RADIUS + p * 14);
+          map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0.9 * (1 - p));
+          pulseFrame.current = requestAnimationFrame(tick);
+        };
+        pulseFrame.current = requestAnimationFrame(tick);
+      }
     }
-    const DELAY = 450;   // let the fly-to mostly settle first
-    const DURATION = 900;
-    const t0 = performance.now() + DELAY;
-    const tick = (t: number) => {
-      if (!map.getLayer('social-pulse')) return;
-      const p = (t - t0) / DURATION;
-      if (p < 0) { pulseFrame.current = requestAnimationFrame(tick); return; }
-      if (p >= 1) { map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0); return; }
-      map.setPaintProperty('social-pulse', 'circle-radius', PIN_RADIUS + p * 16);
-      map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0.9 * (1 - p));
-      pulseFrame.current = requestAnimationFrame(tick);
+    return () => {
+      timers.forEach(t => window.clearTimeout(t));
+      cancelAnimationFrame(pulseFrame.current);
     };
-    pulseFrame.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(pulseFrame.current);
-  }, [focus]);
+  }, [link]);
 
   return (
     <div
@@ -229,11 +261,11 @@ export function SocialCityMap({ city, theme, partners, events, activePartner, fo
         position: 'relative',
         height: '45vh',
         minHeight: 220,
-        margin: '12px 16px 0',
+        margin: '16px 16px 0',
         borderRadius: 16,
         border: '1px solid var(--social-accent)',
         overflow: 'hidden',
-        background: 'var(--bg-card)',
+        background: 'var(--social-surface)',
         flexShrink: 0,
       }}
     >

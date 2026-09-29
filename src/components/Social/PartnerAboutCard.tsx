@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Browser } from '@capacitor/browser';
+import { hapticLight } from '../../lib/haptics';
 import type { SocialPartner } from '../../lib/socialTheme';
 import { prefersReducedMotion } from '../../lib/socialGeo';
 import { BrandMark } from './BrandMark';
@@ -23,20 +24,22 @@ export function PartnerAboutCard({ partner }: { partner: SocialPartner }) {
   return (
     <div
       style={{
+        position: 'relative',
         margin: '0 16px 8px',
-        padding: '12px 14px',
+        padding: '16px 16px 16px 18px',
         borderRadius: 12,
-        background: 'var(--bg-card)',
-        borderLeft: `3px solid ${partner.color}`,
+        background: 'var(--social-surface)',
+        border: '1px solid var(--social-hairline)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 8,
         flexShrink: 0,
         opacity: shown || reduced ? 1 : 0,
         transform: shown || reduced ? 'none' : 'translateY(-6px)',
         transition: reduced ? 'none' : 'opacity 200ms ease, transform 200ms ease',
       }}
     >
+      <span aria-hidden style={{ position: 'absolute', left: 0, top: 12, bottom: 12, width: 2, borderRadius: 1, background: partner.color }} />
       <BrandMark name={partner.label} logo={partner.logo} size={15} />
       <span style={{ fontFamily: FONT, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.35 }}>
         {partner.about}
@@ -44,14 +47,15 @@ export function PartnerAboutCard({ partner }: { partner: SocialPartner }) {
       {(partner.schedule || handle) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           {partner.schedule && (
-            <span style={{ fontFamily: FONT, fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+            <span className="social-num" style={{ fontFamily: FONT, fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
               {partner.schedule}
             </span>
           )}
           {handle && (
             <button
-              onClick={() => { Browser.open({ url: `https://instagram.com/${handle}` }).catch(() => {}); }}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: FONT, fontSize: 12, fontWeight: 700, color: partner.color }}
+              className="social-press"
+              onClick={() => { hapticLight(); Browser.open({ url: `https://instagram.com/${handle}` }).catch(() => {}); }}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: partner.color }}
             >
               @{handle}
             </button>

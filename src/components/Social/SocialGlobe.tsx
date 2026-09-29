@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { MAPBOX_STYLE, type CityKey } from '../../lib/constants';
 import { mapboxToken, mapboxReady } from '../../lib/supabase';
+import { hapticLight } from '../../lib/haptics';
 import { SOCIAL_CITY_LABEL, type SocialTheme } from '../../lib/socialTheme';
 import { SOCIAL_CITIES, SOCIAL_CITY_GEO, prefersReducedMotion } from '../../lib/socialGeo';
+import { Odometer } from './Odometer';
 
 const FONT = 'Satoshi, sans-serif';
 
@@ -18,19 +20,31 @@ const LABEL_SIDE: Record<CityKey, 'top' | 'right' | 'left'> = {
   st_petersburg: 'left',
 };
 
+// Arrival choreography (ms): globe fades up, then buttons light in turn.
+const FADE_MS = 300;
+const FIRST_LIGHT_MS = 250;
+const STAGGER_MS = 120;
+
 interface SocialGlobeProps {
   theme: SocialTheme;
   counts: Record<CityKey, number>;
   /** Tab visible AND world screen showing — drives resize + reset. */
   visible: boolean;
+  /** Bumped each time Social opens → replay the arrival. */
+  arrivalKey: number;
   onCityChosen: (city: CityKey) => void;
 }
 
-export function SocialGlobe({ theme, counts, visible, onCityChosen }: SocialGlobeProps) {
+export function SocialGlobe({ theme, counts, visible, arrivalKey, onCityChosen }: SocialGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [points, setPoints] = useState<Partial<Record<CityKey, { x: number; y: number }>>>({});
   const [flying, setFlying] = useState<CityKey | null>(null);
+  const reduced = prefersReducedMotion();
+  // Arrival state: globe faded up + how many city buttons are lit.
+  const [globeUp, setGlobeUp] = useState(reduced);
+  const [litCount, setLitCount] = useState(reduced ? SOCIAL_CITIES.length : 0);
   const onCityChosenRef = useRef(onCityChosen);
   onCityChosenRef.current = onCityChosen;
 
@@ -73,7 +87,7 @@ export function SocialGlobe({ theme, counts, visible, onCityChosen }: SocialGlob
         if (layer.type === 'symbol') map.setLayoutProperty(layer.id, 'visibility', 'none');
       }
     });
-    map.on('load', project);
+    map.on('load', () => { project(); setLoaded(true); });
     map.on('resize', project);
 
     return () => {
@@ -98,9 +112,24 @@ export function SocialGlobe({ theme, counts, visible, onCityChosen }: SocialGlob
     return () => cancelAnimationFrame(raf);
   }, [visible, project]);
 
+  // ── Arrival: fade up from black, light buttons one at a time ──
+  useEffect(() => {
+    if (reduced) return;
+    setGlobeUp(false);
+    setLitCount(0);
+    if (!loaded) return;
+    const timers: number[] = [];
+    const raf = requestAnimationFrame(() => setGlobeUp(true));
+    SOCIAL_CITIES.forEach((_, i) => {
+      timers.push(window.setTimeout(() => setLitCount(i + 1), FIRST_LIGHT_MS + i * STAGGER_MS));
+    });
+    return () => { cancelAnimationFrame(raf); timers.forEach(t => window.clearTimeout(t)); };
+  }, [arrivalKey, loaded, reduced]);
+
   const choose = useCallback((city: CityKey) => {
     const map = mapRef.current;
     if (!map || flying) return;
+    hapticLight();
     if (prefersReducedMotion()) {
       onCityChosenRef.current(city);
       return;
@@ -112,8 +141,15 @@ export function SocialGlobe({ theme, counts, visible, onCityChosen }: SocialGlob
   }, [flying]);
 
   return (
-    <div style={{ position: 'absolute', inset: 0 }}>
-      <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
+    <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
+      <div
+        ref={containerRef}
+        style={{
+          position: 'absolute', inset: 0,
+          opacity: globeUp ? 1 : 0,
+          transition: reduced ? 'none' : `opacity ${FADE_MS}ms ease-out`,
+        }}
+      />
 
       {!mapboxReady && (
         <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontFamily: FONT, color: 'var(--text-secondary)', fontSize: 13 }}>
@@ -121,7 +157,7 @@ export function SocialGlobe({ theme, counts, visible, onCityChosen }: SocialGlob
         </div>
       )}
 
-      {SOCIAL_CITIES.map(city => {
+      {SOCIAL_CITIES.map((city, i) => {
         const p = points[city];
         if (!p) return null;
         return (
@@ -132,6 +168,8 @@ export function SocialGlobe({ theme, counts, visible, onCityChosen }: SocialGlob
             y={p.y}
             count={counts[city] ?? 0}
             side={LABEL_SIDE[city]}
+            lit={litCount > i}
+            reduced={reduced}
             hidden={flying !== null}
             onTap={() => choose(city)}
           />
@@ -147,53 +185,59 @@ interface CityButtonProps {
   y: number;
   count: number;
   side: 'top' | 'right' | 'left';
+  lit: boolean;
+  reduced: boolean;
   hidden: boolean;
   onTap: () => void;
 }
 
-function CityButton({ city, x, y, count, side, hidden, onTap }: CityButtonProps) {
+function CityButton({ city, x, y, count, side, lit, reduced, hidden, onTap }: CityButtonProps) {
   const accent = `var(--social-accent-${city})`;
-  const GAP = 14;
+  const GAP = 16;
   const labelPos: React.CSSProperties =
     side === 'top'   ? { left: '50%', bottom: GAP, transform: 'translateX(-50%)' } :
     side === 'right' ? { left: GAP, top: '50%', transform: 'translateY(-50%)' } :
                        { right: GAP, top: '50%', transform: 'translateY(-50%)' };
+  const visible = lit && !hidden;
+  const fade = reduced ? 'none' : 'opacity 200ms ease-out, box-shadow 200ms ease-out';
 
   return (
-    <div
-      style={{
-        position: 'absolute', left: x, top: y, width: 0, height: 0,
-        opacity: hidden ? 0 : 1,
-        transition: 'opacity 200ms ease',
-        pointerEvents: hidden ? 'none' : 'auto',
-      }}
-    >
+    <div style={{ position: 'absolute', left: x, top: y, width: 0, height: 0, pointerEvents: visible ? 'auto' : 'none' }}>
       <span
         aria-hidden
         style={{
           position: 'absolute', left: -4, top: -4, width: 8, height: 8, borderRadius: 4,
-          background: accent, boxShadow: `0 0 10px ${accent}`,
+          background: accent,
+          boxShadow: visible ? `0 0 12px ${accent}` : 'none',
+          opacity: visible ? 1 : 0,
+          transition: fade,
         }}
       />
-      <button
-        onClick={onTap}
-        aria-label={`${SOCIAL_CITY_LABEL[city]}, ${count} this week`}
-        style={{
-          position: 'absolute', ...labelPos,
-          display: 'flex', flexDirection: 'column', alignItems: side === 'left' ? 'flex-end' : 'flex-start',
-          gap: 2, padding: '8px 12px', minWidth: 92,
-          background: 'var(--bg-card)', border: `1px solid ${accent}`, borderRadius: 10,
-          boxShadow: `0 0 18px -6px ${accent}`,
-          cursor: 'pointer', whiteSpace: 'nowrap',
-        }}
-      >
-        <span style={{ fontFamily: FONT, fontSize: 14, fontWeight: 800, color: accent }}>
-          {SOCIAL_CITY_LABEL[city]}
-        </span>
-        <span style={{ fontFamily: FONT, fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-          {count} this week
-        </span>
-      </button>
+      {/* Wrapper carries the positioning transform so the button's own
+          :active scale doesn't fight it. */}
+      <div style={{ position: 'absolute', ...labelPos }}>
+        <button
+          className="social-press"
+          onClick={onTap}
+          aria-label={`${SOCIAL_CITY_LABEL[city]}, ${count} this week`}
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: side === 'left' ? 'flex-end' : 'flex-start',
+            gap: 4, padding: '8px 16px', minWidth: 96,
+            background: 'var(--social-surface)', border: `1px solid ${accent}`, borderRadius: 12,
+            boxShadow: visible ? `0 0 16px -6px ${accent}` : 'none',
+            opacity: visible ? 1 : 0,
+            transition: fade,
+            cursor: 'pointer', whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ fontFamily: FONT, fontSize: 15, fontWeight: 800, color: accent }}>
+            {SOCIAL_CITY_LABEL[city]}
+          </span>
+          <span style={{ fontFamily: FONT, fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>
+            <Odometer value={count} run={lit} reduced={reduced} /> this week
+          </span>
+        </button>
+      </div>
     </div>
   );
 }

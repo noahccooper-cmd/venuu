@@ -1,18 +1,20 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import type { CityKey } from '../lib/constants';
 import {
-  SOCIAL_THEME, SOCIAL_CITY_LABEL, socialThemeVars, partnersForCity, partnerMatches, type SocialTheme,
+  SOCIAL_THEME, SOCIAL_CITY_LABEL, socialThemeVars, partnersWithEvents, partnerMatches, type SocialTheme,
 } from '../lib/socialTheme';
 import type { SocialEvent } from '../lib/socialTypes';
 import { countThisWeek } from '../lib/socialSections';
 import { useSocialEvents } from '../hooks/useSocialEvents';
 import { SocialGlobe } from '../components/Social/SocialGlobe';
 import { PresentedBy } from '../components/Social/BrandMark';
-import { SocialCityMap, type MapFocus } from '../components/Social/SocialCityMap';
+import { SocialCityMap, type SocialLink } from '../components/Social/SocialCityMap';
 import { PartnerTabs } from '../components/Social/PartnerTabs';
 import { PartnerAboutCard } from '../components/Social/PartnerAboutCard';
-import { SocialEventList, type ListHighlight } from '../components/Social/SocialEventList';
+import { SocialEventList } from '../components/Social/SocialEventList';
+import { hapticLight } from '../lib/haptics';
+import '../components/Social/social.css';
 
 const FONT = 'Satoshi, sans-serif';
 
@@ -29,6 +31,12 @@ interface SocialPageProps {
 export function SocialPage({ active }: SocialPageProps) {
   const theme = SOCIAL_THEME;
   const [city, setCity] = useState<CityKey | null>(null);
+
+  // Replay the globe arrival each time the Social tab opens.
+  const [arrivalKey, setArrivalKey] = useState(0);
+  useEffect(() => {
+    if (active) setArrivalKey(k => k + 1);
+  }, [active]);
 
   const knoxville = useSocialEvents('knoxville');
   const tampa = useSocialEvents('tampa');
@@ -52,7 +60,7 @@ export function SocialPage({ active }: SocialPageProps) {
         position: 'absolute',
         inset: 0,
         bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-        background: 'var(--bg-page)',
+        background: 'var(--social-bg)',
         display: 'flex',
         flexDirection: 'column',
       } as React.CSSProperties}
@@ -62,17 +70,18 @@ export function SocialPage({ active }: SocialPageProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '12px 16px',
+          padding: '16px',
           // Clears the app-level fixed Header — same offset as CommunityPage.
           paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
-          borderBottom: '1px solid var(--border-hairline)',
+          borderBottom: '1px solid var(--social-hairline)',
           flexShrink: 0,
           minHeight: 20,
         }}
       >
         {city ? (
           <button
-            onClick={() => setCity(null)}
+            className="social-press"
+            onClick={() => { hapticLight(); setCity(null); }}
             aria-label="Back to all cities"
             style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: -6, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
           >
@@ -93,7 +102,7 @@ export function SocialPage({ active }: SocialPageProps) {
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         {/* World stays mounted behind the city screen so "back" is instant. */}
         <div style={{ position: 'absolute', inset: 0, visibility: city ? 'hidden' : 'visible' }}>
-          <SocialGlobe theme={theme} counts={counts} visible={active && !city} onCityChosen={setCity} />
+          <SocialGlobe theme={theme} counts={counts} visible={active && !city} arrivalKey={arrivalKey} onCityChosen={setCity} />
         </div>
         {city && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
@@ -114,10 +123,10 @@ interface SocialCityScreenProps {
 
 /** Screen 2 — contained map, partner tabs, grouped list, all linked. */
 function SocialCityScreen({ city, theme, events, visible }: SocialCityScreenProps) {
-  const partners = useMemo(() => partnersForCity(theme, city), [theme, city]);
+  // Only partners with ≥1 upcoming event in this city get a tile.
+  const partners = useMemo(() => partnersWithEvents(theme, events), [theme, events]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [focus, setFocus] = useState<MapFocus | null>(null);
-  const [highlight, setHighlight] = useState<ListHighlight | null>(null);
+  const [link, setLink] = useState<SocialLink | null>(null);
   // Bumped per tap so repeat taps on the same card/pin re-fire.
   const nonce = useRef(0);
 
@@ -128,14 +137,14 @@ function SocialCityScreen({ city, theme, events, visible }: SocialCityScreenProp
   );
 
   const handleCardTap = useCallback((ev: SocialEvent) => {
-    setFocus({ id: ev.id, nonce: ++nonce.current });
+    setLink({ id: ev.id, nonce: ++nonce.current, source: 'card' });
   }, []);
 
   const handlePinTap = useCallback((id: string) => {
     // A dimmed pin's card is filtered out of the list — go back to All first.
     const ev = events.find(e => e.id === id);
     if (activePartner && ev && !partnerMatches(activePartner, ev)) setActiveKey(null);
-    setHighlight({ id, nonce: ++nonce.current });
+    setLink({ id, nonce: ++nonce.current, source: 'pin' });
   }, [events, activePartner]);
 
   const cityLabel = SOCIAL_CITY_LABEL[city];
@@ -151,7 +160,7 @@ function SocialCityScreen({ city, theme, events, visible }: SocialCityScreenProp
         partners={partners}
         events={events}
         activePartner={activeKey}
-        focus={focus}
+        link={link}
         visible={visible}
         onPinTap={handlePinTap}
       />
@@ -160,7 +169,7 @@ function SocialCityScreen({ city, theme, events, visible }: SocialCityScreenProp
       <SocialEventList
         events={listEvents}
         theme={theme}
-        highlight={highlight}
+        link={link}
         emptyText={emptyText}
         onCardTap={handleCardTap}
       />

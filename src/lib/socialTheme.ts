@@ -27,8 +27,6 @@ export interface SocialPartner {
   about: string;
   schedule: string | null;
   instagram: string | null;
-  /** Cities where this partner's tab is shown. */
-  cities: CityKey[];
   /** Which events belong to this partner. */
   match: { brand?: string; category?: SocialCategory };
 }
@@ -39,7 +37,7 @@ export interface SocialTheme {
   partners: SocialPartner[];
   /** CSS color values (may be var(...)) — header, box border, city button glow. */
   cityAccents: Record<CityKey, string>;
-  /** Hex per category — card color bar + map pins. */
+  /** Hex per category — card accent line + map pins for unbranded events. */
   categoryColors: Record<SocialCategory, string>;
   globe: { space: string; fog: string; highColor: string };
 }
@@ -65,8 +63,10 @@ function logoFor(key: string): string | null {
 // TODO(brand): replace with official hex from Sun Cruiser's brand guide.
 export const SUNCRUISER_BLUE_TODO = '#2F7FE0';
 
+// Blue belongs to Sun Cruiser alone. Green = run club / fitness /
+// community, red = nightlife, warm ivory = unbranded pop-ups.
 const RUN_GREEN = '#2FBF71';
-const POPUP_BLUE = '#3B82F6';
+const POPUP_IVORY = '#EDE6D6';
 const NIGHT_RED = '#E5484D';
 
 // City accents never use green, blue or red (those are partner signal).
@@ -82,8 +82,6 @@ const GLOBE = {
   highColor: 'rgba(28, 28, 46, 0.9)',
 };
 
-const ALL_CITIES: CityKey[] = ['knoxville', 'tampa', 'st_petersburg'];
-
 // ── Themes ────────────────────────────────────────────────────────
 export const VENUU_THEME: SocialTheme = {
   id: 'venuu',
@@ -92,21 +90,21 @@ export const VENUU_THEME: SocialTheme = {
     {
       key: 'run_club', label: 'Run Clubs', color: RUN_GREEN, logo: null,
       about: 'Group runs open to anyone.', schedule: null, instagram: null,
-      cities: ALL_CITIES, match: { category: 'run_club' },
+      match: { category: 'run_club' },
     },
     {
-      key: 'pop_up', label: 'Pop-Ups', color: POPUP_BLUE, logo: null,
+      key: 'pop_up', label: 'Pop-Ups', color: POPUP_IVORY, logo: null,
       about: 'Short-run brand and maker pop-ups.', schedule: null, instagram: null,
-      cities: ALL_CITIES, match: { category: 'pop_up' },
+      match: { category: 'pop_up' },
     },
     {
       key: 'nightlife', label: 'Nightlife', color: NIGHT_RED, logo: null,
       about: 'Late-night events picked by Venuu.', schedule: null, instagram: null,
-      cities: ALL_CITIES, match: { category: 'nightlife' },
+      match: { category: 'nightlife' },
     },
   ],
   cityAccents: CITY_ACCENTS,
-  categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_BLUE, nightlife: NIGHT_RED },
+  categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED },
   globe: GLOBE,
 };
 
@@ -120,7 +118,7 @@ export const SUNCRUISER_THEME: SocialTheme = {
       about: 'Weekly community run in St. Pete.',
       schedule: 'Thursdays 6:30 PM', // TODO(schedule): confirm real day/time with the club
       instagram: null,               // TODO(instagram): confirm handle
-      cities: ['st_petersburg'], match: { brand: 'pinellas_run_club' },
+      match: { brand: 'pinellas_run_club' },
     },
     {
       key: 'suncruiser', label: 'Sun Cruiser', color: SUNCRUISER_BLUE_TODO,
@@ -128,16 +126,16 @@ export const SUNCRUISER_THEME: SocialTheme = {
       about: 'Pop-ups with Venuu across Tampa Bay.',
       schedule: null,
       instagram: null,               // TODO(instagram): confirm handle
-      cities: ALL_CITIES, match: { brand: 'suncruiser' },
+      match: { brand: 'suncruiser' },
     },
     {
       key: 'nightlife', label: 'Nightlife', color: NIGHT_RED, logo: null,
       about: 'Late-night events picked by Venuu.', schedule: null, instagram: null,
-      cities: ALL_CITIES, match: { category: 'nightlife' },
+      match: { category: 'nightlife' },
     },
   ],
   cityAccents: CITY_ACCENTS,
-  categoryColors: { run_club: RUN_GREEN, pop_up: SUNCRUISER_BLUE_TODO, nightlife: NIGHT_RED },
+  categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED },
   globe: GLOBE,
 };
 
@@ -153,8 +151,10 @@ export const SOCIAL_CITY_LABEL: Record<CityKey, string> = {
   st_petersburg: 'Pinellas',
 };
 
-export function partnersForCity(theme: SocialTheme, city: CityKey): SocialPartner[] {
-  return theme.partners.filter(p => p.cities.includes(city));
+/** Partners with ≥1 upcoming event in the given set (a city's events,
+ *  or every city's for the world screen). No events → no tile. */
+export function partnersWithEvents(theme: SocialTheme, events: SocialEvent[]): SocialPartner[] {
+  return theme.partners.filter(p => events.some(ev => partnerMatches(p, ev)));
 }
 
 export function partnerMatches(partner: SocialPartner, ev: SocialEvent): boolean {
@@ -170,12 +170,23 @@ export function brandPartnerFor(theme: SocialTheme, ev: SocialEvent): SocialPart
   return theme.partners.find(p => p.match.brand === ev.brand) ?? null;
 }
 
+/** An event's signal color: its themed brand's color when branded
+ *  (so blue only ever means Sun Cruiser), else its category color. */
+export function eventColor(theme: SocialTheme, ev: SocialEvent): string {
+  return brandPartnerFor(theme, ev)?.color ?? theme.categoryColors[ev.category];
+}
+
 /** CSS variables scoped to the Social root element. */
 export function socialThemeVars(theme: SocialTheme, city: CityKey | null): Record<string, string> {
   const vars: Record<string, string> = {
     '--social-accent-knoxville': theme.cityAccents.knoxville,
     '--social-accent-tampa': theme.cityAccents.tampa,
     '--social-accent-st_petersburg': theme.cityAccents.st_petersburg,
+    // Near-black with a slight warm tint; hairlines are white at ~10%.
+    '--social-bg': '#0B0A09',
+    '--social-surface': '#141210',
+    '--social-surface-raised': '#1B1815',
+    '--social-hairline': 'rgba(255, 255, 255, 0.10)',
     '--social-run': theme.categoryColors.run_club,
     '--social-popup': theme.categoryColors.pop_up,
     '--social-night': theme.categoryColors.nightlife,

@@ -1,0 +1,33 @@
+/* Social tab — every rule is scoped to the Social root so nothing
+   reaches Tonight or any other tab. */
+
+[data-social-theme] .social-press {
+  transition: transform 120ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+[data-social-theme] .social-press:active {
+  transform: scale(0.98);
+}
+
+[data-social-theme] .social-num {
+  font-variant-numeric: tabular-nums;
+}
+
+[data-social-theme] .social-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Reduced motion: state changes are instant everywhere in Social. */
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] *,
+  [data-social-theme] *::before,
+  [data-social-theme] *::after {
+    transition-duration: 0ms !important;
+    transition-delay: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
+  }
+}
