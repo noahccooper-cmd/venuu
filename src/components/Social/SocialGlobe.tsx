@@ -6,7 +6,9 @@ import { mapboxToken, mapboxReady } from '../../lib/supabase';
 import type { SocialPartner, SocialTheme } from '../../lib/socialTheme';
 import type { SocialEvent } from '../../lib/socialTypes';
 import { SOCIAL_CITIES, SOCIAL_CITY_GEO, prefersReducedMotion } from '../../lib/socialGeo';
-import { CityPin, PartnerPin } from './GlobePins';
+import {
+  CityPin, PartnerPin, CITY_OFFSETS, PARTNER_OFFSET, LABEL_W, LABEL_H, MEDALLION_SIZE, type PinOffset,
+} from './GlobePins';
 import { SunBackdrop, SunLogo, type GlobeGeometry } from './SunBackdrop';
 
 const FONT = 'Satoshi, sans-serif';
@@ -62,6 +64,25 @@ interface SocialGlobeProps {
 }
 
 type PinKey = CityKey | `partner:${string}`;
+
+/** Would a label at this offset from a pin at (x, y) poke past the limb —
+ *  or past the screen edge when the rim itself is off-screen? Tests the far
+ *  corners of its footprint against the globe disc and the viewport. */
+function hangsOffGlobe(
+  x: number, y: number, off: PinOffset, w: number, h: number, g: GlobeGeometry,
+  viewW: number, viewH: number,
+): boolean {
+  const ex = x + off.dx;
+  const ey = y + off.dy;
+  const corners: [number, number][] =
+    off.align === 'left'  ? [[ex + w, ey - h / 2], [ex + w, ey + h / 2]] :
+    off.align === 'right' ? [[ex - w, ey - h / 2], [ex - w, ey + h / 2]] :
+    off.dy < 0            ? [[ex - w / 2, ey - h], [ex + w / 2, ey - h]] :
+                            [[ex - w / 2, ey + h], [ex + w / 2, ey + h]];
+  const inset = g.r - 4;
+  return corners.some(([cx, cy]) =>
+    Math.hypot(cx - g.cx, cy - g.cy) > inset || cx < 4 || cx > viewW - 4 || cy < 4 || cy > viewH - 4);
+}
 
 /** Great-circle angle in degrees between two lng/lat points. */
 function angleDeg(a: [number, number], b: [number, number]): number {
@@ -131,6 +152,9 @@ export function SocialGlobe({
   const onCityChosenRef = useRef(onCityChosen);
   onCityChosenRef.current = onCityChosen;
   const pinElsRef = useRef<Partial<Record<PinKey, HTMLDivElement>>>({});
+  // Labels whose leader is flipped inward (edge fix); updated only on change.
+  const [flips, setFlips] = useState<Partial<Record<PinKey, boolean>>>({});
+  const flipsRef = useRef(flips);
   const pinnedPartnersRef = useRef(pinnedPartners);
   pinnedPartnersRef.current = pinnedPartners;
   const hasSun = theme.sun !== null;
@@ -261,9 +285,23 @@ export function SocialGlobe({
     });
 
     // Far-side fade: each pin's inner wrapper fades as it nears the horizon.
+    // Edge fix: a fanned label that would hang past the limb flips inward.
     const fadePins = () => {
       const c = map.getCenter();
       const center: [number, number] = [c.lng, c.lat];
+      const g = measureGlobe(map);
+      let changed = false;
+      const nextFlips = { ...flipsRef.current };
+      pinCoords.current.forEach((coord, key) => {
+        const p = map.project(coord);
+        const isPartner = key.startsWith('partner:');
+        const base = isPartner ? PARTNER_OFFSET : CITY_OFFSETS[key as CityKey];
+        const [w, h] = isPartner ? [MEDALLION_SIZE, MEDALLION_SIZE] : [LABEL_W, LABEL_H];
+        const box = map.getContainer();
+        const flip = hangsOffGlobe(p.x, p.y, base, w, h, g, box.clientWidth, box.clientHeight);
+        if (!!nextFlips[key] !== flip) { nextFlips[key] = flip; changed = true; }
+      });
+      if (changed) { flipsRef.current = nextFlips; setFlips(nextFlips); }
       pinCoords.current.forEach((coord, key) => {
         const el = pinElsRef.current[key];
         const inner = el?.firstElementChild as HTMLElement | null;
@@ -508,6 +546,7 @@ export function SocialGlobe({
             count={counts[city] ?? 0}
             lit={pinsLit(i)}
             reduced={reduced}
+            flipped={!!flips[city]}
             onTap={() => choose(city)}
           />,
           el,
@@ -521,6 +560,7 @@ export function SocialGlobe({
             partner={p}
             lit={pinsLit(SOCIAL_CITIES.length + i)}
             reduced={reduced}
+            flipped={!!flips[`partner:${p.key}`]}
             onTap={() => onPartnerTap(p.key)}
           />,
           el,

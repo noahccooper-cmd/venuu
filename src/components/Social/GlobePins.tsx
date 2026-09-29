@@ -18,6 +18,18 @@ export const CITY_OFFSETS: Record<CityKey, PinOffset> = {
 };
 export const PARTNER_OFFSET: PinOffset = { dx: -64, dy: 6, align: 'right' };
 
+// Approximate footprint of a label / medallion at the end of its leader,
+// used to test whether it would hang past the globe's limb.
+export const LABEL_W = 110;
+export const LABEL_H = 40;
+export const MEDALLION_SIZE = 48;
+
+/** Mirror an offset to the inward side: left↔right, above↔below. */
+export function flipOffset(off: PinOffset): PinOffset {
+  if (off.align === 'center') return { ...off, dy: -off.dy };
+  return { dx: -off.dx, dy: off.dy, align: off.align === 'left' ? 'right' : 'left' };
+}
+
 function Leader({ dx, dy, color }: { dx: number; dy: number; color: string }) {
   const w = Math.abs(dx) + 2;
   const h = Math.abs(dy) + 2;
@@ -51,7 +63,7 @@ function Dot({ color }: { color: string }) {
 
 /** Label box anchored at the leader's far end. */
 function anchorStyle({ dx, dy, align }: PinOffset): React.CSSProperties {
-  if (align === 'center') return { left: dx, top: dy, transform: 'translate(-50%, -100%)' };
+  if (align === 'center') return { left: dx, top: dy, transform: dy < 0 ? 'translate(-50%, -100%)' : 'translate(-50%, 0)' };
   if (align === 'left') return { left: dx + 4, top: dy, transform: 'translateY(-50%)' };
   return { left: dx - 4, top: dy, transform: 'translate(-100%, -50%)' };
 }
@@ -61,12 +73,14 @@ interface CityPinProps {
   count: number;
   lit: boolean;
   reduced: boolean;
+  /** Leader flipped to the inward side so the label stays on the globe. */
+  flipped?: boolean;
   onTap: () => void;
 }
 
-export function CityPin({ city, count, lit, reduced, onTap }: CityPinProps) {
+export function CityPin({ city, count, lit, reduced, flipped = false, onTap }: CityPinProps) {
   const accent = `var(--social-accent-${city})`;
-  const off = CITY_OFFSETS[city];
+  const off = flipped ? flipOffset(CITY_OFFSETS[city]) : CITY_OFFSETS[city];
   return (
     <div style={{ position: 'absolute', left: 0, top: 0, opacity: lit ? 1 : 0, transition: reduced ? 'none' : 'opacity 200ms ease-out' }}>
       <Dot color={accent} />
@@ -98,17 +112,18 @@ interface PartnerPinProps {
   partner: SocialPartner;
   lit: boolean;
   reduced: boolean;
+  flipped?: boolean;
   onTap: () => void;
 }
 
-export function PartnerPin({ partner, lit, reduced, onTap }: PartnerPinProps) {
-  const off = PARTNER_OFFSET;
-  const SIZE = 48;
+export function PartnerPin({ partner, lit, reduced, flipped = false, onTap }: PartnerPinProps) {
+  const off = flipped ? flipOffset(PARTNER_OFFSET) : PARTNER_OFFSET;
+  const SIZE = MEDALLION_SIZE;
   return (
     <div style={{ position: 'absolute', left: 0, top: 0, opacity: lit ? 1 : 0, transition: reduced ? 'none' : 'opacity 200ms ease-out' }}>
       <Dot color={partner.color} />
       <Leader dx={off.dx} dy={off.dy} color={partner.color} />
-      <div style={{ position: 'absolute', left: off.dx - SIZE, top: off.dy - SIZE / 2 }}>
+      <div style={{ position: 'absolute', left: off.dx < 0 ? off.dx - SIZE : off.dx, top: off.dy - SIZE / 2 }}>
         <Medallion partner={partner} size={SIZE} onTap={onTap} />
       </div>
     </div>
