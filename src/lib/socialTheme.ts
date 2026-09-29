@@ -42,6 +42,8 @@ export interface SocialPartner {
   /** "Fueled by <partner>" — a partner key; shown only if that partner's
    *  logo file exists in src/assets/social/. */
   fueledBy?: { key: string; name: string };
+  /** Partner photos (event detail / partner page hero). */
+  photos?: string[];
   /** Product images (cards may use one as a thumbnail). */
   images?: string[];
   /** Where this partner's medallion is pinned on the globe (e.g. a run

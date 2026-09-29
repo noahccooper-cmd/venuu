@@ -4,7 +4,7 @@ import type { SocialEvent } from '../../lib/socialTypes';
 import { sectionGroups, type SocialGroup } from '../../lib/socialSections';
 import { prefersReducedMotion } from '../../lib/socialGeo';
 import { SocialEventCard } from './SocialEventCard';
-import type { SocialLink } from './SocialCityMap';
+import type { SocialLink } from './SocialMap';
 
 const FONT = 'Satoshi, sans-serif';
 const LINK_MS = 1500;

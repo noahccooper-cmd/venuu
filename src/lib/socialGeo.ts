@@ -38,3 +38,36 @@ export function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined'
     && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
+
+type Pt = [number, number];
+
+/** Great-circle distance in km between two [lng, lat] points. */
+export function distanceKm(a: Pt, b: Pt): number {
+  const r = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * r;
+  const dLng = (b[0] - a[0]) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** The Social city whose center is closest to a point. */
+export function nearestCity(p: Pt): CityKey {
+  let best: CityKey = SOCIAL_CITIES[0];
+  let bestD = Infinity;
+  for (const c of SOCIAL_CITIES) {
+    const d = distanceKm(p, SOCIAL_CITY_GEO[c].center);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+/** [[w, s], [e, n]] around a set of points, or null when empty. */
+export function boundsOf(points: Pt[]): [Pt, Pt] | null {
+  if (points.length === 0) return null;
+  const lngs = points.map(p => p[0]);
+  const lats = points.map(p => p[1]);
+  return [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]];
+}
+
+/** Tampa Bay framing — both Tampa and St. Pete. */
+export const TAMPA_BAY_BOUNDS: [Pt, Pt] = [[-82.86, 27.65], [-82.40, 28.05]];

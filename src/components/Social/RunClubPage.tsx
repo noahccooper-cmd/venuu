@@ -55,7 +55,7 @@ export function RunClubPage({ partner, runs }: RunClubPageProps) {
   const fuel = partner.fueledBy ? partnerLogo(partner.fueledBy.key) : null;
 
   return (
-    <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', background: 'var(--social-bg)', padding: '24px 16px 96px' }}>
+    <div style={{ padding: '0 16px 24px' }}>
       {/* Next run hero */}
       <section
         style={{

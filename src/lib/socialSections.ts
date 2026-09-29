@@ -68,9 +68,10 @@ export interface SocialGroup { key: string; label: string; events: SocialEvent[]
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-/** Partner lists: Today / Tomorrow / "Thu, Oct 2" for the coming week,
- *  then one header per month further out. Events must be sorted. */
-export function groupSocialDays(events: SocialEvent[], now: number = Date.now()): SocialGroup[] {
+/** Today / Tomorrow / "Thu, Oct 2" for the coming week, then one header
+ *  per month further out — or a single "Later" when `later` is set.
+ *  Events must be sorted. */
+export function groupSocialDays(events: SocialEvent[], now: number = Date.now(), later = false): SocialGroup[] {
   const today = dayStart(now);
   // Via dayStart so a DST change can't shift "tomorrow" by an hour.
   const tomorrow = dayStart(today + DAY + 6 * 3_600_000);
@@ -87,6 +88,8 @@ export function groupSocialDays(events: SocialEvent[], now: number = Date.now())
     else if (day < today + 7 * DAY) {
       key = `day-${day}`;
       label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    } else if (later) {
+      key = 'later'; label = 'Later';
     } else {
       key = `month-${d.getFullYear()}-${d.getMonth()}`;
       label = MONTH_NAMES[d.getMonth()];

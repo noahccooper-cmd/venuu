@@ -3,9 +3,49 @@ import { hapticLight } from '../../lib/haptics';
 /** Globe geometry in container px: disc center + radius. */
 export interface GlobeGeometry { cx: number; cy: number; r: number }
 
-interface SunBackdropProps {
+// Sunrise direction: up-right from the globe's center (60° above horizontal).
+const DIR = { x: 0.5, y: -0.866 };
+// Zoom band over which the sun shrinks into the corner button.
+const MORPH_START = 3;
+const MORPH_END = 4.5;
+const BUTTON = 48;
+const BUTTON_MARGIN = 16;
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** 0 at globe zoom (sun behind the limb) → 1 once it's the corner button. */
+export function sunMorph(zoom: number): number {
+  return clamp((zoom - MORPH_START) / (MORPH_END - MORPH_START), 0, 1);
+}
+
+interface SunGeometry {
+  d: number;
+  sun: { x: number; y: number };
+  logo: { x: number; y: number };
+  button: { x: number; y: number };
+}
+
+/** Sun sits just inside the upper-right limb, so it rises from behind the
+ *  planet like a sunrise; the logo floats in its light, clear of the globe. */
+function sunGeometry(geo: GlobeGeometry, width: number, topInset: number): SunGeometry {
+  const d = clamp(geo.r * 0.8, 110, 230);
+  const inset = geo.r - d * 0.2;
+  const sun = { x: geo.cx + DIR.x * inset, y: geo.cy + DIR.y * inset };
+  const logo = {
+    x: clamp(sun.x + DIR.x * d * 0.3, 40, width - 40),
+    y: Math.max(topInset + 40, sun.y + DIR.y * d * 0.3),
+  };
+  const button = { x: width - BUTTON_MARGIN - BUTTON / 2, y: topInset + BUTTON_MARGIN + BUTTON / 2 };
+  return { d, sun, logo, button };
+}
+
+interface SunProps {
   geo: GlobeGeometry;
+  zoom: number;
   width: number;
+  /** Top of the usable map area (below the app header). */
+  topInset: number;
   colors: { core: string; mid: string; corona: string };
   /** Parallax offset (px), opposite the drag. */
   shift: { x: number; y: number };
@@ -13,34 +53,29 @@ interface SunBackdropProps {
   reduced: boolean;
 }
 
-/** The sun scales with the globe so it always reads as rising from the
- *  rim — never an eclipse when the globe pulls back. */
-function sunSize(width: number, r: number): number {
-  return Math.max(96, Math.min(r * 0.9, width * 0.7, 280));
-}
-
-/** Where the sun sits: its center just below the globe's top limb, so it
- *  rises from behind the rim and the globe hides its lower part. */
-function sunCenterY(geo: GlobeGeometry, d: number): number {
-  return geo.cy - geo.r + d * 0.18;
-}
-
 /**
- * The sun disc + corona. Rendered BEHIND the globe canvas (the globe's
- * space is transparent), so the planet occludes it naturally.
+ * The sun disc + corona, rendered BEHIND the globe canvas (the globe's space
+ * is transparent), so the planet occludes it. As zoom rises past ~3 it
+ * converges on the corner and fades as the button takes over.
  */
-export function SunBackdrop({ geo, width, colors, shift, dragging, reduced }: SunBackdropProps) {
-  const d = sunSize(width, geo.r);
-  const cy = sunCenterY(geo, d);
+export function SunBackdrop({ geo, zoom, width, topInset, colors, shift, dragging, reduced }: SunProps) {
+  const t = sunMorph(zoom);
+  if (t >= 1) return null;
+  const g = sunGeometry(geo, width, topInset);
+  const x = lerp(g.sun.x, g.button.x, t) + shift.x * (1 - t);
+  const y = lerp(g.sun.y, g.button.y, t) + shift.y * (1 - t);
+  const scale = 1 - 0.75 * t;
   const move = reduced ? 'none' : dragging ? 'transform 150ms ease-out' : 'transform 350ms cubic-bezier(0.22, 1, 0.36, 1)';
+  const d = g.d;
 
   return (
     <div
       aria-hidden
       style={{
         position: 'absolute', left: 0, top: 0, width: 0, height: 0,
-        transform: `translate(${geo.cx + shift.x}px, ${cy + shift.y}px)`,
+        transform: `translate(${x}px, ${y}px) scale(${scale})`,
         transition: move,
+        opacity: 1 - t,
         pointerEvents: 'none',
       }}
     >
@@ -52,7 +87,6 @@ export function SunBackdrop({ geo, width, colors, shift, dragging, reduced }: Su
           background: `radial-gradient(circle, ${colors.corona} 0%, ${colors.corona} 22%, rgba(253, 185, 19, 0.08) 45%, rgba(0, 0, 0, 0) 70%)`,
         }}
       />
-      {/* Disc */}
       <div
         style={{
           position: 'absolute', left: -d / 2, top: -d / 2, width: d, height: d, borderRadius: '50%',
@@ -64,56 +98,59 @@ export function SunBackdrop({ geo, width, colors, shift, dragging, reduced }: Su
   );
 }
 
-interface SunLogoProps {
-  geo: GlobeGeometry;
-  width: number;
+interface SunButtonProps extends Omit<SunProps, 'colors'> {
+  colors: { core: string; mid: string };
   logo: string | null;
   name: string;
-  shift: { x: number; y: number };
-  dragging: boolean;
-  reduced: boolean;
   active: boolean;
   onTap: () => void;
 }
 
 /**
- * The presenter's logo sitting in the light above the horizon, plus the
- * tap target for the sun. Rendered ABOVE the canvas (it's over empty
- * space, not the globe).
+ * The presenter's logo. At globe zoom it floats in the sun's light above
+ * the horizon; as zoom rises it moves into the top-right corner and becomes
+ * a round sun button (≥44pt) that stays there at every zoom.
  */
-export function SunLogo({ geo, width, logo, name, shift, dragging, reduced, active, onTap }: SunLogoProps) {
-  const d = sunSize(width, geo.r);
-  const limbTop = geo.cy - geo.r;
-  const capH = d * 0.32 + 16;          // visible sun above the rim, plus a little air
+export function SunButton({ geo, zoom, width, topInset, colors, logo, name, shift, dragging, reduced, active, onTap }: SunButtonProps) {
+  const t = sunMorph(zoom);
+  const g = sunGeometry(geo, width, topInset);
+  const x = lerp(g.logo.x, g.button.x, t) + shift.x * (1 - t);
+  const y = lerp(g.logo.y, g.button.y, t) + shift.y * (1 - t);
+  const size = lerp(60, BUTTON, t);
   const move = reduced ? 'none' : dragging ? 'transform 150ms ease-out' : 'transform 350ms cubic-bezier(0.22, 1, 0.36, 1)';
-  const LOGO = Math.round(Math.max(40, Math.min(64, d * 0.24)));
 
   return (
     <button
       className="social-press"
-      aria-label={active ? `Close ${name}` : `${name} events`}
+      aria-label={active ? `Leave ${name} World` : `Enter ${name} World`}
       aria-pressed={active}
       onClick={() => { hapticLight(); onTap(); }}
       style={{
-        position: 'absolute',
-        left: geo.cx - d / 2,
-        top: limbTop - capH,
-        width: d,
-        height: capH - 4,
-        padding: 0,
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        display: 'grid',
-        placeItems: 'center',
-        transform: `translate(${shift.x}px, ${shift.y}px)`,
+        position: 'absolute', left: 0, top: 0, zIndex: 4,
+        width: Math.max(44, size), height: Math.max(44, size),
+        marginLeft: -Math.max(44, size) / 2, marginTop: -Math.max(44, size) / 2,
+        transform: `translate(${x}px, ${y}px)`,
         transition: move,
+        padding: 0, cursor: 'pointer', borderRadius: '50%',
+        display: 'grid', placeItems: 'center',
+        // The disc behind the logo appears as the sun condenses into the button.
+        background: t > 0 ? `radial-gradient(circle at 50% 45%, ${colors.core}, ${colors.mid})` : 'transparent',
+        border: 'none',
+        boxShadow: t > 0 ? `0 0 ${active ? 22 : 14}px -2px ${colors.mid}` : 'none',
+        opacity: 1,
       }}
     >
       {logo ? (
-        <img src={logo} alt={name} style={{ width: LOGO, height: LOGO, objectFit: 'contain', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))' }} />
+        <img
+          src={logo}
+          alt=""
+          style={{
+            width: size * (t > 0 ? 0.78 : 1), height: size * (t > 0 ? 0.78 : 1), objectFit: 'contain',
+            filter: t > 0 ? 'none' : 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))',
+          }}
+        />
       ) : (
-        <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 15, fontWeight: 800, color: '#1A1206' }}>{name}</span>
+        <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 11, fontWeight: 800, color: '#1A1206' }}>{name}</span>
       )}
     </button>
   );
