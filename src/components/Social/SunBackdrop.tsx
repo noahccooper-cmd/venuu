@@ -22,22 +22,24 @@ export function sunMorph(zoom: number): number {
 interface SunGeometry {
   d: number;
   sun: { x: number; y: number };
-  logo: { x: number; y: number };
+  /** The sun's visible crest just outside the limb — the tap target at globe zoom. */
+  crest: { x: number; y: number };
   button: { x: number; y: number };
 }
 
 /** Sun sits just inside the upper-right limb, so it rises from behind the
- *  planet like a sunrise; the logo floats in its light, clear of the globe. */
+ *  planet like a sunrise; only its crest shows past the horizon. */
 function sunGeometry(geo: GlobeGeometry, width: number, topInset: number): SunGeometry {
   const d = clamp(geo.r * 0.8, 110, 230);
   const inset = geo.r - d * 0.2;
   const sun = { x: geo.cx + DIR.x * inset, y: geo.cy + DIR.y * inset };
-  const logo = {
-    x: clamp(sun.x + DIR.x * d * 0.3, 40, width - 40),
-    y: Math.max(topInset + 40, sun.y + DIR.y * d * 0.3),
+  const out = geo.r + d * 0.14;
+  const crest = {
+    x: clamp(geo.cx + DIR.x * out, 44, width - 44),
+    y: Math.max(topInset + 44, geo.cy + DIR.y * out),
   };
   const button = { x: width - BUTTON_MARGIN - BUTTON / 2, y: topInset + BUTTON_MARGIN + BUTTON / 2 };
-  return { d, sun, logo, button };
+  return { d, sun, crest, button };
 }
 
 interface SunProps {
@@ -102,56 +104,48 @@ interface SunButtonProps extends Omit<SunProps, 'colors'> {
   colors: { core: string; mid: string };
   logo: string | null;
   name: string;
-  active: boolean;
   onTap: () => void;
 }
 
+const CREST_TARGET = 72;
+
 /**
- * The presenter's logo. At globe zoom it floats in the sun's light above
- * the horizon; as zoom rises it moves into the top-right corner and becomes
- * a round sun button (≥44pt) that stays there at every zoom.
+ * The sun is the way into the presenter's World. At globe zoom this is an
+ * invisible 72pt target over the sun's crest (no logo on the globe); as
+ * zoom rises it condenses into a round corner button (≥44pt) showing the
+ * presenter's logo, and stays there at every zoom.
  */
-export function SunButton({ geo, zoom, width, topInset, colors, logo, name, shift, dragging, reduced, active, onTap }: SunButtonProps) {
+export function SunButton({ geo, zoom, width, topInset, colors, logo, name, shift, dragging, reduced, onTap }: SunButtonProps) {
   const t = sunMorph(zoom);
   const g = sunGeometry(geo, width, topInset);
-  const x = lerp(g.logo.x, g.button.x, t) + shift.x * (1 - t);
-  const y = lerp(g.logo.y, g.button.y, t) + shift.y * (1 - t);
-  const size = lerp(60, BUTTON, t);
+  const x = lerp(g.crest.x, g.button.x, t) + shift.x * (1 - t);
+  const y = lerp(g.crest.y, g.button.y, t) + shift.y * (1 - t);
+  const size = lerp(CREST_TARGET, BUTTON, t);
   const move = reduced ? 'none' : dragging ? 'transform 150ms ease-out' : 'transform 350ms cubic-bezier(0.22, 1, 0.36, 1)';
 
   return (
     <button
       className="social-press"
-      aria-label={active ? `Leave ${name} World` : `Enter ${name} World`}
-      aria-pressed={active}
+      aria-label={`Enter ${name} World`}
       onClick={() => { hapticLight(); onTap(); }}
       style={{
         position: 'absolute', left: 0, top: 0, zIndex: 4,
-        width: Math.max(44, size), height: Math.max(44, size),
-        marginLeft: -Math.max(44, size) / 2, marginTop: -Math.max(44, size) / 2,
+        width: size, height: size, marginLeft: -size / 2, marginTop: -size / 2,
         transform: `translate(${x}px, ${y}px)`,
         transition: move,
         padding: 0, cursor: 'pointer', borderRadius: '50%',
         display: 'grid', placeItems: 'center',
-        // The disc behind the logo appears as the sun condenses into the button.
+        // The disc appears only as the sun condenses into the button.
         background: t > 0 ? `radial-gradient(circle at 50% 45%, ${colors.core}, ${colors.mid})` : 'transparent',
         border: 'none',
-        boxShadow: t > 0 ? `0 0 ${active ? 22 : 14}px -2px ${colors.mid}` : 'none',
-        opacity: 1,
+        boxShadow: t > 0 ? `0 0 14px -2px ${colors.mid}` : 'none',
       }}
     >
-      {logo ? (
-        <img
-          src={logo}
-          alt=""
-          style={{
-            width: size * (t > 0 ? 0.78 : 1), height: size * (t > 0 ? 0.78 : 1), objectFit: 'contain',
-            filter: t > 0 ? 'none' : 'drop-shadow(0 2px 8px rgba(0,0,0,0.35))',
-          }}
-        />
+      {t > 0 && (logo ? (
+        <img src={logo} alt="" style={{ width: size * 0.78, height: size * 0.78, objectFit: 'contain', opacity: t }} />
       ) : (
-        <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 11, fontWeight: 800, color: '#1A1206' }}>{name}</span>
-      )}
+        <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 11, fontWeight: 800, color: '#1A1206', opacity: t }}>{name}</span>
+      ))}
     </button>
   );
 }

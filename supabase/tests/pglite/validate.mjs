@@ -382,6 +382,24 @@ await test('00077 RSVP policy still works after 00079 (profile lookup inside the
 });
 await test('00077 posting still works after 00079 (host posts)', async () => { await post('host', { title: 'after 79' }); });
 
+// ═════════════════════════ 00080 ═════════════════════════════════
+await test('00080 applies twice; Sun Cruiser gets its 3 products; readable signed-out', async () => {
+  await db.exec(sql('00080_brand_products.sql'));
+  await db.exec(sql('00080_brand_products.sql'));
+  const r = await as(null, () => q(`select slug, products from public.brands order by slug`));
+  const sc = r.find(x => x.slug === 'sun_cruiser');
+  const prc = r.find(x => x.slug === 'pinellas_run_club');
+  return (JSON.stringify(sc.products.map(p => p.name)) === JSON.stringify(['Classic Iced Tea', 'Classic Lemonade', 'Half & Half'])
+    && prc.products.length === 0) || JSON.stringify(r);
+});
+await test('00080 re-run never overwrites an admin edit to products; non-array rejected', async () => {
+  await as('mike', () => q(`update public.brands set products = '[{"name":"Edited","image_url":null}]' where slug='sun_cruiser'`));
+  await db.exec(sql('00080_brand_products.sql'));
+  const r = await q(`select products from public.brands where slug='sun_cruiser'`);
+  const bad = await expectError(() => q(`update public.brands set products = '{}' where slug='sun_cruiser'`), 'brands_products_is_array');
+  return (r[0].products[0].name === 'Edited' && bad === true) || JSON.stringify({ r, bad });
+});
+
 // 00079 guard refuses an unexpected view definition
 await test('00079 guard: refuses to run if user_account_stats drifted from the validated definition', async () => {
   const { db: d2 } = await buildBase({ quiet: true });

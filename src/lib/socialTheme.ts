@@ -44,8 +44,6 @@ export interface SocialPartner {
   fueledBy?: { key: string; name: string };
   /** Partner photos (event detail / partner page hero). */
   photos?: string[];
-  /** Product images (cards may use one as a thumbnail). */
-  images?: string[];
   /** Where this partner's medallion is pinned on the globe (e.g. a run
    *  club's meeting area). Partners without one don't appear on the globe. */
   home?: [number, number];
@@ -136,11 +134,12 @@ const NEUTRAL_GLOBE = {
 };
 
 // Presenting-partner globe: transparent space so the DOM sun behind the
-// canvas shows through; a warm atmosphere so the rim reads as backlit.
+// canvas shows through. Neutral atmosphere — no glow ring around the whole
+// limb; the light comes only from the offset sunrise.
 const SUN_GLOBE = {
   space: 'rgba(0, 0, 0, 0)',
-  fog: 'rgba(253, 185, 19, 0.35)',
-  highColor: 'rgba(255, 221, 0, 0.18)',
+  fog: 'rgba(40, 40, 52, 0.55)',
+  highColor: 'rgba(0, 0, 0, 0)',
 };
 
 // ── Themes ────────────────────────────────────────────────────────
@@ -172,7 +171,7 @@ export const VENUU_THEME: SocialTheme = {
 
 export const SUNCRUISER_THEME: SocialTheme = {
   id: 'suncruiser',
-  presentedBy: { name: 'Sun Cruiser', logo: logoFor('suncruiser'), partnerKey: 'suncruiser' },
+  presentedBy: { name: 'Sun Cruiser', logo: logoFor('suncruiser'), partnerKey: 'sun_cruiser' },
   partners: [
     {
       key: 'pinellas_run_club', label: 'Pinellas Run Club', color: RUN_GREEN,
@@ -189,7 +188,7 @@ export const SUNCRUISER_THEME: SocialTheme = {
       match: { brand: 'pinellas_run_club' },
     },
     {
-      key: 'suncruiser', label: 'Sun Cruiser', color: SUNCRUISER_TEAL, secondary: SUNCRUISER_SKY,
+      key: 'sun_cruiser', label: 'Sun Cruiser', color: SUNCRUISER_TEAL, secondary: SUNCRUISER_SKY,
       logo: logoFor('suncruiser'),
       about: 'Pop-ups with Venuu across Tampa Bay and Knoxville.',
       schedule: null,
@@ -198,13 +197,9 @@ export const SUNCRUISER_THEME: SocialTheme = {
         instagram: 'https://www.instagram.com/drinksuncruiser',
         finder: { url: 'https://www.drinksuncruiser.com/find', label: 'Find Sun Cruiser near you' },
       },
+      hasPage: true,   // → Sun Cruiser World
       disclaimer: '21+ · Please drink responsibly',
-      images: [
-        asset('suncruiser/can-classic-iced-tea.webp'),
-        asset('suncruiser/can-classic-lemonade.webp'),
-        asset('suncruiser/can-half-and-half.webp'),
-      ].filter((u): u is string => !!u),
-      match: { brand: 'suncruiser' },
+      match: { brand: 'sun_cruiser' },
     },
     {
       key: 'nightlife', label: 'Nightlife', color: NIGHT_RED, logo: null,

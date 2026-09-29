@@ -9,9 +9,9 @@ import {
 } from '../../lib/socialTheme';
 import type { SocialEvent } from '../../lib/socialTypes';
 import {
-  SOCIAL_CITIES, SOCIAL_CITY_GEO, boundsOf, distanceKm, prefersReducedMotion,
+  SOCIAL_CITIES, SOCIAL_CITY_GEO, boundsOf, prefersReducedMotion,
 } from '../../lib/socialGeo';
-import { applySunWorldPaint } from '../../lib/socialMapStyle';
+import { applyWorldPaint, type WorldPalette } from '../../lib/socialMapStyle';
 import {
   CityPin, PartnerPin, CITY_OFFSETS, PARTNER_OFFSET, LABEL_W, LABEL_H, MEDALLION_SIZE, type PinOffset,
 } from './GlobePins';
@@ -39,7 +39,6 @@ const GLOBE_GEOMETRY_MAX_ZOOM = 4.5;
 const FADE_MS = 300;
 const FIRST_LIGHT_MS = 250;
 const STAGGER_MS = 120;
-const IGNITE_STAGGER_MS = 80;
 
 // Far-side fade: full opacity within FADE_START° of view center.
 const FADE_START = 65;
@@ -79,9 +78,12 @@ export interface SocialMapHandle {
   fitPoints(points: [number, number][], maxZoom?: number, sheetPx?: number): void;
   getCamera(): CameraSnapshot | null;
   setCamera(cam: CameraSnapshot): void;
-  /** Sun Cruiser World: ignite the partner's pins nearest-first from origin. */
-  ignite(origin: [number, number]): void;
+  /** Partner World carousel: glide to a pin without zooming out. */
+  panToEvent(ev: SocialEvent, sheetPx?: number): void;
 }
+
+/** A Partner World: only this brand's pins, map recolored to its palette. */
+export interface SocialWorld { brand: string; palette: WorldPalette }
 
 interface SocialMapProps {
   theme: SocialTheme;
@@ -92,8 +94,12 @@ interface SocialMapProps {
   partners: SocialPartner[];
   activePartner: string | null;
   link: SocialLink | null;
-  /** Sun Cruiser World on/off. */
-  sunWorld: boolean;
+  /** The Partner World being shown, or null. */
+  world: SocialWorld | null;
+  /** Partner World: the carousel's current event — its pin glows. */
+  selectedId: string | null;
+  /** Extra top clearance for flights (the Partner World top bar). */
+  topExtra: number;
   visible: boolean;
   arrivalKey: number;
   topInset: number;
@@ -160,9 +166,10 @@ interface FanItem { id: string; color: string; day: number }
 
 export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function SocialMap(props, ref) {
   const {
-    theme, events, counts, pinnedPartners, partners, activePartner, link, sunWorld,
-    visible, arrivalKey, topInset, peekPx, pickMode, draftPin,
+    theme, events, counts, pinnedPartners, partners, activePartner, link, world,
+    visible, arrivalKey, topInset, peekPx, pickMode, draftPin, selectedId,
   } = props;
+  const worldBrand = world?.brand ?? null;
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -187,23 +194,19 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
   const dragOrigin = useRef<{ x: number; y: number } | null>(null);
   const pulseFrame = useRef(0);
   const restorePaint = useRef<(() => void) | null>(null);
-  const igniteTimers = useRef<number[]>([]);
 
   // Latest props for map event handlers (registered once).
   const latest = useRef(props);
   latest.current = props;
 
   const hasSun = theme.sun !== null;
-  const presenterBrand = theme.presentedBy
-    ? theme.partners.find(p => p.key === theme.presentedBy!.partnerKey)?.match.brand ?? null
-    : null;
 
   const worldPadding = useCallback((): mapboxgl.PaddingOptions => ({
     top: topInset + (hasSun ? 110 : 40), bottom: peekPx + 8, left: 0, right: 0,
   }), [topInset, hasSun, peekPx]);
 
   const flightPadding = useCallback((sheet?: number): mapboxgl.PaddingOptions => ({
-    top: topInset + 24, bottom: (sheet ?? latest.current.sheetPx) + 24, left: 32, right: 32,
+    top: topInset + latest.current.topExtra + 24, bottom: (sheet ?? latest.current.sheetPx) + 24, left: 32, right: 32,
   }), [topInset]);
 
   // ── Imperative camera API ──
@@ -247,22 +250,15 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     setCamera(cam) {
       mapRef.current?.flyTo({ ...cam, duration: reduced ? 0 : 1200, essential: true });
     },
-    ignite(origin) {
+    panToEvent(ev, sheet) {
       const map = mapRef.current;
       if (!map) return;
-      igniteTimers.current.forEach(t => window.clearTimeout(t));
-      igniteTimers.current = [];
-      const brandEvents = latest.current.events.filter(e => e.brand === presenterBrand);
-      for (const e of brandEvents) map.setFeatureState({ source: SOURCE, id: e.id }, { lit: false });
-      const ordered = [...brandEvents].sort((a, b) =>
-        distanceKm(origin, [a.longitude, a.latitude]) - distanceKm(origin, [b.longitude, b.latitude]));
-      ordered.forEach((e, i) => {
-        const fire = () => { if (map.getSource(SOURCE)) map.setFeatureState({ source: SOURCE, id: e.id }, { lit: true }); };
-        if (reduced) fire();
-        else igniteTimers.current.push(window.setTimeout(fire, 300 + i * IGNITE_STAGGER_MS));
+      map.flyTo({
+        center: [ev.longitude, ev.latitude], zoom: Math.max(map.getZoom(), 12.5),
+        padding: flightPadding(sheet), duration: reduced ? 0 : 800, essential: true,
       });
     },
-  }), [worldPadding, flightPadding, reduced, presenterBrand]);
+  }), [worldPadding, flightPadding, reduced]);
 
   // ── First frame: size + estimated globe geometry, before paint ──
   useLayoutEffect(() => {
@@ -283,7 +279,6 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     const raf = requestAnimationFrame(() => { map = createMap(); });
     return () => {
       cancelAnimationFrame(raf);
-      igniteTimers.current.forEach(t => window.clearTimeout(t));
       cancelAnimationFrame(pulseFrame.current);
       map?.remove();
       mapRef.current = null;
@@ -449,6 +444,11 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
         id: 'social-link', type: 'circle', source: SOURCE, filter: ['==', ['get', 'id'], ''],
         paint: { 'circle-radius': 20, 'circle-color': ['get', 'color'], 'circle-blur': 0.6, 'circle-opacity': 0.7 },
       });
+      // Partner World: the carousel's current event keeps a steady glow.
+      map.addLayer({
+        id: 'social-selected', type: 'circle', source: SOURCE, filter: ['==', ['get', 'id'], ''],
+        paint: { 'circle-radius': 22, 'circle-color': ['get', 'color'], 'circle-blur': 0.55, 'circle-opacity': 0.8 },
+      });
       map.addLayer({
         id: 'social-pulse', type: 'circle', source: PULSE_SOURCE,
         paint: { 'circle-radius': PIN_RADIUS, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-width': 2, 'circle-stroke-color': ['get', 'color'], 'circle-stroke-opacity': 0 },
@@ -475,17 +475,16 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
         id: 'social-draft-dot', type: 'circle', source: DRAFT_SOURCE,
         paint: { 'circle-radius': 3, 'circle-color': '#FFFFFF' },
       });
-      applyPinStyle(map, latest.current.sunWorld, latest.current.activePartner, presenterBrand);
+      applyPinStyle(map, latest.current.world?.brand ?? null, latest.current.activePartner);
 
       // Taps: pick mode → drop the draft pin; else pins within ±22px
       // (44pt) — one links, several fan out.
       map.on('click', (e) => {
         const cur = latest.current;
         if (cur.pickMode) { hapticLight(); cur.onPick([e.lngLat.lng, e.lngLat.lat]); return; }
-        if (!cur.sunWorld && map.getZoom() < PINS_START) { setFan(null); return; }
+        if (!cur.world && map.getZoom() < PINS_START) { setFan(null); return; }
         const { x, y } = e.point;
-        const hits = map.queryRenderedFeatures([[x - HIT, y - HIT], [x + HIT, y + HIT]], { layers: ['social-pins'] })
-          .filter(f => !cur.sunWorld || !!map.getFeatureState({ source: SOURCE, id: f.properties?.id })?.lit);
+        const hits = map.queryRenderedFeatures([[x - HIT, y - HIT], [x + HIT, y + HIT]], { layers: ['social-pins'] });
         const seen = new Set<string>();
         const items: FanItem[] = [];
         for (const f of hits.sort((a, b) => Number(a.properties?.start) - Number(b.properties?.start))) {
@@ -532,26 +531,28 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, partners, loaded]);
 
-  // ── Pin styling: normal (zoom fade + partner dimming) vs Sun Cruiser World ──
+  // ── Pin styling: normal (zoom fade + partner dimming) vs a Partner World ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    applyPinStyle(map, sunWorld, activePartner, presenterBrand);
-  }, [sunWorld, activePartner, loaded, presenterBrand]);
+    applyPinStyle(map, worldBrand, activePartner);
+  }, [worldBrand, activePartner, loaded]);
 
-  // ── Sun Cruiser World paint (Social map only), restored on exit ──
+  // ── Partner World paint (Social map only), restored exactly on exit ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !loaded) return;
-    if (sunWorld) {
-      restorePaint.current = applySunWorldPaint(map, reduced ? 0 : 400);
-    } else if (restorePaint.current) {
-      restorePaint.current();
-      restorePaint.current = null;
-      igniteTimers.current.forEach(t => window.clearTimeout(t));
-      for (const e of latest.current.events) map.setFeatureState({ source: SOURCE, id: e.id }, { lit: false });
-    }
-  }, [sunWorld, loaded, reduced]);
+    if (!map || !loaded || !world) return;
+    const restore = applyWorldPaint(map, world.palette, reduced ? 0 : 400);
+    restorePaint.current = restore;
+    return () => { restore(); restorePaint.current = null; };
+  }, [world, loaded, reduced]);
+
+  // ── Partner World: steady glow on the selected pin ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !map.getLayer('social-selected')) return;
+    map.setFilter('social-selected', ['==', ['get', 'id'], world && selectedId ? selectedId : '']);
+  }, [world, selectedId, loaded]);
 
   // ── Resize when the tab comes back ──
   useEffect(() => {
@@ -570,7 +571,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
       prev = now;
       const map = mapRef.current;
       const cur = latest.current;
-      if (map && cur.visible && !cur.sunWorld && map.getZoom() < DRIFT_MAX_ZOOM
+      if (map && cur.visible && !cur.world && map.getZoom() < DRIFT_MAX_ZOOM
           && now - lastInputAt.current > RESUME_AFTER_MS && !dragging.current && !map.isMoving()) {
         const c = map.getCenter();
         map.setCenter([c.lng - DRIFT_DEG_PER_S * Math.min(dt, 0.1), c.lat]);
@@ -660,7 +661,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     if (pickMode) setFan(null);
   }, [pickMode]);
 
-  const labelsLit = (i: number) => litCount > i && !sunWorld;
+  const labelsLit = (i: number) => litCount > i && !world;
 
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, background: hasSun ? '#050403' : theme.globe.space, overflow: 'hidden' }}>
@@ -676,7 +677,8 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
           style={{
             position: 'absolute', left: geo.cx - geo.r, top: geo.cy - geo.r, width: geo.r * 2, height: geo.r * 2,
             borderRadius: '50%', background: '#1B1B1B',
-            boxShadow: theme.sun ? `0 0 24px 2px ${theme.sun.corona}` : '0 0 24px 2px rgba(60, 60, 80, 0.5)',
+            // No rim glow: the sun rises behind one limb only.
+            boxShadow: theme.sun ? 'none' : '0 0 24px 2px rgba(60, 60, 80, 0.5)',
           }}
         />
       )}
@@ -686,11 +688,11 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
         style={{ position: 'absolute', inset: 0, opacity: globeUp ? 1 : 0, transition: reduced ? 'none' : `opacity ${FADE_MS}ms ease-out` }}
       />
 
-      {theme.sun && theme.presentedBy && geo && (
+      {theme.sun && theme.presentedBy && geo && !world && (
         <SunButton
           geo={geo} zoom={zoom} width={width} topInset={topInset}
           colors={theme.sun} logo={theme.presentedBy.logo} name={theme.presentedBy.name}
-          shift={shift} dragging={isDragging} reduced={reduced} active={sunWorld}
+          shift={shift} dragging={isDragging} reduced={reduced}
           onTap={props.onSunTap}
         />
       )}
@@ -724,19 +726,18 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
 });
 
 /** Pin paint for the current mode. Normal: pins fade in with zoom and a
- *  selected partner's pins glow while the rest dim. Sun Cruiser World: only
- *  the presenter's pins, shown as they ignite (feature-state `lit`). */
-function applyPinStyle(map: mapboxgl.Map, sunWorld: boolean, active: string | null, brand: string | null) {
-  const lit: mapboxgl.ExpressionSpecification = ['boolean', ['feature-state', 'lit'], false];
-  const brandFilter: mapboxgl.FilterSpecification = ['==', ['get', 'brand'], brand ?? '__none__'];
-  if (sunWorld) {
+ *  selected partner's pins glow while the rest dim. Partner World: only
+ *  that brand's pins, at every zoom. */
+function applyPinStyle(map: mapboxgl.Map, worldBrand: string | null, active: string | null) {
+  if (worldBrand) {
+    const brandFilter: mapboxgl.FilterSpecification = ['==', ['get', 'brand'], worldBrand];
     for (const id of ['social-pins', 'social-pin-dot', 'social-glow']) {
       map.setFilter(id, id === 'social-pin-dot' ? ['all', brandFilter, ['!=', ['get', 'secondary'], '']] : brandFilter);
     }
-    map.setPaintProperty('social-pins', 'circle-opacity', ['case', lit, 1, 0]);
-    map.setPaintProperty('social-pins', 'circle-stroke-opacity', ['case', lit, 1, 0]);
-    map.setPaintProperty('social-pin-dot', 'circle-opacity', ['case', lit, 1, 0]);
-    map.setPaintProperty('social-glow', 'circle-opacity', ['case', lit, 0.5, 0]);
+    map.setPaintProperty('social-pins', 'circle-opacity', 1);
+    map.setPaintProperty('social-pins', 'circle-stroke-opacity', 1);
+    map.setPaintProperty('social-pin-dot', 'circle-opacity', 1);
+    map.setPaintProperty('social-glow', 'circle-opacity', 0);
     return;
   }
   map.setFilter('social-pins', null);

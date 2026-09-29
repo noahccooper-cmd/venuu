@@ -15,13 +15,6 @@ const NUMERAL = 26;
 const TEXT = 13;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-/** Stable pick so the same event always shows the same product image. */
-function pickImage(images: string[], id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return images[h % images.length];
-}
-
 interface SocialEventCardProps {
   event: SocialEvent;
   theme: SocialTheme;
@@ -40,7 +33,6 @@ export const SocialEventCard = forwardRef<HTMLDivElement, SocialEventCardProps>(
     const reduced = prefersReducedMotion();
     const place = brand?.locationNote ?? event.external_venue_name ?? event.address;
     const canDirect = !brand?.locationNote;
-    const thumb = event.category === 'pop_up' && brand?.images?.length ? pickImage(brand.images, event.id) : null;
 
     return (
       <div
@@ -86,7 +78,7 @@ export const SocialEventCard = forwardRef<HTMLDivElement, SocialEventCardProps>(
               {SOCIAL_CITY_LABEL[event.city]}
             </span>
           )}
-          <span style={{ fontFamily: FONT, fontSize: TITLE, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: brand && !thumb ? 32 : 0 }}>
+          <span style={{ fontFamily: FONT, fontSize: TITLE, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: brand ? 32 : 0 }}>
             {event.title}
           </span>
           <span style={{ fontFamily: FONT, fontSize: TEXT, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -114,12 +106,8 @@ export const SocialEventCard = forwardRef<HTMLDivElement, SocialEventCardProps>(
           </span>
         </span>
 
-        {thumb && (
-          <img src={thumb} alt="" style={{ height: 72, width: 'auto', flexShrink: 0, pointerEvents: 'none' }} />
-        )}
-
         {brand && (
-          <span style={{ position: 'absolute', top: 12, right: thumb ? 52 : 14, pointerEvents: 'none' }}>
+          <span style={{ position: 'absolute', top: 12, right: 14, pointerEvents: 'none' }}>
             <BrandMark name={brand.label} logo={brand.logo} size={TEXT} color="var(--text-muted)" />
           </span>
         )}

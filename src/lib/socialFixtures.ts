@@ -61,6 +61,7 @@ interface Seed {
   start: Date;
   hours: number;
   series_id?: string;
+  date_tba?: boolean;
 }
 
 function row(s: Seed): SocialEvent {
@@ -81,6 +82,7 @@ function row(s: Seed): SocialEvent {
     end_time: end.toISOString(),
     expires_at: end.toISOString(),
     series_id: s.series_id ?? null,
+    date_tba: s.date_tba ?? false,
   };
 }
 
@@ -120,19 +122,19 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
   }
   seeds.push(
     {
-      id: 'demo-pin-popup-pier', city: 'st_petersburg', category: 'pop_up', brand: 'suncruiser',
+      id: 'demo-pin-popup-pier', city: 'st_petersburg', category: 'pop_up', brand: 'sun_cruiser',
       title: 'Pier Pop-Up', host_name: 'Venuu',
       place: 'St. Pete Pier', address: '600 2nd Ave NE, St. Petersburg, FL 33701',
       lat: 27.7733, lng: -82.6235, start: nextAt(now, 16), hours: 4,
     },
     {
-      id: 'demo-pin-popup-beach', city: 'st_petersburg', category: 'pop_up', brand: 'suncruiser',
+      id: 'demo-pin-popup-beach', city: 'st_petersburg', category: 'pop_up', brand: 'sun_cruiser',
       title: 'Beach Day Pop-Up', host_name: 'Venuu',
       place: 'Pier 60', address: '1 Causeway Blvd, Clearwater Beach, FL 33767',
       lat: 27.9776, lng: -82.8290, start: at(now, 9, 12), hours: 5,
     },
     {
-      id: 'demo-pin-popup-passagrille', city: 'st_petersburg', category: 'pop_up', brand: 'suncruiser',
+      id: 'demo-pin-popup-passagrille', city: 'st_petersburg', category: 'pop_up', brand: 'sun_cruiser',
       title: 'Sunset Pop-Up', host_name: 'Venuu',
       place: 'Pass-a-Grille Beach', address: '1000 Gulf Way, St. Pete Beach, FL 33706',
       lat: 27.6917, lng: -82.7372, start: at(now, 30, 17), hours: 4,
@@ -172,16 +174,23 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       lat: 27.9497, lng: -82.4623, start: nextAt(now, 18), hours: 1,
     },
     {
-      id: 'demo-tpa-popup-sparkman', city: 'tampa', category: 'pop_up', brand: 'suncruiser',
+      id: 'demo-tpa-popup-sparkman', city: 'tampa', category: 'pop_up', brand: 'sun_cruiser',
       title: 'Wharf Pop-Up', host_name: 'Venuu',
       place: 'Sparkman Wharf', address: '615 Channelside Dr, Tampa, FL 33602',
       lat: 27.9437, lng: -82.4487, start: at(now, 4, 15), hours: 5,
     },
     {
-      id: 'demo-tpa-popup-riverwalk', city: 'tampa', category: 'pop_up', brand: 'suncruiser',
+      id: 'demo-tpa-popup-riverwalk', city: 'tampa', category: 'pop_up', brand: 'sun_cruiser',
       title: 'Riverwalk Pop-Up', host_name: 'Venuu',
       place: 'Curtis Hixon Park', address: '600 N Ashley Dr, Tampa, FL 33602',
       lat: 27.9503, lng: -82.4617, start: at(now, 24, 13), hours: 5,
+    },
+    {
+      // Like the 00077 seeds: verified, date not set yet.
+      id: 'demo-tpa-popup-tba', city: 'tampa', category: 'pop_up', brand: 'sun_cruiser',
+      title: 'Sun Cruiser × Venuu Pop-Up', host_name: 'Sun Cruiser',
+      place: 'Location announced soon', address: 'Tampa, FL',
+      lat: 27.9466, lng: -82.4532, start: at(now, 330, 12), hours: 24 * 35, date_tba: true,
     },
     {
       id: 'demo-tpa-popup-hyde', city: 'tampa', category: 'pop_up', brand: null,
@@ -230,13 +239,13 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       lat: 35.9651, lng: -83.9192, start: nextAt(now, 17), hours: 4,
     },
     {
-      id: 'demo-knx-popup-landing', city: 'knoxville', category: 'pop_up', brand: 'suncruiser',
+      id: 'demo-knx-popup-landing', city: 'knoxville', category: 'pop_up', brand: null,
       title: 'Riverfront Pop-Up', host_name: 'Venuu',
       place: 'Volunteer Landing', address: '900 Volunteer Landing Ln, Knoxville, TN 37915',
       lat: 35.9594, lng: -83.9170, start: at(now, 6, 16), hours: 4,
     },
     {
-      id: 'demo-knx-popup-worldsfair', city: 'knoxville', category: 'pop_up', brand: 'suncruiser',
+      id: 'demo-knx-popup-worldsfair', city: 'knoxville', category: 'pop_up', brand: null,
       title: 'Park Day Pop-Up', host_name: 'Venuu',
       place: "World's Fair Park", address: '963 World Fair Park Dr, Knoxville, TN 37916',
       lat: 35.9624, lng: -83.9252, start: at(now, 27, 12), hours: 5,

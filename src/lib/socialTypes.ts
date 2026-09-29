@@ -28,4 +28,8 @@ export interface SocialEvent {
   series_id: string | null;
   /** Existing events.description column (one line from the host). */
   description?: string | null;
+  /** Hosts/admins only: the date isn't set yet — show "Date TBA". */
+  date_tba?: boolean;
+  /** Optional event photo (event-photos bucket). */
+  photo_url?: string | null;
 }

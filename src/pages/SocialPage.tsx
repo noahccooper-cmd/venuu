@@ -6,18 +6,19 @@ import {
 } from '../lib/socialTheme';
 import type { SocialEvent } from '../lib/socialTypes';
 import { countThisWeek } from '../lib/socialSections';
-import { SOCIAL_CITIES, SOCIAL_CITY_GEO, TAMPA_BAY_BOUNDS, distanceKm, nearestCity } from '../lib/socialGeo';
+import { SOCIAL_CITIES, SOCIAL_CITY_GEO, distanceKm, nearestCity } from '../lib/socialGeo';
 import { getSocialLocation } from '../lib/socialLocation';
+import { worldPalette } from '../lib/socialMapStyle';
+import { SUN_BRAND_SLUG } from '../lib/brands';
 import { useSocialEvents } from '../hooks/useSocialEvents';
+import { useBrands } from '../hooks/useBrands';
 import { hapticLight } from '../lib/haptics';
 import { HOST_DEMO_ENABLED } from '../lib/socialDemoStore';
-import { SocialMap, type CameraSnapshot, type SocialLink, type SocialMapHandle } from '../components/Social/SocialMap';
+import { SocialMap, type CameraSnapshot, type SocialLink, type SocialMapHandle, type SocialWorld } from '../components/Social/SocialMap';
 import { SocialSheet, snapHeight, PEEK_PX, type SheetSnap } from '../components/Social/SocialSheet';
-import {
-  SheetHeader, WorldBody, CityBody, EventDetail, SunWorldHeader, SunWorldBody,
-} from '../components/Social/SheetViews';
-import { RunClubPage } from '../components/Social/RunClubPage';
-import { Medallion } from '../components/Social/Medallion';
+import { SheetHeader, WorldBody, CityBody, EventDetail } from '../components/Social/SheetViews';
+import { PartnerWorld, AgeGate } from '../components/Social/PartnerWorld';
+import { ageConfirmed, worldOrder, WORLD_TOP_PX, WORLD_BOTTOM_PX } from '../lib/partnerWorld';
 import { HostSheet } from '../components/Social/HostSheet';
 import '../components/Social/social.css';
 
@@ -25,6 +26,7 @@ const FONT = 'Satoshi, sans-serif';
 const CITY_ENTER_ZOOM = 8;     // zoomed in past this → the nearest city's sheet
 const CITY_EXIT_ZOOM = 6.5;    // zoomed out below this → back to the world sheet
 const DAY = 86_400_000;
+const LOCATION_WAIT_MS = 2500;   // Partner World entry never waits longer on GPS
 
 type View = { kind: 'world' } | { kind: 'city'; city: CityKey };
 
@@ -53,8 +55,8 @@ function useTopInset(): number {
  * Social tab — a full-screen map (globe → street) with a draggable sheet.
  * See docs/social-tab-spec.md. Theme applies ONLY as CSS variables on this
  * root. Every state has a one-tap way back:
- *   event detail → its list · city → world · partner page → where you were
- *   Sun Cruiser World → exactly the camera/sheet/view you left.
+ *   event detail → its list · city → world
+ *   a Partner World → exactly the camera/sheet/view you left.
  */
 export function SocialPage({ active }: SocialPageProps) {
   const theme = SOCIAL_THEME;
@@ -86,23 +88,24 @@ export function SocialPage({ active }: SocialPageProps) {
   }), [eventsByCity]);
   const worldPartners = useMemo(() => partnersWithEvents(theme, allEvents), [theme, allEvents]);
   const pinnedPartners = useMemo(() => worldPartners.filter(p => p.home), [worldPartners]);
-  const presenter = theme.presentedBy ? theme.partners.find(p => p.key === theme.presentedBy!.partnerKey) ?? null : null;
+  const brands = useBrands();
 
   // ── Navigation state ──
   const [view, setView] = useState<View>({ kind: 'world' });
   const [snap, setSnap] = useState<SheetSnap>('peek');
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [partnerPage, setPartnerPage] = useState<string | null>(null);
   const [cityFilter, setCityFilter] = useState<string | null>(null);
   const [worldFilter, setWorldFilter] = useState<string | null>(null);
   const [link, setLink] = useState<SocialLink | null>(null);
   const nonce = useRef(0);
 
-  // Sun Cruiser World.
-  const [sunWorld, setSunWorld] = useState(false);
-  const [sunCity, setSunCity] = useState<CityKey | null>(null);
-  const [sunOrigin, setSunOrigin] = useState<[number, number] | null>(null);
-  const sunReturn = useRef<{ camera: CameraSnapshot | null; snap: SheetSnap; view: View; detailId: string | null } | null>(null);
+  // Partner World (one template for every brand row).
+  const [worldSlug, setWorldSlug] = useState<string | null>(null);
+  const [worldCity, setWorldCity] = useState<CityKey | null>(null);
+  const [worldSel, setWorldSel] = useState<string | null>(null);
+  const [worldFly, setWorldFly] = useState<{ slug: string; city: CityKey; pick: string | null; n: number } | null>(null);
+  const [gateSlug, setGateSlug] = useState<string | null>(null);
+  const worldReturn = useRef<{ camera: CameraSnapshot | null; snap: SheetSnap; view: View; detailId: string | null } | null>(null);
 
   // Replay the globe arrival each time the Social tab opens.
   const [arrivalKey, setArrivalKey] = useState(0);
@@ -110,10 +113,18 @@ export function SocialPage({ active }: SocialPageProps) {
 
   const sheetPx = snapHeight(snap, rootH);
   const halfPx = snapHeight('half', rootH);
-  const fullPx = snapHeight('full', rootH);
   const detail = detailId ? allEvents.find(e => e.id === detailId) ?? null : null;
-  const pagePartner = partnerPage ? theme.partners.find(p => p.key === partnerPage) ?? null : null;
   const city = view.kind === 'city' ? view.city : null;
+  const worldBrand = worldSlug ? brands.find(b => b.slug === worldSlug) ?? null : null;
+  const gateBrand = gateSlug ? brands.find(b => b.slug === gateSlug) ?? null : null;
+  const worldEvents = useMemo(
+    () => (worldBrand && worldCity ? allEvents.filter(e => e.brand === worldBrand.slug && e.city === worldCity).sort(worldOrder) : []),
+    [worldBrand, worldCity, allEvents],
+  );
+  const mapWorld = useMemo<SocialWorld | null>(
+    () => (worldBrand ? { brand: worldBrand.slug, palette: worldPalette(worldBrand.primary_hex) } : null),
+    [worldBrand],
+  );
 
   const cityPartners = useMemo(() => (city ? partnersWithEvents(theme, eventsByCity[city]) : []), [theme, city, eventsByCity]);
   const cityEvents = useMemo(() => {
@@ -127,11 +138,6 @@ export function SocialPage({ active }: SocialPageProps) {
     const pick = (evs: SocialEvent[]) => evs.filter(e => new Date(e.start_time).getTime() < horizon && (!p || partnerMatches(p, e)));
     return { knoxville: pick(eventsByCity.knoxville), tampa: pick(eventsByCity.tampa), st_petersburg: pick(eventsByCity.st_petersburg) };
   }, [eventsByCity, worldPartners, worldFilter]);
-  const sunEvents = useMemo(
-    () => (presenter ? allEvents.filter(e => partnerMatches(presenter, e)) : []),
-    [presenter, allEvents],
-  );
-
   // ── Transitions ──
   const goWorld = useCallback(() => {
     setView({ kind: 'world' });
@@ -157,72 +163,78 @@ export function SocialPage({ active }: SocialPageProps) {
     setLink({ id: ev.id, nonce: ++nonce.current, source: 'card' });
   }, [snap, rootH]);
 
-  const openPartnerPage = useCallback((key: string) => {
-    const p = theme.partners.find(x => x.key === key);
-    if (!p) return;
-    setPartnerPage(key);
+  // ── Partner World ──
+  /** Choose a city inside the World: the carousel resets to its first
+   *  event (or `pick`); the camera move runs after render (see below). */
+  const selectWorldCity = useCallback((slug: string, c: CityKey, pick: string | null = null) => {
+    const evs = allEvents.filter(e => e.brand === slug && e.city === c).sort(worldOrder);
+    setWorldCity(c);
+    setWorldSel((pick && evs.some(e => e.id === pick) ? pick : evs[0]?.id) ?? null);
+    setWorldFly({ slug, city: c, pick, n: ++nonce.current });
+  }, [allEvents]);
+
+  // Camera for World city changes — after render, so the map already has
+  // the World's top/bottom clearance.
+  useEffect(() => {
+    if (!worldFly) return;
+    const evs = allEvents.filter(e => e.brand === worldFly.slug && e.city === worldFly.city);
+    const picked = worldFly.pick ? evs.find(e => e.id === worldFly.pick) : null;
+    if (picked) mapRef.current?.panToEvent(picked, WORLD_BOTTOM_PX);
+    else if (evs.length) mapRef.current?.fitPoints(evs.map(e => [e.longitude, e.latitude] as [number, number]), 13, WORLD_BOTTOM_PX);
+    else mapRef.current?.flyToCity(worldFly.city, [], WORLD_BOTTOM_PX);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worldFly]);
+
+  const enterWorld = useCallback(async (slug: string, gatePassed = false) => {
+    const b = brands.find(x => x.slug === slug);
+    if (!b) return;
+    if (b.age_gate && !gatePassed && !ageConfirmed(slug)) { setGateSlug(slug); return; }
+    if (!worldSlug) worldReturn.current = { camera: mapRef.current?.getCamera() ?? null, snap, view, detailId };
+    setWorldSlug(slug);
+    setWorldCity(null);
     setDetailId(null);
-    setSnap('full');
-    // A partner with a home (the run club) → fly to its city.
-    if (p.home) {
-      mapRef.current?.fitPoints(
-        allEvents.filter(e => partnerMatches(p, e)).map(e => [e.longitude, e.latitude] as [number, number]).concat([p.home]),
-        13, fullPx,
-      );
-      setView({ kind: 'city', city: nearestCity(p.home) });
+    // Skip the globe: straight to the nearest city with this partner's
+    // events (location asked once); else the row's first city.
+    const cities = b.cities.length ? b.cities : SOCIAL_CITIES;
+    const withEvents = cities.filter(c => allEvents.some(e => e.brand === slug && e.city === c));
+    let target: CityKey = cities[0];
+    if (withEvents.length) {
+      const loc = await Promise.race([
+        getSocialLocation(),
+        new Promise<null>(r => window.setTimeout(() => r(null), LOCATION_WAIT_MS)),
+      ]);
+      if (loc) target = [...withEvents].sort((x, y) => distanceKm(loc, SOCIAL_CITY_GEO[x].center) - distanceKm(loc, SOCIAL_CITY_GEO[y].center))[0];
     }
-  }, [theme, allEvents, fullPx]);
+    selectWorldCity(slug, target);
+  }, [brands, worldSlug, snap, view, detailId, allEvents, selectWorldCity]);
 
-  const flySunCity = useCallback((c: CityKey) => {
-    setSunCity(c);
-    // The list sorts by distance from the chosen city, so its events lead.
-    setSunOrigin(SOCIAL_CITY_GEO[c].center);
-    const pts = sunEvents.filter(e => e.city === c).map(e => [e.longitude, e.latitude] as [number, number]);
-    if (pts.length) mapRef.current?.fitPoints(pts, 13, halfPx);
-    else mapRef.current?.flyToCity(c, [], halfPx);
-  }, [sunEvents, halfPx]);
-
-  const enterSunWorld = useCallback(async () => {
-    if (!presenter || sunWorld) return;
-    sunReturn.current = { camera: mapRef.current?.getCamera() ?? null, snap, view, detailId };
-    setSunWorld(true);
-    setDetailId(null);
-    setPartnerPage(null);
-    setSnap('half');
-    const loc = await getSocialLocation();
-    const now = Date.now();
-    const upcoming = sunEvents.filter(e => new Date(e.start_time).getTime() > now);
-    let origin: [number, number];
-    if (loc && upcoming.length) {
-      const nearest = [...upcoming].sort((a, b) =>
-        distanceKm(loc, [a.longitude, a.latitude]) - distanceKm(loc, [b.longitude, b.latitude]))[0];
-      flySunCity(nearest.city);
-      origin = loc;
-    } else {
-      // Fallback: Tampa Bay, framing both Tampa and St. Pete.
-      setSunCity(null);
-      mapRef.current?.fitPoints(TAMPA_BAY_BOUNDS, 11, halfPx);
-      origin = [(TAMPA_BAY_BOUNDS[0][0] + TAMPA_BAY_BOUNDS[1][0]) / 2, (TAMPA_BAY_BOUNDS[0][1] + TAMPA_BAY_BOUNDS[1][1]) / 2];
-    }
-    setSunOrigin(origin);
-    mapRef.current?.ignite(origin);
-  }, [presenter, sunWorld, snap, view, detailId, sunEvents, flySunCity, halfPx]);
-
-  const leaveSunWorld = useCallback(() => {
-    const r = sunReturn.current;
-    setSunWorld(false);
-    setSunCity(null);
-    setSunOrigin(null);
+  const leaveWorld = useCallback(() => {
+    const r = worldReturn.current;
+    setWorldSlug(null);
+    setWorldCity(null);
+    setWorldSel(null);
+    setWorldFly(null);
     setDetailId(r?.detailId ?? null);
     setSnap(r?.snap ?? 'peek');
     setView(r?.view ?? { kind: 'world' });
     if (r?.camera) mapRef.current?.setCamera(r.camera);
-    sunReturn.current = null;
+    worldReturn.current = null;
   }, []);
+
+  const onWorldSwipe = useCallback((ev: SocialEvent) => {
+    setWorldSel(ev.id);
+    mapRef.current?.panToEvent(ev, WORLD_BOTTOM_PX);
+    setLink({ id: ev.id, nonce: ++nonce.current, source: 'card' });
+  }, []);
+
+  /** Partner medallions / cards / tabs open that partner's World. */
+  const openPartnerPage = useCallback((key: string) => {
+    if (brands.some(b => b.slug === key)) void enterWorld(key);
+  }, [brands, enterWorld]);
 
   // Manual zoom decides world vs city (never during Sun Cruiser World).
   const onViewChange = useCallback(({ zoom, center }: { zoom: number; center: [number, number] }) => {
-    if (sunWorld || partnerPage) return;
+    if (worldSlug) return;
     if (zoom >= CITY_ENTER_ZOOM) {
       const c = nearestCity(center);
       setView(v => (v.kind === 'city' && v.city === c ? v : { kind: 'city', city: c }));
@@ -231,12 +243,21 @@ export function SocialPage({ active }: SocialPageProps) {
       setView(v => (v.kind === 'world' ? v : { kind: 'world' }));
       setDetailId(null);
     }
-  }, [sunWorld, partnerPage, city]);
+  }, [worldSlug, city]);
 
   const onPinTap = useCallback((id: string) => {
     const ev = allEvents.find(e => e.id === id);
-    if (ev) openDetail(ev);
-  }, [allEvents, openDetail]);
+    if (!ev) return;
+    if (worldSlug) {
+      // Pin → its card (switching city if the pin is in another one).
+      if (ev.brand !== worldSlug) return;
+      if (ev.city !== worldCity) { selectWorldCity(worldSlug, ev.city, ev.id); return; }
+      setWorldSel(ev.id);
+      mapRef.current?.panToEvent(ev, WORLD_BOTTOM_PX);
+      return;
+    }
+    openDetail(ev);
+  }, [allEvents, openDetail, worldSlug, worldCity, selectWorldCity]);
 
   // ── Host mode · demo ──
   const [hostOpen, setHostOpen] = useState(false);
@@ -248,11 +269,10 @@ export function SocialPage({ active }: SocialPageProps) {
     const ev = allEvents.find(e => e.id === pendingId);
     if (!ev) return;
     setPendingId(null);
-    if (sunWorld && sunOrigin) mapRef.current?.ignite(sunOrigin);   // relight incl. the new pin
-    else if (!sunWorld) setView({ kind: 'city', city: ev.city });
+    setView({ kind: 'city', city: ev.city });
     openDetail(ev);
     setLink({ id: ev.id, nonce: ++nonce.current, source: 'post' });
-  }, [pendingId, allEvents, sunWorld, sunOrigin, openDetail]);
+  }, [pendingId, allEvents, openDetail]);
 
   // ── Sheet content for the current state ──
   let header: React.ReactNode;
@@ -263,30 +283,6 @@ export function SocialPage({ active }: SocialPageProps) {
     header = <SheetHeader title={detail.title} onBack={() => setDetailId(null)} backLabel="Back to list" />;
     body = <EventDetail theme={theme} event={detail} />;
     contentKey = `detail-${detail.id}`;
-  } else if (pagePartner) {
-    header = (
-      <SheetHeader
-        onBack={() => { setPartnerPage(null); setSnap('half'); }}
-        title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Medallion partner={pagePartner} size={32} />{pagePartner.label}</span>}
-        color={pagePartner.color}
-      />
-    );
-    body = <RunClubPage partner={pagePartner} runs={allEvents.filter(e => partnerMatches(pagePartner, e))} />;
-    contentKey = `partner-${pagePartner.key}`;
-  } else if (sunWorld && presenter && theme.sun) {
-    header = <SunWorldHeader partner={presenter} sun={theme.sun} onLeave={leaveSunWorld} />;
-    body = (
-      <SunWorldBody
-        theme={theme}
-        partner={presenter}
-        events={sunEvents}
-        city={sunCity}
-        origin={sunOrigin}
-        onCity={flySunCity}
-        onCardTap={openDetail}
-      />
-    );
-    contentKey = 'sunworld';
   } else if (city) {
     header = (
       <SheetHeader
@@ -326,8 +322,8 @@ export function SocialPage({ active }: SocialPageProps) {
         thisWeek={thisWeek}
         filter={worldFilter}
         onFilter={setWorldFilter}
+        brands={brands}
         onOpenPartnerPage={openPartnerPage}
-        onEnterSunWorld={enterSunWorld}
         onCardTap={ev => { setView({ kind: 'city', city: ev.city }); openDetail(ev); }}
       />
     );
@@ -344,7 +340,9 @@ export function SocialPage({ active }: SocialPageProps) {
         inset: 0,
         bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
         background: 'var(--social-bg)',
-        overflow: 'hidden',
+        // clip (not hidden): the root can never be scrolled programmatically
+        // (e.g. by focusing an off-screen sheet), which would shift the map.
+        overflow: 'clip',
       } as React.CSSProperties}
     >
       <SocialMap
@@ -356,11 +354,13 @@ export function SocialPage({ active }: SocialPageProps) {
         partners={city ? cityPartners : worldPartners}
         activePartner={city ? cityFilter : null}
         link={link}
-        sunWorld={sunWorld}
+        world={mapWorld}
+        selectedId={worldSel}
+        topExtra={worldSlug ? WORLD_TOP_PX : 0}
         visible={active}
         arrivalKey={arrivalKey}
         topInset={topInset}
-        sheetPx={sheetPx}
+        sheetPx={worldSlug ? WORLD_BOTTOM_PX : sheetPx}
         peekPx={PEEK_PX}
         pickMode={picking}
         draftPin={draftPin}
@@ -368,11 +368,11 @@ export function SocialPage({ active }: SocialPageProps) {
         onViewChange={onViewChange}
         onCityTap={enterCity}
         onPartnerTap={openPartnerPage}
-        onSunTap={() => (sunWorld ? leaveSunWorld() : enterSunWorld())}
+        onSunTap={() => void enterWorld(SUN_BRAND_SLUG)}
         onPinTap={onPinTap}
       />
 
-      {HOST_DEMO_ENABLED && !picking && (
+      {HOST_DEMO_ENABLED && !picking && !worldSlug && (
         <button
           className="social-press"
           aria-label="Host mode: add an event"
@@ -405,7 +405,28 @@ export function SocialPage({ active }: SocialPageProps) {
         </div>
       )}
 
-      {!picking && (
+      {worldBrand && worldCity && (
+        <PartnerWorld
+          brand={worldBrand}
+          city={worldCity}
+          events={worldEvents}
+          selectedId={worldSel}
+          topInset={topInset}
+          onCity={c => selectWorldCity(worldBrand.slug, c)}
+          onSelect={onWorldSwipe}
+          onClose={leaveWorld}
+        />
+      )}
+
+      {gateBrand && (
+        <AgeGate
+          brand={gateBrand}
+          onYes={() => { setGateSlug(null); void enterWorld(gateBrand.slug, true); }}
+          onNo={() => { setGateSlug(null); if (!worldSlug) goWorld(); }}
+        />
+      )}
+
+      {!picking && !worldSlug && (
         <SocialSheet snap={snap} onSnap={setSnap} containerH={rootH} header={header} contentKey={contentKey}>
           {body}
         </SocialSheet>
