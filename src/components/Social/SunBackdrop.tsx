@@ -53,6 +53,8 @@ interface SunProps {
   shift: { x: number; y: number };
   dragging: boolean;
   reduced: boolean;
+  /** The home carousel is on this sun's partner — it glows brighter. */
+  focused?: boolean;
 }
 
 /**
@@ -60,7 +62,7 @@ interface SunProps {
  * is transparent), so the planet occludes it. As zoom rises past ~3 it
  * converges on the corner and fades as the button takes over.
  */
-export function SunBackdrop({ geo, zoom, width, topInset, colors, shift, dragging, reduced }: SunProps) {
+export function SunBackdrop({ geo, zoom, width, topInset, colors, shift, dragging, reduced, focused = false }: SunProps) {
   const t = sunMorph(zoom);
   if (t >= 1) return null;
   const g = sunGeometry(geo, width, topInset);
@@ -93,14 +95,15 @@ export function SunBackdrop({ geo, zoom, width, topInset, colors, shift, draggin
         style={{
           position: 'absolute', left: -d / 2, top: -d / 2, width: d, height: d, borderRadius: '50%',
           background: `radial-gradient(circle at 50% 45%, ${colors.core} 0%, ${colors.core} 45%, ${colors.mid} 100%)`,
-          boxShadow: `0 0 60px 12px ${colors.corona}`,
+          boxShadow: focused ? `0 0 90px 28px ${colors.corona}, 0 0 40px 10px ${colors.mid}` : `0 0 60px 12px ${colors.corona}`,
+          transition: reduced ? 'none' : 'box-shadow 300ms ease-out',
         }}
       />
     </div>
   );
 }
 
-interface SunButtonProps extends Omit<SunProps, 'colors'> {
+interface SunButtonProps extends Omit<SunProps, 'colors' | 'focused'> {
   colors: { core: string; mid: string };
   logo: string | null;
   name: string;

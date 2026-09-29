@@ -33,3 +33,16 @@ export async function hapticSuccess() {
 export async function hapticError() {
   try { await Haptics.notification({ type: NotificationType.Error }); } catch {}
 }
+
+/** Selection change (carousel/feed snap, filter or city switch). */
+export async function hapticSelection() {
+  try {
+    await Haptics.selectionStart();
+    await Haptics.selectionChanged();
+    await Haptics.selectionEnd();
+  } catch {}
+}
+
+export async function hapticWarning() {
+  try { await Haptics.notification({ type: NotificationType.Warning }); } catch {}
+}

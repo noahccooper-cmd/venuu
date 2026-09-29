@@ -1,6 +1,6 @@
 import type { CityKey } from './constants';
 
-export type SocialCategory = 'run_club' | 'pop_up' | 'nightlife';
+export type SocialCategory = 'run_club' | 'pop_up' | 'nightlife' | 'other';
 
 /**
  * One Social event, shaped like the planned `public.events` row
@@ -32,4 +32,8 @@ export interface SocialEvent {
   date_tba?: boolean;
   /** Optional event photo (event-photos bucket). */
   photo_url?: string | null;
+  /** 'community' until an admin verifies it (events.verification). */
+  verification?: 'community' | 'verified';
+  /** Row creation time — drives "New" markers and story rings. */
+  created_at?: string;
 }

@@ -1,4 +1,4 @@
-import { Footprints, Moon, Store } from 'lucide-react';
+import { Footprints, Moon, Store, Users } from 'lucide-react';
 import { hapticLight } from '../../lib/haptics';
 import type { SocialPartner } from '../../lib/socialTheme';
 import type { SocialCategory } from '../../lib/socialTypes';
@@ -8,6 +8,7 @@ const CATEGORY_ICON: Record<SocialCategory, typeof Moon> = {
   run_club: Footprints,
   pop_up: Store,
   nightlife: Moon,
+  other: Users,
 };
 
 const FONT = 'Satoshi, sans-serif';

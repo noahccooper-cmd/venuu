@@ -62,7 +62,12 @@ interface Seed {
   hours: number;
   series_id?: string;
   date_tba?: boolean;
+  verification?: 'community' | 'verified';
+  /** Days before now the row was created (default 14). */
+  createdDaysAgo?: number;
 }
+
+let CREATED_BASE = Date.now();
 
 function row(s: Seed): SocialEvent {
   const end = new Date(s.start.getTime() + s.hours * HOUR);
@@ -83,6 +88,8 @@ function row(s: Seed): SocialEvent {
     expires_at: end.toISOString(),
     series_id: s.series_id ?? null,
     date_tba: s.date_tba ?? false,
+    verification: s.verification ?? 'verified',
+    created_at: new Date(CREATED_BASE - (s.createdDaysAgo ?? 14) * DAY).toISOString(),
   };
 }
 
@@ -104,6 +111,7 @@ function weeklyDates(now: Date, weekday: number, h: number, m: number, count: nu
 }
 
 export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
+  CREATED_BASE = now.getTime();
   const seeds: Seed[] = [];
 
   // ── Pinellas (st_petersburg) ────────────────────────────────────
@@ -138,6 +146,13 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       title: 'Sunset Pop-Up', host_name: 'Venuu',
       place: 'Pass-a-Grille Beach', address: '1000 Gulf Way, St. Pete Beach, FL 33706',
       lat: 27.6917, lng: -82.7372, start: at(now, 30, 17), hours: 4,
+    },
+    {
+      // In progress right now — exercises "Now" on place and feed cards.
+      id: 'demo-pin-popup-vinoy', city: 'st_petersburg', category: 'pop_up', brand: null,
+      title: 'Waterfront Makers Market', host_name: 'Venuu',
+      place: 'Vinoy Park', address: '701 Bayshore Dr NE, St. Petersburg, FL 33701',
+      lat: 27.7797, lng: -82.6268, start: new Date(now.getTime() - 50 * 60_000), hours: 3, createdDaysAgo: 4,
     },
     {
       id: 'demo-pin-night-jannus', city: 'st_petersburg', category: 'nightlife', brand: null,
@@ -190,7 +205,7 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       id: 'demo-tpa-popup-tba', city: 'tampa', category: 'pop_up', brand: 'sun_cruiser',
       title: 'Sun Cruiser × Venuu Pop-Up', host_name: 'Sun Cruiser',
       place: 'Location announced soon', address: 'Tampa, FL',
-      lat: 27.9466, lng: -82.4532, start: at(now, 330, 12), hours: 24 * 35, date_tba: true,
+      lat: 27.9466, lng: -82.4532, start: at(now, 330, 12), hours: 24 * 35, date_tba: true, createdDaysAgo: 1,
     },
     {
       id: 'demo-tpa-popup-hyde', city: 'tampa', category: 'pop_up', brand: null,
@@ -215,6 +230,28 @@ export function buildSocialFixtures(now: Date = new Date()): SocialEvent[] {
       title: 'Channelside Late Set', host_name: 'Venuu',
       place: 'Channelside', address: '615 Channelside Dr, Tampa, FL 33602',
       lat: 27.9426, lng: -82.4502, start: at(now, 20, 22), hours: 4,
+    },
+  );
+
+  // Community posts — anyone signed in (not yet verified).
+  seeds.push(
+    {
+      id: 'demo-tpa-community-bookswap', city: 'tampa', category: 'other', brand: null, verification: 'community',
+      title: 'Sunday Book Swap', host_name: 'Maya R.',
+      place: 'Kiley Garden', address: '400 N Ashley Dr, Tampa, FL 33602',
+      lat: 27.9480, lng: -82.4610, start: at(now, 5, 11), hours: 2, createdDaysAgo: 2,
+    },
+    {
+      id: 'demo-knx-community-pickup', city: 'knoxville', category: 'other', brand: null, verification: 'community',
+      title: 'Pickup Volleyball', host_name: 'Jordan T.',
+      place: "World's Fair Park Lawn", address: '963 World Fair Park Dr, Knoxville, TN 37916',
+      lat: 35.9608, lng: -83.9262, start: at(now, 2, 17, 30), hours: 2, createdDaysAgo: 3,
+    },
+    {
+      id: 'demo-pin-community-sketch', city: 'st_petersburg', category: 'other', brand: null, verification: 'community',
+      title: 'Sketch Night at the Pier', host_name: 'Ana P.',
+      place: 'St. Pete Pier', address: '600 2nd Ave NE, St. Petersburg, FL 33701',
+      lat: 27.7740, lng: -82.6220, start: at(now, 8, 18), hours: 2, createdDaysAgo: 1,
     },
   );
 

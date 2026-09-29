@@ -22,7 +22,7 @@ const FONT = 'Satoshi, sans-serif';
 // ── Camera ────────────────────────────────────────────────────────
 const WORLD_CENTER: [number, number] = [-84.2, 30.4];
 const WORLD_ZOOM = 1.5;
-const MIN_ZOOM = 1.2;
+const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 17;
 const DRIFT_MAX_ZOOM = 3;          // idle drift only at globe zoom
 const DRIFT_DEG_PER_S = 1;
@@ -45,6 +45,7 @@ const FADE_START = 65;
 const FADE_END = 85;
 
 const PARALLAX = 0.04;
+const PULL_SHIFT_PX = 64;
 const PARALLAX_MAX = 8;
 
 const PIN_RADIUS = 7;
@@ -78,12 +79,26 @@ export interface SocialMapHandle {
   fitPoints(points: [number, number][], maxZoom?: number, sheetPx?: number): void;
   getCamera(): CameraSnapshot | null;
   setCamera(cam: CameraSnapshot): void;
-  /** Partner World carousel: glide to a pin without zooming out. */
+  /** Place carousel: glide to a pin without zooming out. */
   panToEvent(ev: SocialEvent, sheetPx?: number): void;
+  /** Home: rotate the globe to a place (globe zoom). */
+  flyToPlace(center: [number, number]): void;
 }
 
-/** A Partner World: only this brand's pins, map recolored to its palette. */
-export interface SocialWorld { brand: string; palette: WorldPalette }
+export type PlaceFilter = 'run_club' | 'pop_up' | 'nightlife' | 'community';
+
+/** An open place (partner World or city): only its pins; a partner World
+ *  also recolors the map to its palette. */
+export interface SocialWorld {
+  key: string;
+  brand: string | null;
+  city: CityKey | null;
+  filter: PlaceFilter | null;
+  palette: WorldPalette | null;
+}
+
+/** The small sun pulled up over the horizon by pull-to-refresh. */
+export interface PullSun { progress: number; refreshing: boolean; core: string; mid: string }
 
 interface SocialMapProps {
   theme: SocialTheme;
@@ -98,8 +113,13 @@ interface SocialMapProps {
   world: SocialWorld | null;
   /** Partner World: the carousel's current event — its pin glows. */
   selectedId: string | null;
-  /** Extra top clearance for flights (the Partner World top bar). */
+  /** Extra top clearance (story rings on home, the top bar in a place). */
   topExtra: number;
+  /** Home: the place the carousel is on — its dot/medallion/sun glows. */
+  focusKey: string | null;
+  /** The globe sun belongs to this brand (focus key `brand:<slug>`). */
+  sunBrandSlug: string | null;
+  pullSun: PullSun | null;
   visible: boolean;
   arrivalKey: number;
   topInset: number;
@@ -139,8 +159,8 @@ function measureGlobe(map: mapboxgl.Map): GlobeGeometry {
 // Radius = mercator world size / 2π × a latitude correction calibrated
 // against measureGlobe() at the world view; replaced once the map loads.
 const GLOBE_RADIUS_CALIBRATION = 1.068;
-function estimateGlobe(width: number, height: number, padTop: number, padBottom: number): GlobeGeometry {
-  const r = ((512 * Math.pow(2, WORLD_ZOOM)) / (2 * Math.PI)) * GLOBE_RADIUS_CALIBRATION;
+function estimateGlobe(width: number, height: number, padTop: number, padBottom: number, zoom: number): GlobeGeometry {
+  const r = ((512 * Math.pow(2, zoom)) / (2 * Math.PI)) * GLOBE_RADIUS_CALIBRATION;
   return { cx: width / 2, cy: padTop + (height - padTop - padBottom) / 2, r };
 }
 
@@ -169,7 +189,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     theme, events, counts, pinnedPartners, partners, activePartner, link, world,
     visible, arrivalKey, topInset, peekPx, pickMode, draftPin, selectedId,
   } = props;
-  const worldBrand = world?.brand ?? null;
+  const focusKey = props.focusKey;
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -202,8 +222,19 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
   const hasSun = theme.sun !== null;
 
   const worldPadding = useCallback((): mapboxgl.PaddingOptions => ({
-    top: topInset + (hasSun ? 110 : 40), bottom: peekPx + 8, left: 0, right: 0,
-  }), [topInset, hasSun, peekPx]);
+    top: topInset + props.topExtra + (hasSun ? 40 : 12), bottom: peekPx + 16, left: 0, right: 0,
+  }), [topInset, hasSun, peekPx, props.topExtra]);
+
+  /** Globe zoom whose disc fits between the home padding (rings above,
+   *  carousel below) — small phones get a smaller planet, never a cropped one. */
+  const globeFitZoom = useCallback((): number => {
+    const h = wrapRef.current?.clientHeight ?? 700;
+    const w = wrapRef.current?.clientWidth ?? 390;
+    const pad = worldPadding();
+    const r = Math.min((h - (pad.top ?? 0) - (pad.bottom ?? 0)) / 2, w * 0.62) * 0.96;
+    const z = Math.log2((r * 2 * Math.PI) / (512 * GLOBE_RADIUS_CALIBRATION));
+    return Math.max(MIN_ZOOM, Math.min(WORLD_ZOOM, z));
+  }, [worldPadding]);
 
   const flightPadding = useCallback((sheet?: number): mapboxgl.PaddingOptions => ({
     top: topInset + latest.current.topExtra + 24, bottom: (sheet ?? latest.current.sheetPx) + 24, left: 32, right: 32,
@@ -214,7 +245,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     flyToWorld() {
       const map = mapRef.current;
       if (!map) return;
-      map.flyTo({ center: WORLD_CENTER, zoom: WORLD_ZOOM, bearing: 0, pitch: 0, padding: worldPadding(), duration: reduced ? 0 : 1500, essential: true });
+      map.flyTo({ center: WORLD_CENTER, zoom: globeFitZoom(), bearing: 0, pitch: 0, padding: worldPadding(), duration: reduced ? 0 : 1500, essential: true });
     },
     flyToCity(city, cityEvents, sheet) {
       const map = mapRef.current;
@@ -258,7 +289,12 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
         padding: flightPadding(sheet), duration: reduced ? 0 : 800, essential: true,
       });
     },
-  }), [worldPadding, flightPadding, reduced]);
+    flyToPlace(center) {
+      const map = mapRef.current;
+      if (!map) return;
+      map.flyTo({ center, zoom: globeFitZoom(), bearing: 0, pitch: 0, padding: worldPadding(), duration: reduced ? 0 : 1100, essential: true });
+    },
+  }), [worldPadding, flightPadding, reduced, globeFitZoom]);
 
   // ── First frame: size + estimated globe geometry, before paint ──
   useLayoutEffect(() => {
@@ -268,7 +304,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     const h = wrap.clientHeight;
     const pad = worldPadding();
     setWidth(w);
-    setGeo(estimateGlobe(w, h, pad.top ?? 0, pad.bottom ?? 0));
+    setGeo(estimateGlobe(w, h, pad.top ?? 0, pad.bottom ?? 0, globeFitZoom()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -300,6 +336,9 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
           secondary: brandPartnerFor(th, ev)?.secondary ?? '',
           day: new Date(ev.start_time).getDate(),
           brand: ev.brand ?? '',
+          city: ev.city,
+          category: ev.category,
+          community: ev.verification === 'community' ? 1 : 0,
           partner: ps.find(p => partnerMatches(p, ev))?.key ?? '',
         },
       })),
@@ -314,7 +353,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
       style: MAPBOX_STYLE,
       projection: { name: 'globe' },   // Mapbox eases globe → flat as you zoom in
       center: WORLD_CENTER,
-      zoom: WORLD_ZOOM,
+      zoom: globeFitZoom(),
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
       maxPitch: 0,
@@ -475,7 +514,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
         id: 'social-draft-dot', type: 'circle', source: DRAFT_SOURCE,
         paint: { 'circle-radius': 3, 'circle-color': '#FFFFFF' },
       });
-      applyPinStyle(map, latest.current.world?.brand ?? null, latest.current.activePartner);
+      applyPinStyle(map, latest.current.world, latest.current.activePartner);
 
       // Taps: pick mode → drop the draft pin; else pins within ±22px
       // (44pt) — one links, several fan out.
@@ -531,21 +570,22 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, partners, loaded]);
 
-  // ── Pin styling: normal (zoom fade + partner dimming) vs a Partner World ──
+  // ── Pin styling: normal (zoom fade + partner dimming) vs an open place ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    applyPinStyle(map, worldBrand, activePartner);
-  }, [worldBrand, activePartner, loaded]);
+    applyPinStyle(map, world, activePartner);
+  }, [world, activePartner, loaded]);
 
   // ── Partner World paint (Social map only), restored exactly on exit ──
+  const palette = world?.palette ?? null;
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !loaded || !world) return;
-    const restore = applyWorldPaint(map, world.palette, reduced ? 0 : 400);
+    if (!map || !loaded || !palette) return;
+    const restore = applyWorldPaint(map, palette, reduced ? 0 : 400);
     restorePaint.current = restore;
     return () => { restore(); restorePaint.current = null; };
-  }, [world, loaded, reduced]);
+  }, [palette, loaded, reduced]);
 
   // ── Partner World: steady glow on the selected pin ──
   useEffect(() => {
@@ -571,7 +611,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
       prev = now;
       const map = mapRef.current;
       const cur = latest.current;
-      if (map && cur.visible && !cur.world && map.getZoom() < DRIFT_MAX_ZOOM
+      if (map && cur.visible && !cur.world && !cur.focusKey && map.getZoom() < DRIFT_MAX_ZOOM
           && now - lastInputAt.current > RESUME_AFTER_MS && !dragging.current && !map.isMoving()) {
         const c = map.getCenter();
         map.setCenter([c.lng - DRIFT_DEG_PER_S * Math.min(dt, 0.1), c.lat]);
@@ -662,11 +702,26 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
   }, [pickMode]);
 
   const labelsLit = (i: number) => litCount > i && !world;
+  const pull = props.pullSun;
+  const pullShift = pull ? Math.round((pull.refreshing ? 1 : Math.min(1.15, pull.progress)) * PULL_SHIFT_PX) : 0;
+  const pullFollowing = !!pull && !pull.refreshing && pull.progress > 0;
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, background: hasSun ? '#050403' : theme.globe.space, overflow: 'hidden' }}>
+    <div
+      ref={wrapRef}
+      style={{
+        position: 'absolute', inset: 0, background: hasSun ? '#050403' : theme.globe.space, overflow: 'hidden',
+        // Pull-to-refresh drags the globe down (follows the finger), opening
+        // space under the rings for the small sun; it springs back after.
+        transform: pullShift ? `translateY(${pullShift}px)` : undefined,
+        transition: reduced || pullFollowing ? 'none' : 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
+      }}
+    >
       {theme.sun && geo && (
-        <SunBackdrop geo={geo} zoom={zoom} width={width} topInset={topInset} colors={theme.sun} shift={shift} dragging={isDragging} reduced={reduced} />
+        <SunBackdrop
+          geo={geo} zoom={zoom} width={width} topInset={topInset} colors={theme.sun} shift={shift} dragging={isDragging} reduced={reduced}
+          focused={!!props.sunBrandSlug && focusKey === `brand:${props.sunBrandSlug}`}
+        />
       )}
 
       {/* First-load silhouette: the planet's shape before tiles arrive, so
@@ -697,6 +752,8 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
         />
       )}
 
+      {props.pullSun && geo && zoom < GLOBE_GEOMETRY_MAX_ZOOM && <PullSunRise geo={geo} sun={props.pullSun} reduced={reduced} />}
+
       {fan && <PinFan fan={fan} onPick={id => { setFan(null); props.onPinTap(id); }} />}
 
       {!mapboxReady && (
@@ -708,7 +765,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
       {SOCIAL_CITIES.map((city, i) => {
         const el = pinEls[city];
         return el ? createPortal(
-          <CityPin city={city} count={counts[city] ?? 0} lit={labelsLit(i)} reduced={reduced} flipped={!!flips[city]} onTap={() => props.onCityTap(city)} />,
+          <CityPin city={city} count={counts[city] ?? 0} lit={labelsLit(i)} reduced={reduced} flipped={!!flips[city]} focused={focusKey === `city:${city}`} onTap={() => props.onCityTap(city)} />,
           el,
           city,
         ) : null;
@@ -716,7 +773,7 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
       {pinnedPartners.map((p, i) => {
         const el = pinEls[`partner:${p.key}`];
         return el ? createPortal(
-          <PartnerPin partner={p} lit={labelsLit(SOCIAL_CITIES.length + i)} reduced={reduced} flipped={!!flips[`partner:${p.key}`]} onTap={() => props.onPartnerTap(p.key)} />,
+          <PartnerPin partner={p} lit={labelsLit(SOCIAL_CITIES.length + i)} reduced={reduced} flipped={!!flips[`partner:${p.key}`]} focused={focusKey === `brand:${p.key}`} onTap={() => props.onPartnerTap(p.key)} />,
           el,
           p.key,
         ) : null;
@@ -726,11 +783,16 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
 });
 
 /** Pin paint for the current mode. Normal: pins fade in with zoom and a
- *  selected partner's pins glow while the rest dim. Partner World: only
- *  that brand's pins, at every zoom. */
-function applyPinStyle(map: mapboxgl.Map, worldBrand: string | null, active: string | null) {
-  if (worldBrand) {
-    const brandFilter: mapboxgl.FilterSpecification = ['==', ['get', 'brand'], worldBrand];
+ *  selected partner's pins glow while the rest dim. An open place: only
+ *  its pins (brand / city / filter), at every zoom. */
+function applyPinStyle(map: mapboxgl.Map, world: SocialWorld | null, active: string | null) {
+  if (world) {
+    const parts: mapboxgl.ExpressionSpecification[] = [];
+    if (world.brand) parts.push(['==', ['get', 'brand'], world.brand]);
+    if (world.city) parts.push(['==', ['get', 'city'], world.city]);
+    if (world.filter === 'community') parts.push(['==', ['get', 'community'], 1]);
+    else if (world.filter) parts.push(['==', ['get', 'category'], world.filter]);
+    const brandFilter: mapboxgl.FilterSpecification = parts.length ? ['all', ...parts] : ['boolean', true];
     for (const id of ['social-pins', 'social-pin-dot', 'social-glow']) {
       map.setFilter(id, id === 'social-pin-dot' ? ['all', brandFilter, ['!=', ['get', 'secondary'], '']] : brandFilter);
     }
@@ -788,6 +850,30 @@ function PinFan({ fan, onPick }: { fan: { x: number; y: number; items: FanItem[]
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** Pull-to-refresh: a small sun rising over the globe's top horizon. Drawn
+ *  above the map but masked out inside the globe disc, so the planet
+ *  occludes it like a real sunrise. */
+function PullSunRise({ geo, sun, reduced }: { geo: GlobeGeometry; sun: PullSun; reduced: boolean }) {
+  const p = sun.refreshing ? 1 : Math.max(0, Math.min(1, sun.progress));
+  const size = 36;
+  const cx = geo.cx;
+  const cy = geo.cy - geo.r + size * 0.3 - p * 46;
+  const mask = `radial-gradient(circle at ${geo.cx}px ${geo.cy}px, transparent ${geo.r - 0.5}px, #000 ${geo.r + 0.5}px)`;
+  return (
+    <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', WebkitMaskImage: mask, maskImage: mask }}>
+      <div
+        className={sun.refreshing && !reduced ? 'social-breathe' : undefined}
+        style={{
+          position: 'absolute', left: cx - size / 2, top: cy - size / 2, width: size, height: size, borderRadius: '50%',
+          opacity: Math.min(1, p * 1.4),
+          background: `radial-gradient(circle at 50% 45%, ${sun.core}, ${sun.mid})`,
+          boxShadow: `0 0 ${12 + p * 18}px ${4 + p * 6}px ${sun.mid}66`,
+        }}
+      />
     </div>
   );
 }

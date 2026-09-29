@@ -119,6 +119,7 @@ export const SUNCRUISER_SUN_GOLD = '#FDB913';
 const RUN_GREEN = '#2FBF71';
 const POPUP_IVORY = '#EDE6D6';
 const NIGHT_RED = '#E5484D';
+const COMMUNITY_GRAY = '#9A9AA2';
 
 // City accents never use green, blue or red (those are partner signal).
 const CITY_ACCENTS: Record<CityKey, string> = {
@@ -164,7 +165,7 @@ export const VENUU_THEME: SocialTheme = {
     },
   ],
   cityAccents: CITY_ACCENTS,
-  categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED },
+  categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED, other: COMMUNITY_GRAY },
   globe: NEUTRAL_GLOBE,
   sun: null,
 };
@@ -208,7 +209,7 @@ export const SUNCRUISER_THEME: SocialTheme = {
     },
   ],
   cityAccents: CITY_ACCENTS,
-  categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED },
+  categoryColors: { run_club: RUN_GREEN, pop_up: POPUP_IVORY, nightlife: NIGHT_RED, other: COMMUNITY_GRAY },
   globe: SUN_GLOBE,
   sun: { core: SUNCRUISER_SUN_YELLOW, mid: SUNCRUISER_SUN_GOLD, corona: 'rgba(253, 185, 19, 0.28)' },
 };

@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowUpRight, Mail, Navigation, Share2, X } from 'lucide-react';
-import { hapticLight } from '../../lib/haptics';
-import type { CityKey } from '../../lib/constants';
-import { SOCIAL_CITY_LABEL } from '../../lib/socialTheme';
+import { ArrowUpRight, BadgeCheck, Mail, Navigation, Share2, X } from 'lucide-react';
+import { hapticLight, hapticSelection } from '../../lib/haptics';
 import type { SocialEvent } from '../../lib/socialTypes';
 import { brandColor, type Brand } from '../../lib/brands';
 import { openAppleMapsDirections, openEmail, openExternal, shareText } from '../../lib/socialLinks';
 import { prefersReducedMotion } from '../../lib/socialGeo';
 import { BrandMark } from './BrandMark';
-import { WORLD_LAYOUT, rememberAge } from '../../lib/partnerWorld';
+import { EventCover } from './EventCover';
+import { WORLD_LAYOUT, rememberAge, applyCarouselParallax } from '../../lib/partnerWorld';
 
 const FONT = 'Satoshi, sans-serif';
 const TITLE = 17;
@@ -123,9 +122,21 @@ function WorldSheet({ title, onClose, children }: { title: string; onClose: () =
   );
 }
 
+/** ONE badge per event: its partner mark, else Verified / Community. */
+export function EventBadge({ brand, event, size = TEXT }: { brand: Brand | null; event: SocialEvent; size?: number }) {
+  if (brand) return <BrandMark name={brand.name} logo={brand.logo_url} size={size} color="var(--text-secondary)" />;
+  const verified = event.verification !== 'community';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: FONT, fontSize: Math.max(11, size - 2), fontWeight: 700, letterSpacing: '0.02em', color: verified ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+      {verified && <BadgeCheck size={size} strokeWidth={2} />}
+      {verified ? 'Verified' : 'Community'}
+    </span>
+  );
+}
+
 // ── Detail + About ────────────────────────────────────────────────
 
-function WorldEventDetail({ brand, event }: { brand: Brand; event: SocialEvent }) {
+function WorldEventDetail({ brand, event }: { brand: Brand | null; event: SocialEvent }) {
   const [shareNote, setShareNote] = useState<string | null>(null);
   const place = placeOf(event);
   const showAddress = !!event.address && event.address !== place;
@@ -145,7 +156,7 @@ function WorldEventDetail({ brand, event }: { brand: Brand; event: SocialEvent }
         <img src={event.photo_url} alt="" style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 14, display: 'block' }} />
       )}
       <div>
-        <BrandMark name={brand.name} logo={brand.logo_url} size={TEXT} color="var(--text-secondary)" />
+        <EventBadge brand={brand} event={event} />
         <div style={{ fontFamily: FONT, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', marginTop: 8 }}>{event.title}</div>
         <div className="social-num" style={{ fontFamily: FONT, fontSize: TEXT, fontWeight: 700, color: 'var(--text-primary)', marginTop: 8 }}>{fullWhen(event)}</div>
         <div style={{ fontFamily: FONT, fontSize: TEXT, color: 'var(--text-primary)', marginTop: 4 }}>{place}</div>
@@ -173,10 +184,12 @@ function WorldEventDetail({ brand, event }: { brand: Brand; event: SocialEvent }
         </button>
       </div>
       {shareNote && <div role="status" style={{ fontFamily: FONT, fontSize: TEXT, color: 'var(--text-secondary)', marginTop: -8 }}>{shareNote}</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 8, borderTop: '1px solid var(--social-hairline)' }}>
-        <BrandLinks brand={brand} />
-        <AgeLine brand={brand} />
-      </div>
+      {brand && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 8, borderTop: '1px solid var(--social-hairline)' }}>
+          <BrandLinks brand={brand} />
+          <AgeLine brand={brand} />
+        </div>
+      )}
     </div>
   );
 }
@@ -236,34 +249,40 @@ export function LogoDisc({ brand, size }: { brand: Brand; size: number }) {
 
 // ── Carousel card ─────────────────────────────────────────────────
 
-function WorldCard({ brand, event, selected, onTap }: { brand: Brand; event: SocialEvent; selected: boolean; onTap: () => void }) {
+/** Carousel-size event card: cover (or photo) behind, text on a scrim. */
+function WorldCard({ brand, event, accent, selected, eager, onTap }: {
+  brand: Brand | null; event: SocialEvent; accent: string; selected: boolean; eager: boolean; onTap: () => void;
+}) {
   const d = new Date(event.start_time);
-  const color = brandColor(brand);
   return (
     <button
-      className="social-press"
+      className="social-press social-world-card"
       onClick={() => { hapticLight(); onTap(); }}
       aria-label={`${event.title}, ${whenLine(event)}, ${placeOf(event)}`}
       style={{
+        position: 'relative', overflow: 'hidden',
         flex: '0 0 85%', height: CARD_H, scrollSnapAlign: 'start', boxSizing: 'border-box',
         display: 'flex', alignItems: 'stretch', gap: 16, padding: 16, textAlign: 'left', cursor: 'pointer',
-        borderRadius: 16, background: 'rgba(20, 18, 16, 0.94)',
-        border: `1px solid ${selected ? color : 'var(--social-hairline)'}`,
-        boxShadow: selected ? `0 0 22px -8px ${color}` : '0 8px 24px -12px rgba(0,0,0,0.6)',
+        borderRadius: 16, background: '#141210',
+        border: `1px solid ${selected ? accent : 'var(--social-hairline)'}`,
+        boxShadow: selected ? `0 0 22px -8px ${accent}` : '0 8px 24px -12px rgba(0,0,0,0.6)',
         transition: 'border-color 200ms ease-out, box-shadow 200ms ease-out',
       }}
     >
-      <span style={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <EventCover event={event} eager={eager} />
+      {/* Scrim: text stays legible over any cover or photo. */}
+      <span aria-hidden style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(11,10,9,0.92) 0%, rgba(11,10,9,0.8) 55%, rgba(11,10,9,0.35) 100%)' }} />
+      <span style={{ position: 'relative', width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {event.date_tba ? (
           <span style={{ fontFamily: FONT, fontSize: TITLE, fontWeight: 800, letterSpacing: '0.04em', color: 'var(--text-primary)' }}>TBA</span>
         ) : (
           <>
             <span className="social-num" style={{ fontFamily: FONT, fontSize: 40, fontWeight: 800, lineHeight: 1, color: 'var(--text-primary)' }}>{d.getDate()}</span>
-            <span style={{ fontFamily: FONT, fontSize: TEXT, fontWeight: 700, letterSpacing: '0.12em', marginTop: 6, color }}>{MONTHS[d.getMonth()]}</span>
+            <span style={{ fontFamily: FONT, fontSize: TEXT, fontWeight: 700, letterSpacing: '0.12em', marginTop: 6, color: accent }}>{MONTHS[d.getMonth()]}</span>
           </>
         )}
       </span>
-      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <span style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <span className="social-clamp-2" style={{ fontFamily: FONT, fontSize: TITLE, fontWeight: 800, lineHeight: 1.25, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
           {event.title}
         </span>
@@ -272,7 +291,7 @@ function WorldCard({ brand, event, selected, onTap }: { brand: Brand; event: Soc
           <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <span className="social-num" style={{ fontFamily: FONT, fontSize: TEXT, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{whenLine(event)}</span>
             <span style={{ flexShrink: 1, minWidth: 0, overflow: 'hidden', display: 'flex', justifyContent: 'flex-end' }}>
-              <BrandMark name={brand.name} logo={brand.logo_url} size={11} color="var(--text-muted)" />
+              <EventBadge brand={brand} event={event} size={11} />
             </span>
           </span>
         </span>
@@ -281,7 +300,8 @@ function WorldCard({ brand, event, selected, onTap }: { brand: Brand; event: Soc
   );
 }
 
-function ComingSoonCard({ brand, city }: { brand: Brand; city: CityKey }) {
+/** Honest empty state: one card, no fake date. */
+function EmptyCard({ title, line, action }: { title: string; line: string; action?: { label: string; onTap: () => void } }) {
   return (
     <div
       style={{
@@ -290,11 +310,17 @@ function ComingSoonCard({ brand, city }: { brand: Brand; city: CityKey }) {
         borderRadius: 16, background: 'rgba(20, 18, 16, 0.94)', border: '1px solid var(--social-hairline)',
       }}
     >
-      <span style={{ fontFamily: FONT, fontSize: TITLE, fontWeight: 800, color: 'var(--text-primary)' }}>Coming soon to {SOCIAL_CITY_LABEL[city]}</span>
-      <span style={{ fontFamily: FONT, fontSize: TEXT, lineHeight: 1.45, color: 'var(--text-secondary)' }}>
-        No {brand.name} events here yet. Check back soon.
-      </span>
-      <span style={{ marginTop: 4 }}><BrandMark name={brand.name} logo={brand.logo_url} size={11} color="var(--text-muted)" /></span>
+      <span style={{ fontFamily: FONT, fontSize: TITLE, fontWeight: 800, color: 'var(--text-primary)' }}>{title}</span>
+      <span style={{ fontFamily: FONT, fontSize: TEXT, lineHeight: 1.45, color: 'var(--text-secondary)' }}>{line}</span>
+      {action && (
+        <button
+          className="social-press"
+          onClick={() => { hapticLight(); action.onTap(); }}
+          style={{ alignSelf: 'flex-start', minHeight: 44, marginBottom: -12, padding: 0, background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT, fontSize: TEXT, fontWeight: 800, color: 'var(--text-primary)' }}
+        >
+          {action.label} →
+        </button>
+      )}
     </div>
   );
 }
@@ -335,62 +361,81 @@ export function AgeGate({ brand, onYes, onNo }: { brand: Brand; onYes: () => voi
   );
 }
 
-// ── The World ─────────────────────────────────────────────────────
+// ── The template ──────────────────────────────────────────────────
 
-interface PartnerWorldProps {
-  brand: Brand;
-  city: CityKey;
-  /** This brand's events in `city`, in worldOrder. */
+export interface PlaceTab { key: string; label: string }
+
+interface PlaceWorldProps {
+  /** Top-bar mark (logo disc / city badge). */
+  mark: React.ReactNode;
+  title: React.ReactNode;
+  /** Plain-text name for labels ("Sun Cruiser World", "Tampa"). */
+  name: string;
+  accent: string;
+  /** Brand row → the mark opens its About sheet. */
+  about: Brand | null;
+  /** City switch (a World) or filter switch (a city). */
+  tabs: PlaceTab[];
+  tab: string;
+  tabsLabel: string;
+  onTab: (key: string) => void;
+  /** Events in the current tab, in worldOrder. */
   events: SocialEvent[];
+  brandOf: (ev: SocialEvent) => Brand | null;
   selectedId: string | null;
+  empty: { title: string; line: string; action?: { label: string; onTap: () => void } };
   /** Top of the usable area (the app header's bottom edge). */
   topInset: number;
-  onCity: (c: CityKey) => void;
   /** The carousel settled on a card (swipe). */
   onSelect: (ev: SocialEvent) => void;
   onClose: () => void;
 }
 
 /**
- * A partner's World: full-screen recolored map (rendered by SocialMap
- * underneath), a floating top bar, a city switch, and a date-ordered
- * carousel synced with the pins. The detail and About sheets are the only
- * sheets. Everything comes from the brand row.
+ * One template for every place — a partner World or a city: full-screen
+ * map (SocialMap underneath), floating top bar, a switch, and a
+ * date-ordered carousel synced with the pins. The detail and About sheets
+ * are the only sheets.
  */
-export function PartnerWorld({ brand, city, events, selectedId, topInset, onCity, onSelect, onClose }: PartnerWorldProps) {
+export function PlaceWorld({
+  mark, title, name, accent, about, tabs, tab, tabsLabel, onTab, events, brandOf, selectedId, empty, topInset, onSelect, onClose,
+}: PlaceWorldProps) {
   const reduced = prefersReducedMotion();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const settleTimer = useRef(0);
+  const frame = useRef(0);
   const [detail, setDetail] = useState<SocialEvent | null>(null);
-  const [about, setAbout] = useState(false);
-  const cities = brand.cities.length ? brand.cities : [city];
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const step = useCallback(() => {
     const first = scrollerRef.current?.firstElementChild as HTMLElement | null;
     return first ? first.offsetWidth + CARD_GAP : 1;
   }, []);
 
-  // Keep the carousel on the selected card (pin taps, city changes).
+  // Keep the carousel on the selected card (pin taps, tab changes).
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     const i = Math.max(0, events.findIndex(e => e.id === selectedId));
     const left = i * step();
     if (Math.abs(el.scrollLeft - left) > 2) el.scrollTo({ left, behavior: reduced ? 'auto' : 'smooth' });
+    applyCarouselParallax(el, reduced);
   }, [selectedId, events, step, reduced]);
 
   const onScroll = () => {
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => applyCarouselParallax(scrollerRef.current, reduced));
     window.clearTimeout(settleTimer.current);
     settleTimer.current = window.setTimeout(() => {
       const el = scrollerRef.current;
       if (!el || events.length === 0) return;
       const i = Math.min(events.length - 1, Math.max(0, Math.round(el.scrollLeft / step())));
-      if (events[i].id !== selectedId) onSelect(events[i]);
+      if (events[i].id !== selectedId) { hapticSelection(); onSelect(events[i]); }
     }, 90);
   };
-  useEffect(() => () => window.clearTimeout(settleTimer.current), []);
+  useEffect(() => () => { window.clearTimeout(settleTimer.current); cancelAnimationFrame(frame.current); }, []);
 
-  const color = brandColor(brand);
+  const selIndex = Math.max(0, events.findIndex(e => e.id === selectedId));
 
   return (
     <>
@@ -403,48 +448,54 @@ export function PartnerWorld({ brand, city, events, selectedId, topInset, onCity
           backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
         }}
       >
-        <button
-          className="social-press"
-          aria-label={`About ${brand.name}`}
-          onClick={() => { hapticLight(); setAbout(true); }}
-          style={{ width: 44, height: 44, flexShrink: 0, display: 'grid', placeItems: 'center', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-        >
-          <LogoDisc brand={brand} size={40} />
-        </button>
+        {about ? (
+          <button
+            className="social-press"
+            aria-label={`About ${about.name}`}
+            onClick={() => { hapticLight(); setAboutOpen(true); }}
+            style={{ width: 44, height: 44, flexShrink: 0, display: 'grid', placeItems: 'center', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+          >
+            {mark}
+          </button>
+        ) : (
+          <span style={{ width: 44, height: 44, flexShrink: 0, display: 'grid', placeItems: 'center' }}>{mark}</span>
+        )}
         <span style={{ flex: 1, minWidth: 0, fontFamily: FONT, fontSize: TITLE, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {brand.name} <span style={{ color }}>World</span>
+          {title}
         </span>
-        <IconButton label={`Leave ${brand.name} World`} onClick={onClose}><X size={20} color="var(--text-primary)" /></IconButton>
+        <IconButton label={`Leave ${name}`} onClick={onClose}><X size={20} color="var(--text-primary)" /></IconButton>
       </div>
 
-      {/* City switch */}
+      {/* Switch (scrolls sideways when it doesn't fit, e.g. 5 filters at 375pt) */}
       <div style={{ position: 'absolute', zIndex: 10, top: topInset + BAR_GAP + BAR_H + SWITCH_GAP, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
         <div
           role="tablist"
-          aria-label="City"
+          aria-label={tabsLabel}
+          className="social-carousel"
           style={{
-            display: 'flex', height: SWITCH_H, padding: 3, boxSizing: 'border-box', borderRadius: SWITCH_H / 2, pointerEvents: 'auto',
+            display: 'flex', height: SWITCH_H, maxWidth: 'calc(100% - 32px)', overflowX: 'auto', padding: 3, boxSizing: 'border-box',
+            borderRadius: SWITCH_H / 2, pointerEvents: 'auto',
             background: 'rgba(11, 10, 9, 0.88)', border: '1px solid var(--social-hairline)',
             backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
           }}
         >
-          {cities.map(c => {
-            const on = c === city;
+          {tabs.map(t => {
+            const on = t.key === tab;
             return (
               <button
-                key={c}
+                key={t.key}
                 role="tab"
                 aria-selected={on}
                 className="social-press"
-                onClick={() => { hapticLight(); if (!on) onCity(c); }}
+                onClick={() => { if (!on) { hapticSelection(); onTab(t.key); } }}
                 style={{
-                  minWidth: 76, padding: '0 14px', borderRadius: (SWITCH_H - 6) / 2, border: 'none', cursor: 'pointer',
-                  background: on ? color : 'transparent',
-                  fontFamily: FONT, fontSize: TEXT, fontWeight: 800,
+                  flexShrink: 0, minWidth: 64, padding: '0 14px', borderRadius: (SWITCH_H - 6) / 2, border: 'none', cursor: 'pointer',
+                  background: on ? accent : 'transparent',
+                  fontFamily: FONT, fontSize: TEXT, fontWeight: 800, whiteSpace: 'nowrap',
                   color: on ? '#0B0A09' : 'var(--text-secondary)',
                 }}
               >
-                {SOCIAL_CITY_LABEL[c] ?? c}
+                {t.label}
               </button>
             );
           })}
@@ -453,7 +504,7 @@ export function PartnerWorld({ brand, city, events, selectedId, topInset, onCity
 
       {/* Carousel */}
       <div
-        key={city}
+        key={tab}
         ref={scrollerRef}
         className="social-carousel"
         onScroll={onScroll}
@@ -466,13 +517,21 @@ export function PartnerWorld({ brand, city, events, selectedId, topInset, onCity
       >
         {events.length === 0 ? (
           <>
-            <ComingSoonCard brand={brand} city={city} />
+            <EmptyCard {...empty} />
             <span aria-hidden style={{ flex: '0 0 4px' }} />
           </>
         ) : (
           <>
-            {events.map(ev => (
-              <WorldCard key={ev.id} brand={brand} event={ev} selected={ev.id === selectedId} onTap={() => setDetail(ev)} />
+            {events.map((ev, i) => (
+              <WorldCard
+                key={ev.id}
+                brand={brandOf(ev)}
+                event={ev}
+                accent={accent}
+                selected={ev.id === selectedId}
+                eager={Math.abs(i - selIndex) <= 2}
+                onTap={() => setDetail(ev)}
+              />
             ))}
             {/* Lets the last card snap to the left edge like the others. */}
             <span aria-hidden style={{ flex: `0 0 calc(15% + ${16 - CARD_GAP}px)` }} />
@@ -482,14 +541,24 @@ export function PartnerWorld({ brand, city, events, selectedId, topInset, onCity
 
       {detail && (
         <WorldSheet title={detail.title} onClose={() => setDetail(null)}>
-          <WorldEventDetail brand={brand} event={detail} />
+          <WorldEventDetail brand={brandOf(detail)} event={detail} />
         </WorldSheet>
       )}
-      {about && (
-        <WorldSheet title={`About ${brand.name}`} onClose={() => setAbout(false)}>
-          <WorldAbout brand={brand} />
+      {aboutOpen && about && (
+        <WorldSheet title={`About ${about.name}`} onClose={() => setAboutOpen(false)}>
+          <WorldAbout brand={about} />
         </WorldSheet>
       )}
     </>
+  );
+}
+
+/** A city's mark in the top bar and on story rings: its accent ring with
+ *  a short code — a label, not a logo. */
+export function CityBadge({ code, accent, size = 40 }: { code: string; accent: string; size?: number }) {
+  return (
+    <span style={{ width: size, height: size, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: 'var(--social-surface-raised)', border: `1.5px solid ${accent}` }}>
+      <span style={{ fontFamily: FONT, fontSize: size * 0.3, fontWeight: 800, letterSpacing: '0.04em', color: accent }}>{code}</span>
+    </span>
   );
 }

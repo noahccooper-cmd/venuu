@@ -92,7 +92,7 @@ export const DEMO_BRANDS: Brand[] = DEMO ? [
     id: 'demo-brand-prc', slug: 'pinellas_run_club', name: 'Pinellas Run Club',
     primary_hex: '#2FBF71', secondary_hex: null, accent_hexes: [],
     logo_url: demoFile('pinellas_run_club/logo.svg') ?? demoFile('pinellas_run_club/logo.png'), product_image_url: null,
-    tagline: 'The space for your pace.', about: 'Thursday evenings · Saturday mornings',
+    tagline: 'The space for your pace.', about: 'All paces welcome. No sign-up needed. Better together. Thursday evenings · Saturday mornings',
     website_url: 'https://www.pinellasrunclub.com', instagram_url: 'https://www.instagram.com/pinellasrunclub',
     finder_url: null, email: 'pinellasrunclub@gmail.com',
     cities: ['st_petersburg'], age_gate: false, is_active: true,

@@ -49,13 +49,15 @@ function Leader({ dx, dy, color }: { dx: number; dy: number; color: string }) {
   );
 }
 
-function Dot({ color }: { color: string }) {
+function Dot({ color, focused = false }: { color: string; focused?: boolean }) {
+  const d = focused ? 10 : 6;
   return (
     <span
       aria-hidden
       style={{
-        position: 'absolute', left: -3, top: -3, width: 6, height: 6, borderRadius: 3,
-        background: color, boxShadow: `0 0 8px ${color}`,
+        position: 'absolute', left: -d / 2, top: -d / 2, width: d, height: d, borderRadius: d / 2,
+        background: color, boxShadow: focused ? `0 0 0 4px color-mix(in srgb, ${color} 30%, transparent), 0 0 18px 4px ${color}` : `0 0 8px ${color}`,
+        transition: 'all 250ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     />
   );
@@ -75,15 +77,17 @@ interface CityPinProps {
   reduced: boolean;
   /** Leader flipped to the inward side so the label stays on the globe. */
   flipped?: boolean;
+  /** The home carousel is on this city — the dot glows. */
+  focused?: boolean;
   onTap: () => void;
 }
 
-export function CityPin({ city, count, lit, reduced, flipped = false, onTap }: CityPinProps) {
+export function CityPin({ city, count, lit, reduced, flipped = false, focused = false, onTap }: CityPinProps) {
   const accent = `var(--social-accent-${city})`;
   const off = flipped ? flipOffset(CITY_OFFSETS[city]) : CITY_OFFSETS[city];
   return (
     <div style={{ position: 'absolute', left: 0, top: 0, opacity: lit ? 1 : 0, transition: reduced ? 'none' : 'opacity 200ms ease-out' }}>
-      <Dot color={accent} />
+      <Dot color={accent} focused={focused} />
       <Leader dx={off.dx} dy={off.dy} color={accent} />
       <button
         className="social-press"
@@ -113,18 +117,19 @@ interface PartnerPinProps {
   lit: boolean;
   reduced: boolean;
   flipped?: boolean;
+  focused?: boolean;
   onTap: () => void;
 }
 
-export function PartnerPin({ partner, lit, reduced, flipped = false, onTap }: PartnerPinProps) {
+export function PartnerPin({ partner, lit, reduced, flipped = false, focused = false, onTap }: PartnerPinProps) {
   const off = flipped ? flipOffset(PARTNER_OFFSET) : PARTNER_OFFSET;
   const SIZE = MEDALLION_SIZE;
   return (
     <div style={{ position: 'absolute', left: 0, top: 0, opacity: lit ? 1 : 0, transition: reduced ? 'none' : 'opacity 200ms ease-out' }}>
-      <Dot color={partner.color} />
+      <Dot color={partner.color} focused={focused} />
       <Leader dx={off.dx} dy={off.dy} color={partner.color} />
       <div style={{ position: 'absolute', left: off.dx < 0 ? off.dx - SIZE : off.dx, top: off.dy - SIZE / 2 }}>
-        <Medallion partner={partner} size={SIZE} onTap={onTap} />
+        <Medallion partner={partner} size={SIZE} selected={focused} onTap={onTap} />
       </div>
     </div>
   );

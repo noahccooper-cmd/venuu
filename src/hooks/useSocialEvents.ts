@@ -25,7 +25,8 @@ export interface SocialEventsResult {
  *     .gt('expires_at', new Date().toISOString())
  *     .order('start_time', { ascending: true });
  */
-export function useSocialEvents(city: CityKey | null): SocialEventsResult {
+/** `refreshKey`: bump to refetch (pull-to-refresh). */
+export function useSocialEvents(city: CityKey | null, refreshKey = 0): SocialEventsResult {
   const [result, setResult] = useState<SocialEventsResult>({ events: [], loading: true, error: null });
 
   useEffect(() => {
@@ -44,7 +45,7 @@ export function useSocialEvents(city: CityKey | null): SocialEventsResult {
     };
     read();
     return HOST_DEMO_ENABLED ? subscribeDemoEvents(read) : undefined;
-  }, [city]);
+  }, [city, refreshKey]);
 
   return result;
 }

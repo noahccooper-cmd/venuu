@@ -78,3 +78,15 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* "Now": a soft pulse on the live dot. Off under reduced motion. */
+@keyframes social-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.8); }
+}
+[data-social-theme] .social-live-dot {
+  animation: social-live 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] .social-live-dot { animation: none; }
+}

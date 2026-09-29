@@ -382,6 +382,19 @@ await test('00077 RSVP policy still works after 00079 (profile lookup inside the
 });
 await test('00077 posting still works after 00079 (host posts)', async () => { await post('host', { title: 'after 79' }); });
 
+// ═════════════════════════ 00081 ═════════════════════════════════
+await test('00081 sets the Pinellas about line; re-run and admin edits are left alone', async () => {
+  await db.exec(sql('00081_prc_about.sql'));
+  const r1 = (await as(null, () => q(`select about from public.brands where slug='pinellas_run_club'`)))[0].about;
+  await db.exec(sql('00081_prc_about.sql'));
+  const r2 = (await q(`select about from public.brands where slug='pinellas_run_club'`))[0].about;
+  await as('mike', () => q(`update public.brands set about='Edited by admin' where slug='pinellas_run_club'`));
+  await db.exec(sql('00081_prc_about.sql'));
+  const r3 = (await q(`select about from public.brands where slug='pinellas_run_club'`))[0].about;
+  return (r1.startsWith('All paces welcome. No sign-up needed. Better together.') && r1.includes('Thursday evenings') && r2 === r1 && r3 === 'Edited by admin')
+    || JSON.stringify({ r1, r2, r3 });
+});
+
 // ═════════════════════════ 00080 ═════════════════════════════════
 await test('00080 applies twice; Sun Cruiser gets its 3 products; readable signed-out', async () => {
   await db.exec(sql('00080_brand_products.sql'));

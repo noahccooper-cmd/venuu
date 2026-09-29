@@ -1,4 +1,5 @@
 import type { SocialEvent } from './socialTypes';
+import { SUN_BRAND_SLUG } from './brands';
 
 // Partner World layout (px). The Social root already ends above the tab
 // bar + home indicator, so "bottom" is clear of both.
@@ -31,5 +32,33 @@ export function ageConfirmed(slug: string): boolean {
 }
 export function rememberAge(slug: string): void {
   try { localStorage.setItem(AGE_KEY(slug), '1'); } catch { /* this session only */ }
+}
+
+
+// Event covers: which procedural art an event gets (see EventCover).
+export type CoverKind = 'sunrise' | 'route' | 'night' | 'ivory' | 'community';
+
+export function coverKind(ev: SocialEvent): CoverKind {
+  if (ev.brand === SUN_BRAND_SLUG) return 'sunrise';
+  switch (ev.category) {
+    case 'run_club': return 'route';
+    case 'nightlife': return 'night';
+    case 'pop_up': return 'ivory';
+    default: return 'community';
+  }
+}
+
+
+/** Horizontal parallax for covers: each card's art shifts with its offset
+ *  from the carousel's left edge. Off under reduced motion. */
+export function applyCarouselParallax(el: HTMLElement | null, reduced: boolean): void {
+  if (!el || reduced) return;
+  const box = el.getBoundingClientRect();
+  for (const card of Array.from(el.children) as HTMLElement[]) {
+    const r = card.getBoundingClientRect();
+    if (!r.width) continue;
+    const offset = (r.left - box.left - 16) / box.width;   // 0 = snapped
+    card.style.setProperty('--parallax', `${(-offset * 24).toFixed(1)}px`);
+  }
 }
 
