@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import type { SocialEvent } from '../../lib/socialTypes';
 import { coverKind, type CoverKind } from '../../lib/partnerWorld';
 
@@ -170,19 +170,30 @@ export function EventCover({ event, eager = false, axis = 'x' }: EventCoverProps
         }}
       >
         {event.photo_url ? (
-          <img
-            src={event.photo_url}
-            alt=""
-            loading={eager ? 'eager' : 'lazy'}
-            decoding="async"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          />
+          <PhotoWithSkeleton src={event.photo_url} eager={eager} />
         ) : (
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" style={{ width: '100%', height: '100%', display: 'block' }}>
             <Art kind={coverKind(event)} seed={event.id} uid={uid} />
           </svg>
         )}
       </div>
+    </div>
+  );
+}
+
+/** A photo that shows a shimmer until it has loaded. */
+function PhotoWithSkeleton({ src, eager }: { src: string; eager: boolean }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <div className={loaded ? undefined : 'social-skeleton'} style={{ width: '100%', height: '100%' }}>
+      <img
+        src={src}
+        alt=""
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: loaded ? 1 : 0, transition: 'opacity 200ms ease-out' }}
+      />
     </div>
   );
 }

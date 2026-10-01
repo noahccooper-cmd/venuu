@@ -668,14 +668,19 @@ export const SocialMap = forwardRef<SocialMapHandle, SocialMapProps>(function So
           if (map.getLayer('social-pulse')) map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0);
         }, LINK_MS));
       } else {
-        const t0 = performance.now() + 700;   // let the fly-to mostly settle
+        // A new post gets a bigger ripple (three rings expanding from the pin).
+        const isPost = link.source === 'post';
+        const cycles = isPost ? 3 : PULSE_CYCLES;
+        const spread = isPost ? 46 : 14;
+        map.setPaintProperty('social-pulse', 'circle-stroke-width', isPost ? 3 : 2);
+        const t0 = performance.now() + (isPost ? 1000 : 700);   // let the fly-to mostly settle
         const tick = (t: number) => {
           if (!map.getLayer('social-pulse')) return;
           const el = t - t0;
           if (el < 0) { pulseFrame.current = requestAnimationFrame(tick); return; }
-          if (el >= PULSE_CYCLES * PULSE_MS) { map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0); return; }
+          if (el >= cycles * PULSE_MS) { map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0); return; }
           const p = (el % PULSE_MS) / PULSE_MS;
-          map.setPaintProperty('social-pulse', 'circle-radius', PIN_RADIUS + p * 14);
+          map.setPaintProperty('social-pulse', 'circle-radius', PIN_RADIUS + p * spread);
           map.setPaintProperty('social-pulse', 'circle-stroke-opacity', 0.9 * (1 - p));
           pulseFrame.current = requestAnimationFrame(tick);
         };

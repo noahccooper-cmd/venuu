@@ -10,10 +10,9 @@ import { SUN_BRAND_SLUG, brandColor } from '../lib/brands';
 import {
   buildPlaces, placeStatus, orderPlaces, hasNew, markSeen, isLive, CITY_CODE, type PlaceKey,
 } from '../lib/socialPlaces';
-import { hapticLight, hapticMedium, hapticWarning } from '../lib/haptics';
+import { hapticLight, hapticMedium, hapticSuccess, hapticWarning } from '../lib/haptics';
 import { SOCIAL_DEMO, takeLastVisit } from '../lib/socialMode';
 import { eventColor } from '../lib/socialTheme';
-import { HOST_DEMO_ENABLED } from '../lib/socialDemoStore';
 import { useSocialEvents } from '../hooks/useSocialEvents';
 import { useBrands } from '../hooks/useBrands';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
@@ -22,9 +21,11 @@ import {
   SocialMap, type CameraSnapshot, type PlaceFilter, type PullSun, type SocialLink, type SocialMapHandle, type SocialWorld,
 } from '../components/Social/SocialMap';
 import { PlaceWorld, AgeGate, LogoDisc, CityBadge, type PlaceTab } from '../components/Social/PlaceWorld';
-import { StoryRings, PlaceCarousel, RINGS_H } from '../components/Social/SocialHome';
+import { StoryRings, PlaceCarousel, HomeSkeleton, RINGS_H } from '../components/Social/SocialHome';
 import { ageConfirmed, worldOrder, WORLD_TOP_PX, WORLD_BOTTOM_PX } from '../lib/partnerWorld';
-import { HostSheet } from '../components/Social/HostSheet';
+import { PostFlow } from '../components/Social/PostFlow';
+import { useSocialProfile } from '../hooks/useSocialProfile';
+import { acceptTerms, submitPost, type PostDraft } from '../lib/socialPost';
 import { SocialFeed } from '../components/Social/SocialFeed';
 import { SocialToast, type ToastMsg } from '../components/Social/SocialToast';
 import '../components/Social/social.css';
@@ -405,20 +406,47 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [brands, allEvents, seenTick]);
 
-  // ── Host mode · demo (Post) ──
-  const [hostOpen, setHostOpen] = useState(false);
+  // ── Post ──
+  const me = useSocialProfile(profileId);
+  const canHost = me.role === 'host' || me.role === 'admin';
+  const [postOpen, setPostOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const [draftPin, setDraftPin] = useState<[number, number] | null>(null);
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const onPost = HOST_DEMO_ENABLED ? () => { hapticLight(); setHostOpen(true); } : null;
+  const [pending, setPending] = useState<{ id: string; verified: boolean } | null>(null);
+  const [justPosted, setJustPosted] = useState<string | null>(null);
+  const onPost = () => {
+    hapticLight();
+    if (!signedIn) { say('Sign in to post an event'); onOpenSignIn(); return; }
+    if (me.banned) { hapticWarning(); say('Your account can’t post events right now.', 'warn'); return; }
+    setPostOpen(true);
+  };
+  const submit = useCallback(async (d: PostDraft) => {
+    const r = await submitPost(d, { profileId, brands, isAdmin: me.role === 'admin', hostName: me.name });
+    if (r.ok) {
+      setPostOpen(false);
+      setDraftPin(null);
+      setPending({ id: r.id, verified: r.verified });
+      setRefreshKey(k => k + 1);      // live: refetch so the new row appears
+    }
+    return r;
+  }, [profileId, brands, me.role, me.name]);
+  // Success: once the new event is in the data — fly to its pin, ripple,
+  // the card slides into the carousel with a glow, haptic, toast.
   useEffect(() => {
-    if (!pendingId) return;
-    const ev = allEvents.find(e => e.id === pendingId);
+    if (!pending) return;
+    const ev = allEvents.find(e => e.id === pending.id);
     if (!ev) return;
-    setPendingId(null);
+    setPending(null);
+    setFeed(null);
     enterPlace(`city:${ev.city}`, ev.id);
+    setJustPosted(ev.id);
     setLink({ id: ev.id, nonce: ++nonce.current, source: 'post' });
-  }, [pendingId, allEvents, enterPlace]);
+    hapticSuccess();
+    say(`Your event is live · ${pending.verified ? 'Verified' : 'Community'}`);
+    const t = window.setTimeout(() => setJustPosted(null), 2600);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, allEvents]);
 
   // ── Pull to refresh ──
   const pull = usePullToRefresh(async () => {
@@ -452,6 +480,7 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
         onSelect={onPlaceSwipe}
         onClose={leavePlace}
         onOpenFeed={openFeedPlace}
+        highlightId={justPosted}
       />
     );
   } else if (open?.kind === 'city') {
@@ -473,12 +502,13 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
         brandOf={brandOf}
         selectedId={placeSel}
         empty={open.filter === 'all'
-          ? { title: `Nothing scheduled in ${label} yet`, line: 'Be the first to post an event here.', action: onPost ? { label: 'Post an event', onTap: onPost } : undefined }
+          ? { title: `Nothing scheduled in ${label} yet`, line: 'Be the first to post an event here.', action: { label: 'Post an event', onTap: onPost } }
           : { title: `No ${tabLabel} in ${label} yet`, line: 'Check back soon, or see everything.', action: { label: 'Show all', onTap: () => onTab('all') } }}
         topInset={topInset}
         onSelect={onPlaceSwipe}
         onClose={leavePlace}
         onOpenFeed={openFeedPlace}
+        highlightId={justPosted}
       />
     );
   }
@@ -557,6 +587,8 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
         </>
       )}
 
+      {home && !ready && <HomeSkeleton top={topInset} />}
+
       {placeView}
 
       {feed && (
@@ -604,16 +636,23 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
         />
       )}
 
-      {HOST_DEMO_ENABLED && (
-        <HostSheet
-          theme={theme}
-          city={draftPin ? nearestCity(draftPin) : open?.kind === 'city' ? open.city : 'tampa'}
-          open={hostOpen}
+      {signedIn && (
+        <PostFlow
+          open={postOpen}
+          topInset={topInset}
+          canHost={canHost}
+          isAdmin={me.role === 'admin'}
+          termsAccepted={me.termsAccepted}
+          hostName={me.name}
+          brands={brands}
+          defaultCity={open?.kind === 'city' ? open.city : open?.kind === 'brand' && open.city ? open.city : nearestCity(places.find(x => x.key === sel)?.center ?? SOCIAL_CITY_GEO.tampa.center)}
           picking={picking}
-          draftPin={draftPin}
-          onPickLocation={() => setPicking(true)}
-          onClose={() => { setHostOpen(false); setPicking(false); }}
-          onPosted={id => { setHostOpen(false); setDraftPin(null); setPendingId(id); }}
+          droppedPin={draftPin}
+          onPickOnMap={() => setPicking(true)}
+          colorOf={ev => eventColor(theme, ev)}
+          onAcceptTerms={async () => { const ok = await acceptTerms(profileId); if (ok) me.reload(); return ok; }}
+          onSubmit={submit}
+          onClose={() => { setPostOpen(false); setPicking(false); }}
         />
       )}
     </div>

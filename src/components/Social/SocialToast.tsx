@@ -11,7 +11,7 @@ export function SocialToast({ toast, onDone }: { toast: ToastMsg | null; onDone:
   }, [toast, onDone]);
   if (!toast) return null;
   return (
-    <div role="status" aria-live="polite" style={{ position: 'absolute', zIndex: 40, left: 16, right: 16, bottom: 160, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+    <div role="status" aria-live="polite" style={{ position: 'absolute', zIndex: 40, left: 16, right: 16, bottom: 196, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
       <span
         key={toast.id}
         className="social-fade-in"

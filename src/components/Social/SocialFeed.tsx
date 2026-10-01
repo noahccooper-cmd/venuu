@@ -76,9 +76,11 @@ interface FeedCardProps {
   reduced: boolean;
   onGoing: (ev: SocialEvent, on: boolean) => Promise<boolean>;
   onOpen: () => void;
+  /** Post flow "Look" step: the exact card, not interactive. */
+  preview?: boolean;
 }
 
-function FeedCard({ event, brand, color, going, live, fresh, eager, reduced, onGoing, onOpen }: FeedCardProps) {
+export function FeedCard({ event, brand, color, going, live, fresh, eager, reduced, onGoing, onOpen, preview = false }: FeedCardProps) {
   const on = going.isGoing(event.id);
   const count = going.count(event);
   const faces = going.faces(event.id);
@@ -112,7 +114,8 @@ function FeedCard({ event, brand, color, going, live, fresh, eager, reduced, onG
       onClick={onBodyTap}
       role="group"
       aria-label={`${event.title}, ${fullWhen(event)}`}
-      style={{ position: 'relative', height: '100%', scrollSnapAlign: 'start', scrollSnapStop: 'always', overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+      aria-hidden={preview || undefined}
+      style={{ position: 'relative', height: '100%', scrollSnapAlign: 'start', scrollSnapStop: 'always', overflow: 'hidden', cursor: 'pointer', display: 'flex', flexDirection: 'column', pointerEvents: preview ? 'none' : undefined }}
     >
       <div style={{ position: 'relative', height: '58%', flexShrink: 0 }}>
         <EventCover event={event} eager={eager} axis="y" />
@@ -312,12 +315,12 @@ export function SocialFeed({ title, events, startId, brandOf, colorOf, going, no
               onOpen={() => setDetail(ev)}
             />
           ) : (
-            <div key={ev.id} aria-hidden style={{ height: '100%', scrollSnapAlign: 'start' }} />
+            <div key={ev.id} aria-hidden className="social-skeleton" style={{ height: '100%', scrollSnapAlign: 'start', '--shimmer': colorOf(ev) } as React.CSSProperties} />
           )
         ))}
         {events.length === 0 && (
           <div style={{ height: '100%', display: 'grid', placeItems: 'center', padding: 32, textAlign: 'center', fontFamily: FONT, fontSize: TEXT, color: 'var(--text-secondary)' }}>
-            Nothing here yet.
+            No events here yet. Check back soon.
           </div>
         )}
       </div>

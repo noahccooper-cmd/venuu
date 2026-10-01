@@ -260,13 +260,13 @@ export function LogoDisc({ brand, size }: { brand: Brand; size: number }) {
 // ── Carousel card ─────────────────────────────────────────────────
 
 /** Carousel-size event card: cover (or photo) behind, text on a scrim. */
-function WorldCard({ brand, event, accent, selected, eager, onTap }: {
-  brand: Brand | null; event: SocialEvent; accent: string; selected: boolean; eager: boolean; onTap: () => void;
+function WorldCard({ brand, event, accent, selected, fresh = false, eager, onTap }: {
+  brand: Brand | null; event: SocialEvent; accent: string; selected: boolean; fresh?: boolean; eager: boolean; onTap: () => void;
 }) {
   const d = new Date(event.start_time);
   return (
     <button
-      className="social-press social-world-card"
+      className={`social-press social-world-card${fresh ? ' social-card-new' : ''}`}
       onClick={() => { hapticLight(); onTap(); }}
       aria-label={`${event.title}, ${whenLine(event)}, ${placeOf(event)}`}
       style={{
@@ -277,7 +277,8 @@ function WorldCard({ brand, event, accent, selected, eager, onTap }: {
         border: `1px solid ${selected ? accent : 'var(--social-hairline)'}`,
         boxShadow: selected ? `0 0 22px -8px ${accent}` : '0 8px 24px -12px rgba(0,0,0,0.6)',
         transition: 'border-color 200ms ease-out, box-shadow 200ms ease-out',
-      }}
+        '--glow': accent,
+      } as React.CSSProperties}
     >
       <EventCover event={event} eager={eager} />
       {/* Scrim: text stays legible over any cover or photo. */}
@@ -401,6 +402,8 @@ interface PlaceWorldProps {
   onClose: () => void;
   /** Feed handle / drag the carousel up → full-screen feed. */
   onOpenFeed: (() => void) | null;
+  /** A just-posted event: its card slides in with a glow. */
+  highlightId?: string | null;
 }
 
 /**
@@ -410,7 +413,7 @@ interface PlaceWorldProps {
  * are the only sheets.
  */
 export function PlaceWorld({
-  mark, title, name, accent, about, tabs, tab, tabsLabel, onTab, events, brandOf, selectedId, empty, topInset, onSelect, onClose, onOpenFeed,
+  mark, title, name, accent, about, tabs, tab, tabsLabel, onTab, events, brandOf, selectedId, empty, topInset, onSelect, onClose, onOpenFeed, highlightId = null,
 }: PlaceWorldProps) {
   const dragUp = useDragUp(onOpenFeed);
   const reduced = prefersReducedMotion();
@@ -545,6 +548,7 @@ export function PlaceWorld({
                 event={ev}
                 accent={accent}
                 selected={ev.id === selectedId}
+                fresh={ev.id === highlightId}
                 eager={Math.abs(i - selIndex) <= 2}
                 onTap={() => setDetail(ev)}
               />

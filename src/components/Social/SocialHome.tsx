@@ -281,3 +281,24 @@ export function PlaceCarousel({ places, status, now, selected, run, animateReord
     </>
   );
 }
+
+/** Loading state for home: ring and card shapes with a soft shimmer. */
+export function HomeSkeleton({ top }: { top: number }) {
+  return (
+    <div aria-busy="true" aria-label="Loading events">
+      <div style={{ position: 'absolute', zIndex: 6, top, left: 0, right: 0, height: RINGS_H, display: 'flex', gap: 8, padding: '8px 12px 0', boxSizing: 'border-box' }}>
+        {[0, 1, 2].map(i => (
+          <span key={i} style={{ width: RING + 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <span className="social-skeleton" style={{ width: RING, height: RING, borderRadius: '50%' }} />
+            <span className="social-skeleton" style={{ width: 44, height: 8, borderRadius: 4 }} />
+          </span>
+        ))}
+      </div>
+      <div style={{ position: 'absolute', zIndex: 6, left: 0, right: 0, bottom: CAROUSEL_BOTTOM, display: 'flex', gap: CARD_GAP, paddingLeft: 16, overflow: 'hidden' }}>
+        {['var(--social-accent-tampa)', 'var(--social-accent-st_petersburg)'].map(c => (
+          <span key={c} className="social-skeleton" style={{ flex: '0 0 85%', height: CARD_H, borderRadius: 16, border: '1px solid var(--social-hairline)', '--shimmer': c } as React.CSSProperties} />
+        ))}
+      </div>
+    </div>
+  );
+}
