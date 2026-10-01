@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useState, type MutableRefObject } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState, type MutableRefObject } from 'react';
+import { createPortal } from 'react-dom';
 import mapboxgl from 'mapbox-gl';
 import { Globe, Share2 } from 'lucide-react';
 import type { CityAggregate } from '../../hooks/useCityAggregates';
@@ -200,8 +200,12 @@ interface MarkerEntry {
   beaconSparkEl?: HTMLDivElement;
   /** Mount point for the React-rendered LiveVenueBubble overlay. */
   reactMount: HTMLDivElement;
-  /** React root that owns the LiveVenueBubble inside reactMount. */
-  reactRoot: Root;
+  /** Marker added but not yet revealed — held hidden until its bubble
+   *  has committed so the dot and its number appear in the same frame. */
+  pendingReveal: boolean;
+  /** Opacity currently set by the Venny highlight dim (so the reset only
+   *  undoes its own change, never the entrance animation's). */
+  highlightDimmed?: boolean;
   /** True when the prediction-engine bubble has taken over the visual. */
   hasLiveOverlay: boolean;
   currentStage: number;
@@ -418,6 +422,10 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const nightPhaseRef = useRef(getNightPhase());
   const entrancePlayedRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  // State mirrors for render-time reads (bubble portals): the map instance
+  // and each non-featured marker's bubble mount element.
+  const [mapForRender, setMapForRender] = useState<mapboxgl.Map | null>(null);
+  const [bubbleMounts, setBubbleMounts] = useState<Map<string, HTMLDivElement>>(() => new Map());
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
@@ -1179,6 +1187,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       // Hide basemap POI/place text once the style is loaded.
       hideBasemapPoiLabels();
 
+      setMapForRender(map);
       setMapLoaded(true);
     });
 
@@ -1229,7 +1238,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       cancelAnimationFrame(animFrameRef.current);
       if (cityPulseFrameRef.current) cancelAnimationFrame(cityPulseFrameRef.current);
       markersRef.current.forEach(entry => {
-        try { entry.reactRoot.unmount(); } catch { /* noop */ }
         entry.marker.remove();
       });
       markersRef.current.clear();
@@ -1282,18 +1290,14 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const syncMarkers = useCallback(() => {
     if (!mapRef.current || !mapLoaded) return;
     const currentIds = new Set(venues.map(v => v.id));
+    let mountsChanged = false;
 
     markersRef.current.forEach((entry, id) => {
       if (!currentIds.has(id)) {
-        // Tear down the React root before removing the marker so the
-        // attached LiveVenueBubble unmounts cleanly.
-        try {
-          entry.reactRoot.unmount();
-        } catch {
-          // unmount can throw during fast Strict-Mode tear-downs — safe to ignore
-        }
+        // The LiveVenueBubble portal unmounts when bubbleMounts drops it.
         entry.marker.remove();
         markersRef.current.delete(id);
+        mountsChanged = true;
       }
     });
 
@@ -1418,7 +1422,9 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       reactMount.style.display = 'none';
       reactMount.style.zIndex = '3';
       el.appendChild(reactMount);
-      const reactRoot = createRoot(reactMount);
+      // Hidden until the bubble portal has committed (see bubble sync).
+      el.style.visibility = 'hidden';
+      mountsChanged = true;
 
       // Initialize featured state
       const isFeatured = !!venue.featured;
@@ -1506,10 +1512,25 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       markersRef.current.set(venue.id, {
         marker, el, bubbleEl, glowEl, particlesEl, ringEl, ring2El, countEl, labelEl, featuredBadgeEl, featuredLabelEl, liveEl, coverEl, priceTagEl,
         beaconShaftEl, beaconHaloEl, beaconSparkEl,
-        reactMount, reactRoot, hasLiveOverlay: false,
+        reactMount, pendingReveal: true, hasLiveOverlay: false,
         currentStage: 0, currentCount: 0, isFeatured, isFraternity: venue.category === 'fraternity', hasEvent: false,
       });
     });
+
+    if (mountsChanged) {
+      const mounts = new Map<string, HTMLDivElement>();
+      markersRef.current.forEach((entry, id) => {
+        if (!entry.isFeatured && !entry.isFraternity) mounts.set(id, entry.reactMount);
+      });
+      setBubbleMounts(mounts);
+      // Featured / fraternity markers have no bubble — nothing to wait for.
+      markersRef.current.forEach(entry => {
+        if (entry.pendingReveal && (entry.isFeatured || entry.isFraternity)) {
+          entry.el.style.visibility = '';
+          entry.pendingReveal = false;
+        }
+      });
+    }
   }, [venues, mapLoaded]);
 
   useEffect(() => { syncMarkers(); }, [syncMarkers]);
@@ -1547,19 +1568,25 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   }, [mapLoaded]);
 
   // ── Prediction-engine bubble sync ─────────────────────────────
-  // For every marker, render LiveVenueBubble inside its React mount
-  // when the venue has a usable (confidence ≥ 10, state ≠ Unknown)
-  // estimate. Neutralise the legacy bubble visuals so the overlay is
-  // the only thing the user sees. Featured + fraternity venues keep
-  // their bespoke legacy styling — they aren't part of the prediction
-  // pipeline yet (frats are excluded server-side; featured is a
-  // different visual contract that supersedes the engine).
-  useEffect(() => {
-    if (!mapLoaded) return;
+  // For every marker, render LiveVenueBubble inside its mount when the
+  // venue has a usable (confidence ≥ 10, state ≠ Unknown) estimate.
+  // Neutralise the legacy bubble visuals so the overlay is the only
+  // thing the user sees. Featured + fraternity venues keep their bespoke
+  // legacy styling — they aren't part of the prediction pipeline yet
+  // (frats are excluded server-side; featured is a different visual
+  // contract that supersedes the engine).
+  //
+  // All bubbles render as portals from this one tree, so they commit
+  // together; the legacy takeover and the marker reveal run in a layout
+  // effect after that commit — dots and numbers land in the same frame.
+  // (Previously each marker had its own React root: ~80 separate commits
+  // trickling in after the dots, each briefly showing an empty pill.)
+  const bubbleSpecs = useMemo(() => {
+    if (!mapLoaded) return [];
 
     // Pre-compute bloom-stagger center once per render — bubbles closer
     // to the screen center bloom first, outliers last (max 600 ms tail).
-    const map = mapRef.current;
+    const map = mapForRender;
     const containerRect = (introActive && introPhase === 'bubble-bloom' && map)
       ? map.getContainer().getBoundingClientRect()
       : null;
@@ -1567,10 +1594,10 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     const highlightSet = new Set(highlightedVenueIds ?? []);
     const hasHighlight = highlightSet.size > 0;
 
+    const specs: { id: string; mount: HTMLDivElement; usable: boolean; hasHighlight: boolean; isHighlighted: boolean; node: React.ReactNode }[] = [];
     venues.forEach(v => {
-      const entry = markersRef.current.get(v.id);
-      if (!entry) return;
-      if (entry.isFeatured || entry.isFraternity) return;
+      const mount = bubbleMounts.get(v.id);
+      if (!mount) return;
 
       const est = getEstimate(v as VenueWithEstimate);
       const usable = hasUsableEstimate(est);
@@ -1591,6 +1618,37 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
       const isHighlighted = hasHighlight && highlightSet.has(v.id);
 
+      specs.push({
+        id: v.id,
+        mount,
+        usable,
+        hasHighlight,
+        isHighlighted,
+        node: createPortal(
+          <LiveVenueBubble
+            venueId={v.id}
+            venueName={v.name}
+            coverCharge={v.cover_charge}
+            estimate={usable ? est : null}
+            updating={!!(v as VenueWithEstimate).cached}
+            introBloomDelay={bloomDelay}
+            highlighted={isHighlighted}
+            vibeHueBaseline={v.vibe_hue_baseline ?? null}
+          />,
+          mount,
+          v.id,
+        ),
+      });
+    });
+    return specs;
+  }, [venues, mapLoaded, mapForRender, bubbleMounts, introActive, introPhase, highlightedVenueIds]);
+
+  useLayoutEffect(() => {
+    for (const spec of bubbleSpecs) {
+      const entry = markersRef.current.get(spec.id);
+      if (!entry) continue;
+      const { usable, hasHighlight, isHighlighted } = spec;
+
       // Venny fade dim — soften non-highlighted markers while a search
       // is active. Highlighted markers stay at full opacity and pop via
       // the lvb-highlighted CSS class. Reset opacity when highlight is
@@ -1599,23 +1657,12 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.el.style.opacity = isHighlighted ? '1' : '0.45';
         entry.el.style.transition = 'opacity 320ms ease-out';
         entry.el.style.zIndex = isHighlighted ? '10' : '';
-      } else if (entry.el.style.opacity) {
+        entry.highlightDimmed = true;
+      } else if (entry.highlightDimmed) {
         entry.el.style.opacity = '';
         entry.el.style.zIndex = '';
+        entry.highlightDimmed = false;
       }
-
-      entry.reactRoot.render(
-        <LiveVenueBubble
-          venueId={v.id}
-          venueName={v.name}
-          coverCharge={v.cover_charge}
-          estimate={usable ? est : null}
-          updating={!!(v as VenueWithEstimate).cached}
-          introBloomDelay={bloomDelay}
-          highlighted={isHighlighted}
-          vibeHueBaseline={v.vibe_hue_baseline ?? null}
-        />
-      );
 
       if (usable && !entry.hasLiveOverlay) {
         // Take over: hide legacy text, transparentise the legacy pill,
@@ -1643,8 +1690,14 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.hasLiveOverlay = false;
         entry.currentStage = -1; // force the legacy visuals sync to repaint
       }
-    });
-  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds]);
+
+      if (entry.pendingReveal) {
+        entry.el.style.visibility = '';
+        entry.pendingReveal = false;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mapMode is read for the label offset only, as before
+  }, [bubbleSpecs]);
 
   // ── Filter pill visibility — show/hide markers via CSS, never delete them ──
   useEffect(() => {
@@ -2934,6 +2987,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   return (
     <div className="w-full h-full" style={{ position: 'relative' }}>
       <div ref={mapContainer} className="w-full h-full" />
+      {bubbleSpecs.map(spec => spec.node)}
 
       {/* Walking navigation overlays */}
       {route && routeDuration != null && routeDistance != null && (

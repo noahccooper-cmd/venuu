@@ -42,7 +42,7 @@ const REST_LATENCY_MS = Number(args.latency ?? 300);
 const CPU_THROTTLE = Number(args.cpu ?? 4);
 const FUSION_RUNTIME_MS = 3000;
 // Night by default (22:30 EDT): inside the fusion window.
-const FIXED_TIME = args.at ?? '2026-10-02T02:30:00Z';
+const FIXED_TIME = args.at ?? new Date().toISOString();
 const TIMEOUT_MS = Number(args.timeout ?? 75_000);
 const SUPABASE = 'https://tyouvhtgzwcbqpylcssk.supabase.co';
 const MAPBOX_CSS = fs.readFileSync(new URL('../../node_modules/mapbox-gl/dist/mapbox-gl.css', import.meta.url), 'utf8');
@@ -128,7 +128,8 @@ const INIT = ({ expected, fixedTime, storage }) => {
       const hasNum = !!m.querySelector('.lvb-count');
       if (hasNum) numsInDom++;
       if (m.textContent.includes('Live from')) liveFrom++;
-      if (parseFloat(getComputedStyle(m).opacity) > 0.5) {
+      const cs = getComputedStyle(m);
+      if (parseFloat(cs.opacity) > 0.5 && cs.visibility !== 'hidden' && m.isConnected) {
         dotsVisible++;
         if (hasNum) numsVisible++;
       }
@@ -155,7 +156,11 @@ async function runOnce(browser, ctx, url, fixture, opts) {
   const blockedWrites = [];
   const sentTicks = [];
 
-  await page.clock.setFixedTime(new Date(opts.fixedTime));
+  // Playwright's clock is context-wide: once installed it also drives
+  // performance.now()/rAF timing in every later page of the context, which
+  // skewed reused-context (warm) measurements by the previous page's
+  // lifetime. Only fake the clock when a specific time is requested.
+  if (args.at) await page.clock.setFixedTime(new Date(opts.fixedTime));
 
   const cdp = await ctx.newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
@@ -263,7 +268,7 @@ async function runOnce(browser, ctx, url, fixture, opts) {
     perf = await page.evaluate(() => window.__perf).catch(() => null);
     if (args.probe) {
       const p = await page.evaluate(() => ({ m: document.querySelectorAll('.venue-marker').length, vis: document.visibilityState, raf: window.__perf?.rafCount ?? 0, now: Math.round(performance.now()) })).catch(() => null);
-      if (p) probe.push(p);
+      if (p) probe.push({ ...p, wall: Date.now() - navStart });
     }
     if (perf?.marks?.numbersVisible !== undefined && Date.now() - navStart > (opts.minRunMs ?? 0)) break;
     await sleep(200);
@@ -278,7 +283,7 @@ async function runOnce(browser, ctx, url, fixture, opts) {
     }).catch(e => String(e));
     console.error(`[probe ${opts.tag ?? ''}] timing ${JSON.stringify(nt)}`);
     const firstM = probe.find(p => p.m > 0);
-    console.error(`[probe ${opts.tag ?? ''}] first markers (node poll) at ${firstM?.now}ms; rAF samples: ${probe.filter((_, i) => i % 10 === 0).map(p => `${p.now}:${p.raf}:${p.vis}`).join(' ')}`);
+    console.error(`[probe ${opts.tag ?? ''}] first markers (node poll) at perf.now=${firstM?.now}ms wall=${firstM?.wall}ms; rAF samples: ${probe.filter((_, i) => i % 10 === 0).map(p => `${p.now}:${p.raf}:${p.vis}`).join(' ')}`);
   }
   const result = { ...perf, ticks: sentTicks, blockedWrites, consoleCounts, page };
   return result;
@@ -309,10 +314,23 @@ async function main() {
         recordVideo: args.video ? { dir: args.video, size: viewport } : undefined,
       });
       const cold = await runOnce(browser, ctx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0, tag: 'cold' });
+      const snapshot = await cold.page.evaluate(() => ({ ...localStorage }));
       await cold.page.close();
-      const warm = await runOnce(browser, ctx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0, tag: 'warm' });
+      // --warm-mode fresh: new browser context with the cold run's
+      // localStorage copied in (separates app state from browser state).
+      let warmCtx = ctx;
+      if (args['warm-mode'] === 'fresh') {
+        await ctx.close();
+        warmCtx = await browser.newContext({ viewport, recordVideo: args.video ? { dir: args.video, size: viewport } : undefined });
+        await warmCtx.addInitScript(s => {
+          if (sessionStorage.getItem('__seeded')) return;
+          for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v);
+          sessionStorage.setItem('__seeded', '1');
+        }, snapshot);
+      }
+      const warm = await runOnce(browser, warmCtx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0, tag: 'warm' });
       await warm.page.close();
-      await ctx.close();
+      await warmCtx.close();
       for (const [kind, r] of [['cold', cold], ['warm', warm]]) {
         rows.push({ label: LABEL, run: i + 1, kind, ...r.marks, ticks: r.ticks.map(t => t.atMs), blockedWrites: r.blockedWrites.length, BEACON: r.consoleCounts.BEACON, IGNITE: r.consoleCounts.IGNITE });
       }
