@@ -41,6 +41,8 @@ const LABEL = args.label ?? path.basename(DIST ?? 'dev');
 const REST_LATENCY_MS = Number(args.latency ?? 300);
 const CPU_THROTTLE = Number(args.cpu ?? 4);
 const FUSION_RUNTIME_MS = 3000;
+// Space a tick's realtime frames out (ms per row) like network delivery; 0 = one burst.
+const TICK_SPREAD_MS = Number(args['tick-spread-ms'] ?? 0);
 // Night by default (22:30 EDT): inside the fusion window.
 const FIXED_TIME = args.at ?? new Date().toISOString();
 const TIMEOUT_MS = Number(args.timeout ?? 75_000);
@@ -233,13 +235,14 @@ async function runOnce(browser, ctx, url, fixture, opts) {
       for (const v of fixture) {
         if (!v.headcount_estimates) continue;
         const est = { ...v.headcount_estimates, venue_id: v.id, estimate: v.headcount_estimates.estimate + (n % 4 === 0 ? tickNo * 3 : 0) };
+        const send = (fn) => (TICK_SPREAD_MS > 0 ? setTimeout(fn, n * TICK_SPREAD_MS) : fn());
         for (const s of subs.filter(s => s.table === 'headcount_estimates')) {
-          try {
+          send(() => { try {
             s.ws.send(JSON.stringify([null, null, s.topic, 'postgres_changes', { ids: [s.id], data: {
               type: 'UPDATE', schema: 'public', table: 'headcount_estimates', commit_timestamp: opts.fixedTime,
               columns: [], record: est, old_record: { venue_id: v.id }, errors: null,
             } }]));
-          } catch { /* closed */ }
+          } catch { /* closed */ } });
         }
         n++;
       }
@@ -316,6 +319,7 @@ async function main() {
       const cold = await runOnce(browser, ctx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0, tag: 'cold' });
       const snapshot = await cold.page.evaluate(() => ({ ...localStorage }));
       await cold.page.close();
+      if (args.video) await cold.page.video()?.saveAs(path.join(args.video, `${LABEL}-run${i + 1}-cold.webm`));
       // --warm-mode fresh: new browser context with the cold run's
       // localStorage copied in (separates app state from browser state).
       let warmCtx = ctx;
@@ -330,6 +334,7 @@ async function main() {
       }
       const warm = await runOnce(browser, warmCtx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0, tag: 'warm' });
       await warm.page.close();
+      if (args.video) await warm.page.video()?.saveAs(path.join(args.video, `${LABEL}-run${i + 1}-warm.webm`));
       await warmCtx.close();
       for (const [kind, r] of [['cold', cold], ['warm', warm]]) {
         rows.push({ label: LABEL, run: i + 1, kind, ...r.marks, ticks: r.ticks.map(t => t.atMs), blockedWrites: r.blockedWrites.length, BEACON: r.consoleCounts.BEACON, IGNITE: r.consoleCounts.IGNITE });
