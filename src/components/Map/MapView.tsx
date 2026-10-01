@@ -426,6 +426,16 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   // and each non-featured marker's bubble mount element.
   const [mapForRender, setMapForRender] = useState<mapboxgl.Map | null>(null);
   const [bubbleMounts, setBubbleMounts] = useState<Map<string, HTMLDivElement>>(() => new Map());
+
+  // Events-mode beacons only read venue structure (id, hub/tenant, name,
+  // featured label) — never estimates. A stable reference that changes
+  // only with that structure keeps the [BEACON] effect and the beacon
+  // label pass from re-running on every realtime estimate update.
+  const beaconVenuesKey = venues
+    .map(v => `${v.id}|${v.tenant_of ?? ''}|${v.is_hub ? 1 : 0}|${v.name}|${v.featured ? 1 : 0}|${v.featured_label ?? ''}`)
+    .join('\n');
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the structural fields above
+  const beaconVenues = useMemo(() => venues, [beaconVenuesKey]);
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
@@ -2420,14 +2430,14 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     const litCheck = (id: string) =>
       !litEventVenueIds || litEventVenueIds.size === 0 || litEventVenueIds.has(id);
     const hubsEclipsedBySpecial = new Set<string>();
-    for (const v of venues) {
+    for (const v of beaconVenues) {
       if (v.tenant_of && specialVenueIds.has(v.id) && beaconInfo.has(v.id) && litCheck(v.id)) {
         hubsEclipsedBySpecial.add(v.tenant_of);
       }
     }
 
     markersRef.current.forEach((entry, venueId) => {
-      const venue = venues.find(v => v.id === venueId);
+      const venue = beaconVenues.find(v => v.id === venueId);
       const isTenant = !!venue?.tenant_of;
       const beacon = beaconInfo.get(venueId);
       const isSpecial = specialVenueIds.has(venueId);
@@ -2643,7 +2653,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     if (map.getLayer('events-mode-tint') && !ignitingRef.current) {
       map.setPaintProperty('events-mode-tint', 'background-opacity', dim ? 0.62 : 0);
     }
-  }, [mapMode, mapLoaded, venues, events, litEventVenueIds, selectedRangeStart, selectedRangeEnd, igniteSeq]);
+  }, [mapMode, mapLoaded, beaconVenues, events, litEventVenueIds, selectedRangeStart, selectedRangeEnd, igniteSeq]);
 
   // ── Beacon labels in events mode (✦ NAME · N EVENTS) ────────
   useEffect(() => {
@@ -2676,7 +2686,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     }
 
     markersRef.current.forEach((entry, venueId) => {
-      const venue = venues.find(v => v.id === venueId);
+      const venue = beaconVenues.find(v => v.id === venueId);
       if (!venue) return;
       if (!entry.labelEl) return;
 
@@ -2739,7 +2749,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
             : (venue.featured && venue.featured_label ? 'block' : 'none');
       }
     });
-  }, [mapMode, mapLoaded, venues, events, selectedRangeStart, selectedRangeEnd, eventWindowLabel]);
+  }, [mapMode, mapLoaded, beaconVenues, events, selectedRangeStart, selectedRangeEnd, eventWindowLabel]);
 
   // ── Gold pin glow for the bonded event ──────────────────────
   // When a lineup card or pin is tapped, the matching pin's core dot
