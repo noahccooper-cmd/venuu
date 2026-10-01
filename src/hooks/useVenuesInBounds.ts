@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, envReady } from '../lib/supabase';
 import type { Venue } from '../lib/types';
+import { normalizeEstimates, sameEstimate, toEstimate } from '../lib/estimates';
+import {
+  fetchVenuesWithEstimates,
+  readVenuesCache,
+  releasePrefetch,
+  takePrefetch,
+  writeVenuesCache,
+} from '../lib/venuesLoader';
+import { debugLog } from '../lib/debug';
 
 export interface MapBounds {
   swLat: number;
@@ -31,16 +40,26 @@ export interface HeadcountEstimate {
 /** Venue plus the latest fused estimate (LEFT JOIN, may be empty array). */
 export type VenueWithEstimate = Venue & {
   headcount_estimates: HeadcountEstimate[];
+  /** True while this row came from the on-device cache and the network
+   *  refresh hasn't landed yet — drives the subtle "updating" state. */
+  cached?: boolean;
 };
 
-const VENUE_COLUMNS = 'id, created_at, name, slug, city, category, address, lat, lng, image_url, deals, hours, instagram, vibe_tagline, has_live_cam, live_cam_url, cam_coming_soon, is_active, sort_order, capacity, is_clicker_live, staff_code, phone, website, description, rating, review_count, tonight_special, special_updated_at, cover_charge, featured, featured_label, loyalty_active, nfc_tag_id, nfc_required, vibe_hue_baseline, is_hub, hub_subtitle, tenant_of';
-const ESTIMATE_COLUMNS = 'estimate, estimate_low, estimate_high, confidence_pct, capacity_pct, state_label, trend, trend_rate, computed_at, source_breakdown, delta_pct, expected_pct';
-const LAUNCH_MARKETS = ['knoxville', 'tampa', 'st_petersburg'] as const;
+const CACHE_WRITE_THROTTLE_MS = 10_000;
 
 /**
  * Global venue loader for launch markets — fetches every active
  * venue in knoxville/tampa/st_petersburg with the latest fused
  * estimate LEFT JOINed in, regardless of the current map bounds.
+ *
+ * Load order (stale-while-revalidate):
+ *   1. Initial state comes from the on-device cache, so the map paints
+ *      dots AND numbers on the first frame of a warm open.
+ *   2. The network query (already started in main.tsx before React
+ *      mounted) replaces it in one state update.
+ *   3. Realtime estimate/venue changes are buffered and applied once
+ *      per animation frame — the fusion cron upserts ~80 rows per tick,
+ *      which used to mean ~80 full-map re-renders.
  *
  * The `bounds` parameter is intentionally accepted but unused. The
  * city dropdown only moves the map camera; the venue data set never
@@ -52,56 +71,144 @@ const LAUNCH_MARKETS = ['knoxville', 'tampa', 'st_petersburg'] as const;
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function useVenuesInBounds(_bounds: MapBounds | null) {
-  const [venues, setVenues] = useState<VenueWithEstimate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialCache] = useState(() => readVenuesCache());
+  const [venues, setVenues] = useState<VenueWithEstimate[]>(
+    () => initialCache?.map(v => ({ ...v, cached: true })) ?? [],
+  );
+  const [loading, setLoading] = useState(!initialCache);
   const [error, setError] = useState(false);
   const firstFetchLoggedRef = useRef(false);
   const aliveRef = useRef(true);
+  const venuesRef = useRef(venues);
+  useEffect(() => { venuesRef.current = venues; }, [venues]);
 
-  const fetchVenues = useCallback(async () => {
-    if (!envReady) return;
-    setError(false);
+  // ── Cache writes (throttled; realtime ticks arrive every minute) ─
+  const cacheTimerRef = useRef<number | null>(null);
+  const lastCacheWriteRef = useRef(0);
+  const scheduleCacheWrite = useCallback(() => {
+    if (cacheTimerRef.current !== null) return;
+    const wait = Math.max(0, CACHE_WRITE_THROTTLE_MS - (Date.now() - lastCacheWriteRef.current));
+    cacheTimerRef.current = window.setTimeout(() => {
+      cacheTimerRef.current = null;
+      lastCacheWriteRef.current = Date.now();
+      // Never persist rows still flagged as cached (no fresh data yet).
+      const fresh = venuesRef.current.filter(v => !v.cached);
+      if (fresh.length > 0) writeVenuesCache(fresh);
+    }, wait);
+  }, []);
 
-    const { data, error: err } = await supabase
-      .from('venues')
-      .select(`${VENUE_COLUMNS}, headcount_estimates(${ESTIMATE_COLUMNS})`)
-      .in('city', LAUNCH_MARKETS as unknown as string[])
-      .or('is_active.eq.true,is_active.is.null')
-      .order('sort_order');
-
-    if (!aliveRef.current) return;
-
-    if (err) {
-      console.error('[venuu] useVenuesInBounds fetch error:', err);
-      setError(true);
-      setLoading(false);
-      return;
-    }
-
-    const rows = (data as VenueWithEstimate[]) ?? [];
-    setVenues(rows);
-    setLoading(false);
+  const applyFetched = useCallback((rows: VenueWithEstimate[]) => {
+    // Keep object identity for venues whose data didn't change so memoised
+    // bubbles don't re-render (and nothing visibly moves).
+    setVenues(prev => {
+      const prevById = new Map(prev.map(v => [v.id, v]));
+      return rows.map(row => {
+        const old = prevById.get(row.id);
+        if (!old) return row;
+        const est = sameEstimate(old.headcount_estimates[0], row.headcount_estimates[0])
+          ? old.headcount_estimates
+          : row.headcount_estimates;
+        return { ...row, headcount_estimates: est };
+      });
+    });
+    lastCacheWriteRef.current = Date.now();
+    writeVenuesCache(rows);
 
     if (!firstFetchLoggedRef.current) {
       firstFetchLoggedRef.current = true;
       const distinctCities = new Set(rows.map(v => v.city)).size;
-      const withEst = rows.filter(v => (v.headcount_estimates?.length ?? 0) > 0).length;
-      console.log(
+      const withEst = rows.filter(v => v.headcount_estimates.length > 0).length;
+      debugLog(
         '[venuu] loaded ' + rows.length + ' venues across ' + distinctCities +
         ' cities (global mode); ' + withEst + ' with live estimates'
       );
     }
   }, []);
 
+  const fetchVenues = useCallback(async (opts?: { usePrefetch?: boolean }) => {
+    if (!envReady) return;
+    setError(false);
+
+    const pending = opts?.usePrefetch ? takePrefetch() : null;
+    const { data, error: err } = await (pending ?? fetchVenuesWithEstimates());
+
+    if (!aliveRef.current) return;
+    if (pending) releasePrefetch();
+
+    if (err || !data) {
+      console.error('[venuu] useVenuesInBounds fetch error:', err);
+      // With cached venues on screen, keep showing them rather than the
+      // connection-error screen.
+      if (venuesRef.current.length === 0) setError(true);
+      setLoading(false);
+      return;
+    }
+
+    applyFetched(data);
+    setLoading(false);
+  }, [applyFetched]);
+
   // ── Initial fetch (one-shot for the lifetime of the hook) ─────
   useEffect(() => {
     aliveRef.current = true;
-    setLoading(true);
-    fetchVenues();
+    fetchVenues({ usePrefetch: true });
     return () => {
       aliveRef.current = false;
     };
   }, [fetchVenues]);
+
+  // ── Refresh when the app returns to the foreground ────────────
+  // Realtime can drop while backgrounded on iOS; one query catches up.
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden) fetchVenues(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchVenues]);
+
+  // ── Realtime batching: buffer, then apply once per frame ──────
+  const pendingEstimatesRef = useRef(new Map<string, HeadcountEstimate[]>());
+  const pendingVenueUpdatesRef = useRef(new Map<string, Partial<Venue>>());
+  const flushRafRef = useRef<number | null>(null);
+
+  const flushPending = useCallback(() => {
+    flushRafRef.current = null;
+    const estimates = pendingEstimatesRef.current;
+    const updates = pendingVenueUpdatesRef.current;
+    if (estimates.size === 0 && updates.size === 0) return;
+    pendingEstimatesRef.current = new Map();
+    pendingVenueUpdatesRef.current = new Map();
+
+    setVenues(prev => {
+      let changed = false;
+      const next = prev.map(v => {
+        const upd = updates.get(v.id);
+        const est = estimates.get(v.id);
+        if (!upd && !est) return v;
+        let row = v;
+        if (upd) {
+          // Preserve the nested headcount_estimates array when merging
+          row = { ...row, ...upd, headcount_estimates: row.headcount_estimates };
+        }
+        if (est && !sameEstimate(row.headcount_estimates[0], est[0])) {
+          row = { ...row, headcount_estimates: est };
+        }
+        if (row !== v) changed = true;
+        return row;
+      });
+      return changed ? next : prev;
+    });
+    scheduleCacheWrite();
+  }, [scheduleCacheWrite]);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushRafRef.current !== null) return;
+    flushRafRef.current = requestAnimationFrame(flushPending);
+  }, [flushPending]);
+
+  useEffect(() => () => {
+    if (flushRafRef.current !== null) cancelAnimationFrame(flushRafRef.current);
+    if (cacheTimerRef.current !== null) clearTimeout(cacheTimerRef.current);
+  }, []);
 
   // ── venues table updates (cover_charge, tonight_special, etc) ─
   useEffect(() => {
@@ -113,19 +220,14 @@ export function useVenuesInBounds(_bounds: MapBounds | null) {
         { event: 'UPDATE', schema: 'public', table: 'venues' },
         (payload) => {
           const updated = payload.new as Venue;
-          setVenues(prev => {
-            const idx = prev.findIndex(v => v.id === updated.id);
-            if (idx === -1) return prev;
-            const next = [...prev];
-            // Preserve the nested headcount_estimates array when merging
-            next[idx] = { ...next[idx], ...updated, headcount_estimates: next[idx].headcount_estimates };
-            return next;
-          });
+          const prev = pendingVenueUpdatesRef.current.get(updated.id);
+          pendingVenueUpdatesRef.current.set(updated.id, { ...prev, ...updated });
+          scheduleFlush();
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [scheduleFlush]);
 
   // ── headcount_estimates updates — fusion fn writes once per minute ─
   useEffect(() => {
@@ -137,50 +239,19 @@ export function useVenuesInBounds(_bounds: MapBounds | null) {
         { event: '*', schema: 'public', table: 'headcount_estimates' },
         (payload) => {
           const row = (payload.new ?? payload.old) as { venue_id?: string } | null;
-          const venueId = row?.venue_id;
+          const venueId = row?.venue_id
+            ?? (payload.old as { venue_id?: string } | null)?.venue_id;
           if (!venueId) return;
-
-          setVenues(prev => {
-            const idx = prev.findIndex(v => v.id === venueId);
-            if (idx === -1) return prev;
-            const next = [...prev];
-            if (payload.eventType === 'DELETE') {
-              next[idx] = { ...next[idx], headcount_estimates: [] };
-            } else {
-              const newRow = payload.new as Record<string, unknown>;
-              const estimate: HeadcountEstimate = {
-                estimate: Number(newRow.estimate ?? 0),
-                estimate_low: Number(newRow.estimate_low ?? 0),
-                estimate_high: Number(newRow.estimate_high ?? 0),
-                confidence_pct: Number(newRow.confidence_pct ?? 0),
-                capacity_pct: newRow.capacity_pct === null || newRow.capacity_pct === undefined
-                  ? null
-                  : Number(newRow.capacity_pct),
-                state_label: String(newRow.state_label ?? 'Unknown'),
-                trend: newRow.trend === null || newRow.trend === undefined
-                  ? null
-                  : String(newRow.trend),
-                trend_rate: newRow.trend_rate === null || newRow.trend_rate === undefined
-                  ? null
-                  : Number(newRow.trend_rate),
-                computed_at: String(newRow.computed_at ?? new Date().toISOString()),
-                source_breakdown: (newRow.source_breakdown as Record<string, unknown> | null) ?? null,
-                delta_pct: newRow.delta_pct === null || newRow.delta_pct === undefined
-                  ? null
-                  : Number(newRow.delta_pct),
-                expected_pct: newRow.expected_pct === null || newRow.expected_pct === undefined
-                  ? null
-                  : Number(newRow.expected_pct),
-              };
-              next[idx] = { ...next[idx], headcount_estimates: [estimate] };
-            }
-            return next;
-          });
+          pendingEstimatesRef.current.set(
+            venueId,
+            payload.eventType === 'DELETE' ? [] : normalizeEstimates(toEstimate(payload.new)),
+          );
+          scheduleFlush();
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [scheduleFlush]);
 
   // ── Direct cover update from Portal — instant local merge ─────
   useEffect(() => {
@@ -194,10 +265,12 @@ export function useVenuesInBounds(_bounds: MapBounds | null) {
     return () => window.removeEventListener('venues-cover-update', handler);
   }, []);
 
+  const refetch = useCallback(() => { fetchVenues(); }, [fetchVenues]);
+
   return {
     venues,
     loading,
     error,
-    refetch: fetchVenues,
+    refetch,
   };
 }

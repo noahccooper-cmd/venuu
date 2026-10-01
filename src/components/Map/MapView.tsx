@@ -17,6 +17,8 @@ import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
 import { getNightPhase, fetchRoutesForParticles, spawnParticle, tickParticle, particlesToGeoJSON, type Particle, type RouteCache } from '../../lib/mapEffects';
 import type { Venue, VenueEvent } from '../../lib/types';
 import type { HeadcountEstimate } from '../../hooks/useVenuesInBounds';
+import { getEstimate, getLiveWindow, isEstimateLive, type LiveWindow } from '../../lib/estimates';
+import { debugLog } from '../../lib/debug';
 import { LiveVenueBubble } from './LiveVenueBubble';
 import { LiveEventsFeed } from './LiveEventsFeed';
 import { HeatFieldLayer } from './HeatFieldLayer';
@@ -45,7 +47,20 @@ function formatPinTime(iso: string): string {
 }
 
 /** Venue augmented with the latest fused estimate from the prediction engine. */
-type VenueWithEstimate = Venue & { headcount_estimates?: HeadcountEstimate[] };
+type VenueWithEstimate = Venue & { headcount_estimates?: HeadcountEstimate[]; cached?: boolean };
+
+/** Current live-window state; re-renders only at the 21:00 / 07:00 UTC boundaries. */
+function useLiveWindow(): LiveWindow {
+  const [win, setWin] = useState(() => getLiveWindow());
+  useEffect(() => {
+    const t = window.setTimeout(
+      () => setWin(getLiveWindow()),
+      Math.max(1000, win.nextBoundaryMs - Date.now() + 1000),
+    );
+    return () => clearTimeout(t);
+  }, [win]);
+  return win;
+}
 
 /** Has this estimate enough information to take over the bubble visual? */
 function hasUsableEstimate(est: HeadcountEstimate | undefined): est is HeadcountEstimate {
@@ -416,6 +431,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const nightPhaseRef = useRef(getNightPhase());
   const entrancePlayedRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const liveWindow = useLiveWindow();
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
@@ -1570,8 +1586,9 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       if (!entry) return;
       if (entry.isFeatured || entry.isFraternity) return;
 
-      const est = (v as VenueWithEstimate).headcount_estimates?.[0];
+      const est = getEstimate(v as VenueWithEstimate);
       const usable = hasUsableEstimate(est);
+      const live = isEstimateLive(est, liveWindow);
 
       let bloomDelay: number | undefined;
       if (containerRect && map) {
@@ -1608,6 +1625,8 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           venueName={v.name}
           coverCharge={v.cover_charge}
           estimate={usable ? est : null}
+          live={live}
+          updating={!!(v as VenueWithEstimate).cached}
           introBloomDelay={bloomDelay}
           highlighted={isHighlighted}
           vibeHueBaseline={v.vibe_hue_baseline ?? null}
@@ -1641,7 +1660,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.currentStage = -1; // force the legacy visuals sync to repaint
       }
     });
-  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds]);
+  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds, liveWindow]);
 
   // ── Filter pill visibility — show/hide markers via CSS, never delete them ──
   useEffect(() => {
@@ -1700,18 +1719,16 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         essential: true,
       });
 
-      // Stagger venue marker reveals after fly starts settling
+      // Reveal every venue marker together as the fly settles — dots and
+      // their numbers land in one frame. (Was a 50ms-per-marker stagger:
+      // ~92 venues popped in one by one over ~4.6s.)
       setTimeout(() => {
-        let i = 0;
         markersRef.current.forEach(entry => {
-          setTimeout(() => {
-            entry.el.style.transition = 'opacity 300ms ease-out, transform 300ms ease-out';
-            entry.el.style.opacity = '1';
-            entry.el.style.transform = 'scale(1)';
-          }, i * 50);
-          i++;
+          entry.el.style.transition = 'opacity 300ms ease-out, transform 300ms ease-out';
+          entry.el.style.opacity = '1';
+          entry.el.style.transform = 'scale(1)';
         });
-      }, 1400); // start revealing during the last part of the fly
+      }, 1400); // reveal during the last part of the fly
     }, 200);
   }, [mapLoaded, venues.length, city]);
 
@@ -2202,10 +2219,10 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   // Then per-beacon timers reveal them nearest-center first, each flaring
   // in. The tint deepens in step; a haptic double-tap marks the crossing.
   useLayoutEffect(() => {
-    console.log('[IGNITE] effect ran. prevMapModeRef=', prevMapModeRef.current, 'mapMode=', mapMode, 'mapLoaded=', mapLoaded);
+    debugLog('[IGNITE] effect ran. prevMapModeRef=', prevMapModeRef.current, 'mapMode=', mapMode, 'mapLoaded=', mapLoaded);
     const flippedIn =
       prevMapModeRef.current === 'vibe' && mapMode === 'events' && mapLoaded;
-    console.log('[IGNITE] flippedIn=', flippedIn);
+    debugLog('[IGNITE] flippedIn=', flippedIn);
     prevMapModeRef.current = mapMode;   // always update, even on early return
     if (!flippedIn) return;
 
@@ -2245,7 +2262,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
       } catch { /* projection failed — skip */ }
     });
     ranked.sort((a, b) => a.dist - b.dist);   // nearest-center first
-    console.log('[IGNITE] ranked lit beacons=', ranked.length);
+    debugLog('[IGNITE] ranked lit beacons=', ranked.length);
 
     // c2. SNAP every lit beacon dark RIGHT NOW (pre-paint, transition off) so
     // the first painted frame is a dark sky — no lingering vibe discs, and no
@@ -2268,7 +2285,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     const CADENCE = 160;
     ranked.forEach(({ entry, venueId }, i) => {
       const t = window.setTimeout(() => {
-        console.log('[IGNITE] reveal i=', i, 'at', i * 160, 'ms');
+        debugLog('[IGNITE] reveal i=', i, 'at', i * 160, 'ms');
         igniteSetRef.current.add(venueId);
         const b = entry.bubbleEl;
         if (b) {
@@ -2332,7 +2349,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
     if (!mapLoaded) return;
     const map = mapRef.current;
     if (!map) return;
-    console.log('[BEACON] effect ran. ignitingRef=', ignitingRef.current, 'igniteSet.size=', igniteSetRef.current.size);
+    debugLog('[BEACON] effect ran. ignitingRef=', ignitingRef.current, 'igniteSet.size=', igniteSetRef.current.size);
 
     const dim = mapMode === 'events';
 

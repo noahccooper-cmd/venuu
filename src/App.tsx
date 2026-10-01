@@ -52,6 +52,7 @@ import {
   markLocationPromptDismissed,
 } from './components/Location/LocationPermissionCard';
 import type { Venue, Headcount, VenueEvent } from './lib/types';
+import { debugWarn } from './lib/debug';
 
 /** /u/{16-hex-token} route detection — returns the token if the
  *  current URL matches, else null. Run BEFORE any other state setup
@@ -417,7 +418,7 @@ export default function App() {
         const nearest = nearestMarket(position.coords.latitude, position.coords.longitude);
         switchCity(nearest ?? DEFAULT_CITY);
       } catch (err) {
-        console.warn('[venuu] GPS market detection failed:', err);
+        debugWarn('[venuu] GPS market detection failed:', err);
       }
     })();
   }, [user, switchCity, coldOpen.active]);

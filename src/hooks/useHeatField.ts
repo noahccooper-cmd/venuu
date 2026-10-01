@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeatureCollection, Point } from 'geojson';
 import { supabase, envReady } from '../lib/supabase';
+import { debugLog } from '../lib/debug';
 
 /**
  * Heat-field point properties — mirrors the `heat_points` SQL view
@@ -125,7 +126,7 @@ export function useHeatField(_currentCity: string) {
       firstFetchLoggedRef.current = true;
       const features = fc.features;
       const distinctCities = new Set(features.map(f => f.properties.city)).size;
-      console.log('[heatfield] global heat: ' + features.length + ' points across ' + distinctCities + ' cities');
+      debugLog('[heatfield] global heat: ' + features.length + ' points across ' + distinctCities + ' cities');
     }
   }, []);
 

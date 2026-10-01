@@ -2,6 +2,8 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { HeadcountEstimate } from '../../hooks/useVenuesInBounds';
 import { getCoverLabel } from '../../lib/utils';
+import { DAYTIME_BUBBLE_MODE, getLiveWindow, liveFromLabel } from '../../lib/estimates';
+import { RollingNumber, ROLLING_NUMBER_CSS } from './RollingNumber';
 
 /**
  * LiveVenueBubble — luxury nightlife visual language.
@@ -26,6 +28,12 @@ interface LiveVenueBubbleProps {
   venueId?: string;
   venueName?: string;
   estimate: HeadcountEstimate | null | undefined;
+  /** False outside the fusion window (21:00–06:59 UTC) or before tonight's
+   *  first tick for this venue — the estimate is last night's, not live.
+   *  Rendering then follows DAYTIME_BUBBLE_MODE. Defaults to true. */
+  live?: boolean;
+  /** Numbers came from the on-device cache and a refresh is in flight. */
+  updating?: boolean;
   /** Raw `cover_charge` string from the venue row (e.g. "FREE", "$5"). */
   coverCharge?: string | null;
   isSelected?: boolean;
@@ -98,14 +106,14 @@ function getConfTier(confidence: number): ConfTier {
   return 'none';
 }
 
-function getCountText(estimate: number | null, tier: ConfTier): string | null {
+function getCountGlyph(estimate: number | null, tier: ConfTier): string | null {
   if (estimate == null || estimate < 0) return null;
   // Sharp + soft both use the regular dot — soft's uncertainty comes
   // from italic + reduced opacity, not punctuation. Tilde is reserved
   // for tentative so it reads exclusively as "lower confidence".
-  if (tier === 'sharp')     return `· ${estimate}`;
-  if (tier === 'soft')      return `· ${estimate}`;
-  if (tier === 'tentative') return `~ ${estimate}`;
+  if (tier === 'sharp')     return '· ';
+  if (tier === 'soft')      return '· ';
+  if (tier === 'tentative') return '~ ';
   return null;
 }
 
@@ -165,49 +173,6 @@ function hasAlgorithmData(estimate: HeadcountEstimate | null | undefined): boole
   return typeof src === 'string' && ALGORITHM_SOURCES.has(src);
 }
 
-/**
- * Smoothly animates the count number from prev → next over ~600ms with a
- * gentle overshoot (cubic-bezier(0.34, 1.56, 0.64, 1) approximation).
- * Skips the first-mount tick so the bubble doesn't count up from 0 on
- * appearance — only realtime updates animate.
- */
-function useAnimatedNumber(target: number): number {
-  const [display, setDisplay] = useState(target);
-  const fromRef = useRef(target);
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (target === display) return;
-    const from = fromRef.current;
-    const to = target;
-    const start = performance.now();
-    const dur = 600;
-    const ease = (t: number) => {
-      const c1 = 1.70158;
-      const c3 = c1 + 1;
-      return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
-    };
-    const step = (now: number) => {
-      const t = Math.min(1, (now - start) / dur);
-      const v = from + (to - from) * ease(t);
-      setDisplay(Math.round(v));
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(step);
-      } else {
-        fromRef.current = to;
-        rafRef.current = null;
-      }
-    };
-    rafRef.current = requestAnimationFrame(step);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target]);
-
-  return display;
-}
-
 /** Class name driven by trend; `lvb-rising` is one-shot, `lvb-falling` is persistent. */
 function useTrendClass(trend: string | null | undefined): string {
   const prevTrendRef = useRef<string | null | undefined>(trend);
@@ -228,14 +193,44 @@ function useTrendClass(trend: string | null | undefined): string {
   return '';
 }
 
-function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected, onTap, introBloomDelay, highlighted }: LiveVenueBubbleProps) {
+/**
+ * Bloom wrapper — present only during the cinematic intro's
+ * bubble-bloom phase. Its transform doesn't compete with framer's
+ * inline transforms on the inner motion.button because framer
+ * operates one DOM level deeper.
+ *
+ * Declared at module level: when it was declared inside the bubble,
+ * every render created a new component type, so React remounted the
+ * whole bubble on every update and replayed its fade-in from 0.
+ */
+function BloomOuter({ delayMs, children }: { delayMs: number | null; children: React.ReactNode }) {
+  // Always the same element so the bubble isn't remounted when the
+  // bloom ends; `display: contents` makes it layout-neutral meanwhile.
+  return delayMs !== null
+    ? <div className="lvb-intro-bloom" style={{ animationDelay: `${delayMs}ms` }}>{children}</div>
+    : <div style={{ display: 'contents' }}>{children}</div>;
+}
+
+// Shared bubble CSS, injected once rather than as a <style> per bubble.
+let stylesInjected = false;
+function ensureStyles() {
+  if (stylesInjected || typeof document === 'undefined') return;
+  stylesInjected = true;
+  const el = document.createElement('style');
+  el.setAttribute('data-lvb', '');
+  el.textContent = LVB_KEYFRAMES + ROLLING_NUMBER_CSS;
+  document.head.appendChild(el);
+}
+
+function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected, onTap, introBloomDelay, highlighted, live = true, updating = false }: LiveVenueBubbleProps) {
+  ensureStyles();
   const useBloom = (introBloomDelay ?? 0) >= 0 && introBloomDelay !== undefined && introBloomDelay > -1;
   // Only opt into the bloom class when a delay was explicitly provided
   // AND non-negative. Once the parent stops passing the prop the class
   // disappears on the next render and subsequent prop changes don't
   // re-trigger the keyframe (forwards-fill keeps the final state).
   const bloomEnabled = useBloom && typeof introBloomDelay === 'number';
-  const bloomStyle = bloomEnabled ? { animationDelay: `${Math.max(0, introBloomDelay!)}ms` } : undefined;
+  const bloomDelayMs = bloomEnabled ? Math.max(0, introBloomDelay!) : null;
   // Cover badge in the top-right corner — green pill when free,
   // gold-on-charcoal when paid. Suppressed entirely when the venue
   // has no cover_charge value set.
@@ -273,8 +268,7 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   const confidence = estimate?.confidence_pct ?? 0;
   const trend = estimate?.trend ?? null;
   const capacityPct = estimate?.capacity_pct ?? null;
-  const trendClass = useTrendClass(trend);
-  const animatedCount = useAnimatedNumber(estimate?.estimate ?? 0);
+  const trendClass = useTrendClass(live ? trend : null);
 
   // Tap-emphasize: 800ms window during which count + capacity glow
   // up to full opacity for a satisfying micro-reward. Independent of
@@ -306,16 +300,31 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   // believe in.
   if (stateLabel === 'Unknown' || confidence < 20) return null;
 
-  const v = visualsFor(stateLabel);
+  // Not live → last night's row. Never present it as tonight's numbers.
+  //   'live-from'  — neutral bubble, no numbers: "Live from 5 PM"
+  //                  (or "Live soon" inside the window, before tonight's
+  //                  first fusion tick has landed for this venue).
+  //   'last-night' — dimmed bubble, last night's figure, "Last night".
+  const daytime = !live;
+  const liveFrom = daytime && DAYTIME_BUBBLE_MODE === 'live-from';
+  const lastNight = daytime && DAYTIME_BUBBLE_MODE === 'last-night';
+  const inWindow = daytime && getLiveWindow().inWindow;
+
+  const v = liveFrom ? DAYTIME_VISUALS : visualsFor(stateLabel);
 
   // Signature-display content
   const tier = getConfTier(confidence);
-  const countText = getCountText(animatedCount, tier);
-  const capacityText = getCapacityText(capacityPct);
-  const countPrefix = getCountPrefix(estimate?.source_breakdown);
+  const countValue = estimate?.estimate ?? 0;
+  const countGlyph = liveFrom ? null : getCountGlyph(countValue, tier);
+  const capacityText = daytime ? null : getCapacityText(capacityPct);
+  const countPrefix = daytime ? '' : getCountPrefix(estimate?.source_breakdown);
   const isBouncerVerified = countPrefix.length > 0;
-  const isSurging = stateLabel === 'Surging';
+  const isSurging = !daytime && stateLabel === 'Surging';
   const isOverCap = capacityPct !== null && capacityPct >= 1.0;
+  const headline = liveFrom
+    ? (inWindow ? 'Live soon' : 'Live from')
+    : lastNight ? 'Last night' : stateLabel;
+  const liveFromTime = liveFrom && !inWindow ? liveFromLabel() : null;
 
   // ─── Confidence → light, not lines ───
   // High: no border, inset glow tinted to bubble. Medium: 1px @ 30%
@@ -323,7 +332,10 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   let borderCss: string = 'none';
   let baseShadow: string;
 
-  if (stateLabel === 'Surging') {
+  if (liveFrom) {
+    borderCss = `1px solid ${v.edge}`;
+    baseShadow = '0 2px 8px rgba(0,0,0,0.3)';
+  } else if (isSurging) {
     // Surging always wears its persistent neon halo, regardless of confidence.
     baseShadow = '0 0 20px #00FFA3aa, 0 0 40px #00FFA355';
   } else if (confidence >= 50) {
@@ -336,19 +348,11 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   }
 
   const stateClass =
-    stateLabel === 'Surging' ? 'lvb-bubble lvb-surging' : 'lvb-bubble';
-
-  // Bloom wrapper — present only during the cinematic intro's
-  // bubble-bloom phase. Its transform doesn't compete with framer's
-  // inline transforms on the inner motion.button because framer
-  // operates one DOM level deeper.
-  const Outer: React.FC<{ children: React.ReactNode }> = ({ children }) =>
-    bloomEnabled
-      ? <div className="lvb-intro-bloom" style={bloomStyle}>{children}</div>
-      : <>{children}</>;
+    (isSurging ? 'lvb-bubble lvb-surging' : 'lvb-bubble') +
+    (lastNight ? ' lvb-last-night' : '');
 
   return (
-    <Outer>
+    <BloomOuter delayMs={bloomDelayMs}>
     <motion.button
       type="button"
       onClick={onTap}
@@ -417,7 +421,7 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
         </>
       )}
       <div
-        className={`${stateClass} ${trendClass}`}
+        className={`${stateClass} ${trendClass}`.trim()}
         onClick={() => setTapped(true)}
         style={{
           // Visual shell — CSS keyframes own this element's transform.
@@ -451,16 +455,20 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
         )}
         <AnimatePresence mode="wait">
           <motion.div
-            key={stateLabel}
+            key={headline}
             initial={{ opacity: 0, y: -2 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 2 }}
             transition={{ duration: 0.18 }}
-            className={`lvb-content${isSurging ? ' lvb-surging-stack' : ''}`}
+            className={`lvb-content${isSurging ? ' lvb-surging-stack' : ''}${updating && !daytime ? ' lvb-updating' : ''}`}
           >
-            <div className="lvb-state">{stateLabel}</div>
+            <div className="lvb-state">{headline}</div>
 
-            {countText && (
+            {liveFromTime && (
+              <div className="lvb-count lvb-count-sharp">{liveFromTime}</div>
+            )}
+
+            {countGlyph && (
               <div
                 className={
                   `lvb-count lvb-count-${tier}` +
@@ -470,7 +478,7 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
                   (tapped ? ' lvb-tapped' : '')
                 }
               >
-                {countPrefix}{countText}
+                {countPrefix}{countGlyph}<RollingNumber value={countValue} />
               </div>
             )}
 
@@ -489,12 +497,17 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
         </AnimatePresence>
       </div>
 
-      {/* Inline keyframes — see header docstring for why these aren't shared with index.css. */}
-      <style>{LVB_KEYFRAMES}</style>
     </motion.button>
-    </Outer>
+    </BloomOuter>
   );
 }
+
+/** Neutral daytime bubble ("Live from 5 PM") — no state colour. */
+const DAYTIME_VISUALS: StateVisuals = {
+  background: 'rgba(22, 22, 28, 0.82)',
+  textColor: '#A9A9B4',
+  edge: '#34343C',
+};
 
 const LVB_KEYFRAMES = `
 @keyframes lvb-luxury-breath {
@@ -641,6 +654,18 @@ const LVB_KEYFRAMES = `
 
 .lvb-tapped {
   opacity: 1.0 !important;
+}
+
+/* Cached numbers on screen while the refresh is in flight. */
+.lvb-updating .lvb-count,
+.lvb-updating .lvb-capacity {
+  opacity: 0.5;
+}
+
+/* Option (a) daytime: last night's figure, visibly not live. */
+.lvb-last-night {
+  opacity: 0.55;
+  filter: saturate(0.45);
 }
 
 /* Surging stack — aurora glow carries through every line */
