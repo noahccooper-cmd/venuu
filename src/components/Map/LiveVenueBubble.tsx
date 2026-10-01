@@ -2,7 +2,6 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { HeadcountEstimate } from '../../hooks/useVenuesInBounds';
 import { getCoverLabel } from '../../lib/utils';
-import { DAYTIME_BUBBLE_MODE, getLiveWindow, liveFromLabel } from '../../lib/estimates';
 import { RollingNumber, ROLLING_NUMBER_CSS } from './RollingNumber';
 
 /**
@@ -28,10 +27,6 @@ interface LiveVenueBubbleProps {
   venueId?: string;
   venueName?: string;
   estimate: HeadcountEstimate | null | undefined;
-  /** False outside the fusion window (21:00–06:59 UTC) or before tonight's
-   *  first tick for this venue — the estimate is last night's, not live.
-   *  Rendering then follows DAYTIME_BUBBLE_MODE. Defaults to true. */
-  live?: boolean;
   /** Numbers came from the on-device cache and a refresh is in flight. */
   updating?: boolean;
   /** Raw `cover_charge` string from the venue row (e.g. "FREE", "$5"). */
@@ -222,7 +217,7 @@ function ensureStyles() {
   document.head.appendChild(el);
 }
 
-function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected, onTap, introBloomDelay, highlighted, live = true, updating = false }: LiveVenueBubbleProps) {
+function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected, onTap, introBloomDelay, highlighted, updating = false }: LiveVenueBubbleProps) {
   ensureStyles();
   const useBloom = (introBloomDelay ?? 0) >= 0 && introBloomDelay !== undefined && introBloomDelay > -1;
   // Only opt into the bloom class when a delay was explicitly provided
@@ -268,7 +263,7 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   const confidence = estimate?.confidence_pct ?? 0;
   const trend = estimate?.trend ?? null;
   const capacityPct = estimate?.capacity_pct ?? null;
-  const trendClass = useTrendClass(live ? trend : null);
+  const trendClass = useTrendClass(trend);
 
   // Tap-emphasize: 800ms window during which count + capacity glow
   // up to full opacity for a satisfying micro-reward. Independent of
@@ -300,31 +295,17 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   // believe in.
   if (stateLabel === 'Unknown' || confidence < 20) return null;
 
-  // Not live → last night's row. Never present it as tonight's numbers.
-  //   'live-from'  — neutral bubble, no numbers: "Live from 5 PM"
-  //                  (or "Live soon" inside the window, before tonight's
-  //                  first fusion tick has landed for this venue).
-  //   'last-night' — dimmed bubble, last night's figure, "Last night".
-  const daytime = !live;
-  const liveFrom = daytime && DAYTIME_BUBBLE_MODE === 'live-from';
-  const lastNight = daytime && DAYTIME_BUBBLE_MODE === 'last-night';
-  const inWindow = daytime && getLiveWindow().inWindow;
-
-  const v = liveFrom ? DAYTIME_VISUALS : visualsFor(stateLabel);
+  const v = visualsFor(stateLabel);
 
   // Signature-display content
   const tier = getConfTier(confidence);
   const countValue = estimate?.estimate ?? 0;
-  const countGlyph = liveFrom ? null : getCountGlyph(countValue, tier);
-  const capacityText = daytime ? null : getCapacityText(capacityPct);
-  const countPrefix = daytime ? '' : getCountPrefix(estimate?.source_breakdown);
+  const countGlyph = getCountGlyph(countValue, tier);
+  const capacityText = getCapacityText(capacityPct);
+  const countPrefix = getCountPrefix(estimate?.source_breakdown);
   const isBouncerVerified = countPrefix.length > 0;
-  const isSurging = !daytime && stateLabel === 'Surging';
+  const isSurging = stateLabel === 'Surging';
   const isOverCap = capacityPct !== null && capacityPct >= 1.0;
-  const headline = liveFrom
-    ? (inWindow ? 'Live soon' : 'Live from')
-    : lastNight ? 'Last night' : stateLabel;
-  const liveFromTime = liveFrom && !inWindow ? liveFromLabel() : null;
 
   // ─── Confidence → light, not lines ───
   // High: no border, inset glow tinted to bubble. Medium: 1px @ 30%
@@ -332,10 +313,7 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   let borderCss: string = 'none';
   let baseShadow: string;
 
-  if (liveFrom) {
-    borderCss = `1px solid ${v.edge}`;
-    baseShadow = '0 2px 8px rgba(0,0,0,0.3)';
-  } else if (isSurging) {
+  if (isSurging) {
     // Surging always wears its persistent neon halo, regardless of confidence.
     baseShadow = '0 0 20px #00FFA3aa, 0 0 40px #00FFA355';
   } else if (confidence >= 50) {
@@ -348,8 +326,7 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
   }
 
   const stateClass =
-    (isSurging ? 'lvb-bubble lvb-surging' : 'lvb-bubble') +
-    (lastNight ? ' lvb-last-night' : '');
+    isSurging ? 'lvb-bubble lvb-surging' : 'lvb-bubble';
 
   return (
     <BloomOuter delayMs={bloomDelayMs}>
@@ -455,18 +432,14 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
         )}
         <AnimatePresence mode="wait">
           <motion.div
-            key={headline}
+            key={stateLabel}
             initial={{ opacity: 0, y: -2 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 2 }}
             transition={{ duration: 0.18 }}
-            className={`lvb-content${isSurging ? ' lvb-surging-stack' : ''}${updating && !daytime ? ' lvb-updating' : ''}`}
+            className={`lvb-content${isSurging ? ' lvb-surging-stack' : ''}${updating ? ' lvb-updating' : ''}`}
           >
-            <div className="lvb-state">{headline}</div>
-
-            {liveFromTime && (
-              <div className="lvb-count lvb-count-sharp">{liveFromTime}</div>
-            )}
+            <div className="lvb-state">{stateLabel}</div>
 
             {countGlyph && (
               <div
@@ -501,13 +474,6 @@ function LegacyLiveVenueBubbleInner({ venueId, estimate, coverCharge, isSelected
     </BloomOuter>
   );
 }
-
-/** Neutral daytime bubble ("Live from 5 PM") — no state colour. */
-const DAYTIME_VISUALS: StateVisuals = {
-  background: 'rgba(22, 22, 28, 0.82)',
-  textColor: '#A9A9B4',
-  edge: '#34343C',
-};
 
 const LVB_KEYFRAMES = `
 @keyframes lvb-luxury-breath {
@@ -660,12 +626,6 @@ const LVB_KEYFRAMES = `
 .lvb-updating .lvb-count,
 .lvb-updating .lvb-capacity {
   opacity: 0.5;
-}
-
-/* Option (a) daytime: last night's figure, visibly not live. */
-.lvb-last-night {
-  opacity: 0.55;
-  filter: saturate(0.45);
 }
 
 /* Surging stack — aurora glow carries through every line */

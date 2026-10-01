@@ -138,6 +138,7 @@ const INIT = ({ expected, fixedTime, storage }) => {
     if (numsInDom >= expected * 0.9) mark('numbersInDom');
     if (numsVisible >= expected * 0.9) mark('numbersVisible');
     window.__perf.state = { markers: markers.length, dotsVisible, numsVisible, numsInDom, liveFrom };
+    window.__perf.rafCount = (window.__perf.rafCount ?? 0) + 1;
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -246,21 +247,46 @@ async function runOnce(browser, ctx, url, fixture, opts) {
   await page.addInitScript(INIT, { expected: fixture.filter(v => v.headcount_estimates).length, fixedTime: opts.fixedTime, storage: opts.storage });
 
   const navStart = Date.now();
+  if (args.probe) {
+    const rel = () => `${Date.now() - navStart}ms`;
+    page.on('request', r => { if (r.url().startsWith(url)) console.error(`[probe ${opts.tag}] ${rel()} request ${r.url().replace(url, '/')}`); });
+    page.on('requestfinished', r => { if (r.url().startsWith(url)) console.error(`[probe ${opts.tag}] ${rel()} finished ${r.url().replace(url, '/')}`); });
+    page.on('domcontentloaded', () => console.error(`[probe ${opts.tag}] ${rel()} domcontentloaded`));
+    page.on('load', () => console.error(`[probe ${opts.tag}] ${rel()} load`));
+  }
   await page.goto(url, { waitUntil: 'commit' });
+  if (args.probe) console.error(`[probe ${opts.tag}] ${Date.now() - navStart}ms goto committed`);
   let perf;
   const deadline = navStart + TIMEOUT_MS;
+  const probe = [];
   while (Date.now() < deadline) {
     perf = await page.evaluate(() => window.__perf).catch(() => null);
+    if (args.probe) {
+      const p = await page.evaluate(() => ({ m: document.querySelectorAll('.venue-marker').length, vis: document.visibilityState, raf: window.__perf?.rafCount ?? 0, now: Math.round(performance.now()) })).catch(() => null);
+      if (p) probe.push(p);
+    }
     if (perf?.marks?.numbersVisible !== undefined && Date.now() - navStart > (opts.minRunMs ?? 0)) break;
     await sleep(200);
   }
   clearTimeout(tickTimer);
+  if (args.probe) {
+    const nt = await page.evaluate(() => {
+      const n = performance.getEntriesByType('navigation')[0];
+      const r = performance.getEntriesByType('resource').filter(e => /\/assets\//.test(e.name))
+        .map(e => `${e.name.split('/').pop()} start=${Math.round(e.startTime)} end=${Math.round(e.responseEnd)} xfer=${e.transferSize}`);
+      return { nav: n && { fetchStart: Math.round(n.fetchStart), reqStart: Math.round(n.requestStart), respStart: Math.round(n.responseStart), respEnd: Math.round(n.responseEnd), domInteractive: Math.round(n.domInteractive), type: n.type }, r };
+    }).catch(e => String(e));
+    console.error(`[probe ${opts.tag ?? ''}] timing ${JSON.stringify(nt)}`);
+    const firstM = probe.find(p => p.m > 0);
+    console.error(`[probe ${opts.tag ?? ''}] first markers (node poll) at ${firstM?.now}ms; rAF samples: ${probe.filter((_, i) => i % 10 === 0).map(p => `${p.now}:${p.raf}:${p.vis}`).join(' ')}`);
+  }
   const result = { ...perf, ticks: sentTicks, blockedWrites, consoleCounts, page };
   return result;
 }
 
 async function main() {
   const fixture = buildFixture(new Date(new Date(FIXED_TIME).getTime() - 40_000).toISOString());
+  if (args['dump-fixture']) { fs.writeFileSync(args['dump-fixture'], JSON.stringify(fixture)); return; }
   const srv = DIST ? await serve(DIST) : null;
   const url = DEV_URL ?? `http://127.0.0.1:${srv.address().port}/`;
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
@@ -282,9 +308,9 @@ async function main() {
         viewport,
         recordVideo: args.video ? { dir: args.video, size: viewport } : undefined,
       });
-      const cold = await runOnce(browser, ctx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0 });
+      const cold = await runOnce(browser, ctx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0, tag: 'cold' });
       await cold.page.close();
-      const warm = await runOnce(browser, ctx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0 });
+      const warm = await runOnce(browser, ctx, url, fixture, { fixedTime: FIXED_TIME, storage, minRunMs: args.dev ? 70_000 : 0, tag: 'warm' });
       await warm.page.close();
       await ctx.close();
       for (const [kind, r] of [['cold', cold], ['warm', warm]]) {

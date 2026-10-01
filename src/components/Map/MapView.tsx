@@ -17,7 +17,7 @@ import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
 import { getNightPhase, fetchRoutesForParticles, spawnParticle, tickParticle, particlesToGeoJSON, type Particle, type RouteCache } from '../../lib/mapEffects';
 import type { Venue, VenueEvent } from '../../lib/types';
 import type { HeadcountEstimate } from '../../hooks/useVenuesInBounds';
-import { getEstimate, getLiveWindow, isEstimateLive, type LiveWindow } from '../../lib/estimates';
+import { getEstimate } from '../../lib/estimates';
 import { debugLog } from '../../lib/debug';
 import { LiveVenueBubble } from './LiveVenueBubble';
 import { LiveEventsFeed } from './LiveEventsFeed';
@@ -48,19 +48,6 @@ function formatPinTime(iso: string): string {
 
 /** Venue augmented with the latest fused estimate from the prediction engine. */
 type VenueWithEstimate = Venue & { headcount_estimates?: HeadcountEstimate[]; cached?: boolean };
-
-/** Current live-window state; re-renders only at the 21:00 / 07:00 UTC boundaries. */
-function useLiveWindow(): LiveWindow {
-  const [win, setWin] = useState(() => getLiveWindow());
-  useEffect(() => {
-    const t = window.setTimeout(
-      () => setWin(getLiveWindow()),
-      Math.max(1000, win.nextBoundaryMs - Date.now() + 1000),
-    );
-    return () => clearTimeout(t);
-  }, [win]);
-  return win;
-}
 
 /** Has this estimate enough information to take over the bubble visual? */
 function hasUsableEstimate(est: HeadcountEstimate | undefined): est is HeadcountEstimate {
@@ -431,7 +418,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
   const nightPhaseRef = useRef(getNightPhase());
   const entrancePlayedRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const liveWindow = useLiveWindow();
   const initialCityRef = useRef(city);
   const venuesRef = useRef(venues);
   const countsRef = useRef(counts);
@@ -1588,7 +1574,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
 
       const est = getEstimate(v as VenueWithEstimate);
       const usable = hasUsableEstimate(est);
-      const live = isEstimateLive(est, liveWindow);
 
       let bloomDelay: number | undefined;
       if (containerRect && map) {
@@ -1625,7 +1610,6 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
           venueName={v.name}
           coverCharge={v.cover_charge}
           estimate={usable ? est : null}
-          live={live}
           updating={!!(v as VenueWithEstimate).cached}
           introBloomDelay={bloomDelay}
           highlighted={isHighlighted}
@@ -1660,7 +1644,7 @@ export function MapView({ city, venues, venueFilter, counts, liveVenueIds, pulse
         entry.currentStage = -1; // force the legacy visuals sync to repaint
       }
     });
-  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds, liveWindow]);
+  }, [venues, mapLoaded, introActive, introPhase, highlightedVenueIds]);
 
   // ── Filter pill visibility — show/hide markers via CSS, never delete them ──
   useEffect(() => {
