@@ -456,6 +456,13 @@ export function PlaceWorld({
   useEffect(() => () => { window.clearTimeout(settleTimer.current); cancelAnimationFrame(frame.current); }, []);
 
   const selIndex = Math.max(0, events.findIndex(e => e.id === selectedId));
+
+  // Keep the selected tab fully visible when the switch scrolls sideways.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const on = tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    on?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+  }, [tab, reduced]);
   // Live copy of the open event (edits / verification show immediately).
   const shownDetail = detail ? events.find(e => e.id === detail.id) ?? detail : null;
 
@@ -491,11 +498,12 @@ export function PlaceWorld({
       {/* Switch (scrolls sideways when it doesn't fit, e.g. 5 filters at 375pt) */}
       <div style={{ position: 'absolute', zIndex: 10, top: topInset + BAR_GAP + BAR_H + SWITCH_GAP, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
         <div
+          ref={tabsRef}
           role="tablist"
           aria-label={tabsLabel}
           className="social-carousel"
           style={{
-            display: 'flex', height: SWITCH_H, maxWidth: 'calc(100% - 32px)', overflowX: 'auto', padding: 3, boxSizing: 'border-box',
+            display: 'flex', height: SWITCH_H, maxWidth: 'calc(100% - 32px)', overflowX: 'auto', padding: '0 3px', boxSizing: 'border-box',
             borderRadius: SWITCH_H / 2, pointerEvents: 'auto',
             background: 'rgba(11, 10, 9, 0.88)', border: '1px solid var(--social-hairline)',
             backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
@@ -511,13 +519,20 @@ export function PlaceWorld({
                 className="social-press"
                 onClick={() => { if (!on) { hapticSelection(); onTab(t.key); } }}
                 style={{
-                  flexShrink: 0, minWidth: 64, padding: '0 14px', borderRadius: (SWITCH_H - 6) / 2, border: 'none', cursor: 'pointer',
-                  background: on ? accent : 'transparent',
-                  fontFamily: FONT, fontSize: TEXT, fontWeight: 800, whiteSpace: 'nowrap',
-                  color: on ? '#0B0A09' : 'var(--text-secondary)',
+                  // Full-height (44pt) target; the pill is drawn inside it.
+                  flexShrink: 0, height: SWITCH_H, padding: 0, border: 'none', background: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center',
                 }}
               >
-                {t.label}
+                <span
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: SWITCH_H - 6, padding: '0 14px',
+                    boxSizing: 'border-box', borderRadius: (SWITCH_H - 6) / 2, background: on ? accent : 'transparent',
+                    fontFamily: FONT, fontSize: TEXT, fontWeight: 800, whiteSpace: 'nowrap', color: on ? '#0B0A09' : 'var(--text-secondary)',
+                  }}
+                >
+                  {t.label}
+                </span>
               </button>
             );
           })}

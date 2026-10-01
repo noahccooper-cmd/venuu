@@ -29,11 +29,12 @@ export function Odometer({ value, delay = 0, run, reduced, rollIn = true }: Odom
   const shownDigits = String(shown).padStart(digits.length, '0').split('');
 
   return (
-    <span className="social-num" style={{ display: 'inline-flex', height: '1.2em', overflow: 'hidden', lineHeight: 1.2 }}>
+    // Screen readers get the number; the rolling digit strips are hidden.
+    <span className="social-num" role="img" aria-label={String(value)} style={{ display: 'inline-flex', height: '1.2em', overflow: 'hidden', lineHeight: 1.2 }}>
       {digits.map((_, i) => {
         const d = Number(shownDigits[i]);
         return (
-          <span key={i} style={{ display: 'inline-block', width: '1ch', position: 'relative' }}>
+          <span key={i} aria-hidden style={{ display: 'inline-block', width: '1ch', position: 'relative' }}>
             <span
               style={{
                 display: 'flex',

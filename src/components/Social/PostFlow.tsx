@@ -233,6 +233,8 @@ export function PostFlow(p: PostFlowProps) {
         aria-modal="true"
         aria-label="Post an event"
         aria-hidden={!shown}
+        // Off-screen while closed: not focusable or clickable.
+        inert={!shown}
         style={{
           position: 'absolute', zIndex: 25, left: 0, right: 0, top: p.topInset + 8, bottom: 0,
           display: 'flex', flexDirection: 'column', background: 'var(--social-bg)',
