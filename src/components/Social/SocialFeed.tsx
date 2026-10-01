@@ -349,7 +349,10 @@ export function SocialFeed({ title, events, startId, brandOf, colorOf, going, no
         )}
       </div>
 
-      {detail && <EventDetailSheet event={detail} brand={brandOf(detail)} onClose={() => setDetail(null)} />}
+      {detail && (() => {
+        const ev = events.find(e => e.id === detail.id) ?? detail;
+        return <EventDetailSheet event={ev} brand={brandOf(ev)} onClose={() => setDetail(null)} />;
+      })()}
     </div>
   );
 }

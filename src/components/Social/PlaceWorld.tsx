@@ -7,6 +7,7 @@ import { openAppleMapsDirections, openEmail, openExternal, shareEvent } from '..
 import { prefersReducedMotion } from '../../lib/socialGeo';
 import { BrandMark } from './BrandMark';
 import { EventCover } from './EventCover';
+import { EventActions } from './EventActions';
 import { FeedHandle } from './FeedHandle';
 import { useDragUp } from '../../hooks/useDragUp';
 import { WORLD_LAYOUT, rememberAge, applyCarouselParallax } from '../../lib/partnerWorld';
@@ -91,7 +92,7 @@ function AgeLine({ brand }: { brand: Brand }) {
 
 /** The one sheet style in a Partner World: full-height-capable, scrolls,
  *  close button, ends above the tab bar. */
-function WorldSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function WorldSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const panelRef = useRef<HTMLDivElement>(null);
   // preventScroll: the panel starts off-screen (slide-in), and a plain
   // focus() would scroll the Social root to reveal it.
@@ -142,12 +143,12 @@ export function EventBadge({ brand, event, size = TEXT }: { brand: Brand | null;
 export function EventDetailSheet({ event, brand, onClose }: { event: SocialEvent; brand: Brand | null; onClose: () => void }) {
   return (
     <WorldSheet title={event.title} onClose={onClose}>
-      <WorldEventDetail brand={brand} event={event} />
+      <WorldEventDetail brand={brand} event={event} onClose={onClose} />
     </WorldSheet>
   );
 }
 
-function WorldEventDetail({ brand, event }: { brand: Brand | null; event: SocialEvent }) {
+function WorldEventDetail({ brand, event, onClose }: { brand: Brand | null; event: SocialEvent; onClose: () => void }) {
   const [shareNote, setShareNote] = useState<string | null>(null);
   const place = placeOf(event);
   const showAddress = !!event.address && event.address !== place;
@@ -200,6 +201,9 @@ function WorldEventDetail({ brand, event }: { brand: Brand | null; event: Social
           <AgeLine brand={brand} />
         </div>
       )}
+      <div style={{ paddingTop: 12, borderTop: '1px solid var(--social-hairline)' }}>
+        <EventActions event={event} onDone={onClose} />
+      </div>
     </div>
   );
 }
@@ -452,6 +456,8 @@ export function PlaceWorld({
   useEffect(() => () => { window.clearTimeout(settleTimer.current); cancelAnimationFrame(frame.current); }, []);
 
   const selIndex = Math.max(0, events.findIndex(e => e.id === selectedId));
+  // Live copy of the open event (edits / verification show immediately).
+  const shownDetail = detail ? events.find(e => e.id === detail.id) ?? detail : null;
 
   return (
     <>
@@ -559,7 +565,7 @@ export function PlaceWorld({
         )}
       </div>
 
-      {detail && <EventDetailSheet event={detail} brand={brandOf(detail)} onClose={() => setDetail(null)} />}
+      {shownDetail && <EventDetailSheet event={shownDetail} brand={brandOf(shownDetail)} onClose={() => setDetail(null)} />}
       {aboutOpen && about && (
         <WorldSheet title={`About ${about.name}`} onClose={() => setAboutOpen(false)}>
           <WorldAbout brand={about} />

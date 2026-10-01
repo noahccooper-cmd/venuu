@@ -190,6 +190,13 @@ await test('owner can edit their title', async () => {
   const u = await as('a', () => db.query(`update public.events set title='Edited title' where id=$1`, [aPost.id]));
   return u.affectedRows === 1 || `updated ${u.affectedRows}`;
 });
+await test('owner deletes their own post; admin can delete anyone’s (app delete paths)', async () => {
+  const [mine] = await post('host', { title: 'Delete me' });
+  const own = await as('host', () => db.query(`delete from public.events where id=$1`, [mine.id]));
+  const [other] = await post('host', { title: 'Admin deletes me' });
+  const before00078 = await as('b', () => db.query(`delete from public.events where id=$1`, [other.id]));
+  return (own.affectedRows === 1 && before00078.affectedRows === 0) || JSON.stringify({ own: own.affectedRows, other: before00078.affectedRows });
+});
 await test('owner cannot verify their own post → verification_admins_only', async () =>
   expectError(() => as('a', () => q(`update public.events set verification='verified' where id=$1`, [aPost.id])), 'verification_admins_only'));
 await test('owner cannot rename host to a brand → partner_fields_hosts_only', async () =>
@@ -243,6 +250,16 @@ await test('admin bans a poster; admin post can be Verified directly', async () 
   const r = await as('mike', () => q(`insert into public.events (surface, category, title, city, latitude, longitude, start_time, verification)
     values ('social', 'nightlife', 'Admin event', 'tampa', 27.95, -82.45, now() + interval '1 day', 'verified') returning verification`));
   return (u.affectedRows === 1 && r[0].verification === 'verified') || JSON.stringify({ u: u.affectedRows, r });
+});
+
+await test('admin deletes another user’s post; owner can read own denied post + mark it seen (deny notice)', async () => {
+  const [x] = await post('host', { title: 'Admin removes me' });
+  const del = await as('mike', () => db.query(`delete from public.events where id=$1`, [x.id]));
+  const [y] = await post('host', { title: 'Denied for notice' });
+  await as('mike', () => q(`update public.events set verification='denied' where id=$1`, [y.id]));
+  const seen = await as('host', () => q(`select id, verification, denial_seen_at from public.events where verification='denied' and host_profile_id=$1 and denial_seen_at is null`, [people.host.prof]));
+  const mark = await as('host', () => db.query(`update public.events set denial_seen_at=now() where id=$1`, [y.id]));
+  return (del.affectedRows === 1 && seen.some(r => r.id === y.id) && mark.affectedRows === 1) || JSON.stringify({ del: del.affectedRows, seen, mark: mark.affectedRows });
 });
 
 // Reports & blocks

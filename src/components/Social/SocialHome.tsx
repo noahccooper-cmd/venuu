@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, ShieldCheck } from 'lucide-react';
 import { hapticLight, hapticMedium, hapticSelection } from '../../lib/haptics';
 import { brandColor, SUN_BRAND_SLUG, type Brand } from '../../lib/brands';
 import { CITY_CODE, countdown, type Place, type PlaceKey, type PlaceStatus } from '../../lib/socialPlaces';
@@ -54,13 +54,16 @@ interface StoryRingsProps {
   top: number;
   onPost: (() => void) | null;
   onOpen: (slug: string) => void;
+
   /** Pull-to-refresh handlers (vertical drags on this row). */
   pull: React.HTMLAttributes<HTMLDivElement>;
+  /** Admins: the review queue ring (bright while something is waiting). */
+  review: { count: number; onOpen: () => void } | null;
 }
 
 /** One ring per active partner (from brands), plus "Post" first. Bright =
  *  something new since last visit; dim once seen. */
-export function StoryRings({ brands, fresh, top, onPost, onOpen, pull }: StoryRingsProps) {
+export function StoryRings({ brands, fresh, top, onPost, onOpen, pull, review }: StoryRingsProps) {
   return (
     <div
       {...pull}
@@ -75,6 +78,13 @@ export function StoryRings({ brands, fresh, top, onPost, onOpen, pull }: StoryRi
         <Ring label="Post" color="rgba(255,255,255,0.7)" bright={false} onTap={() => { hapticLight(); onPost(); }}>
           <span style={{ width: RING - 12, height: RING - 12, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--social-surface-raised)' }}>
             <Plus size={22} color="var(--text-primary)" strokeWidth={2.25} />
+          </span>
+        </Ring>
+      )}
+      {review && (
+        <Ring label={review.count ? `Review · ${review.count}` : 'Review'} color="#E5484D" bright={review.count > 0} onTap={review.onOpen}>
+          <span style={{ width: RING - 12, height: RING - 12, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--social-surface-raised)' }}>
+            <ShieldCheck size={22} color="var(--text-primary)" strokeWidth={2} />
           </span>
         </Ring>
       )}

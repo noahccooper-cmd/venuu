@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CityKey } from '../lib/constants';
-import { SOCIAL_THEME, SOCIAL_CITY_LABEL, socialThemeVars, partnersWithEvents } from '../lib/socialTheme';
+import { SOCIAL_THEME, SOCIAL_CITY_LABEL, socialThemeVars, partnersWithEvents, themeFromBrands } from '../lib/socialTheme';
+import { DEMO_ME, SocialActionsContext, loadBlocks, markDenialSeen, type ActionResult, type SocialActions } from '../lib/socialModeration';
+import { AdminReview, DeniedNotice } from '../components/Social/AdminReview';
+import { POST_ERROR_COPY } from '../lib/socialPost';
 import type { SocialEvent } from '../lib/socialTypes';
 import { countThisWeek } from '../lib/socialSections';
 import { SOCIAL_CITIES, SOCIAL_CITY_GEO, distanceKm, nearestCity } from '../lib/socialGeo';
@@ -87,29 +90,34 @@ function useTopInset(): number {
  * Theme applies ONLY as CSS variables on this root.
  */
 export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps) {
-  const theme = SOCIAL_THEME;
   const mapRef = useRef<SocialMapHandle>(null);
   const topInset = useTopInset();
 
   // ── Data ──
   const [refreshKey, setRefreshKey] = useState(0);
-  const knoxville = useSocialEvents('knoxville', refreshKey);
-  const tampa = useSocialEvents('tampa', refreshKey);
-  const pinellas = useSocialEvents('st_petersburg', refreshKey);
+  /** The viewer for owner checks (demo builds: the local demo user). */
+  const meId = profileId ?? (SOCIAL_DEMO ? DEMO_ME : null);
+  const [blocked, setBlocked] = useState<Set<string>>(() => new Set());
+  useEffect(() => { let live = true; void loadBlocks(meId).then(b => { if (live) setBlocked(b); }); return () => { live = false; }; }, [meId, refreshKey]);
+  const social = useSocialEvents(refreshKey, meId, blocked);
+  const allEvents = social.events;
   const eventsByCity = useMemo<Record<CityKey, SocialEvent[]>>(() => ({
-    knoxville: knoxville.events, tampa: tampa.events, st_petersburg: pinellas.events,
-  }), [knoxville.events, tampa.events, pinellas.events]);
-  const allEvents = useMemo(() => SOCIAL_CITIES.flatMap(c => eventsByCity[c]), [eventsByCity]);
+    knoxville: allEvents.filter(e => e.city === 'knoxville'),
+    tampa: allEvents.filter(e => e.city === 'tampa'),
+    st_petersburg: allEvents.filter(e => e.city === 'st_petersburg'),
+  }), [allEvents]);
   /** First load finished — order and selection wait for it. */
-  const ready = !knoxville.loading && !tampa.loading && !pinellas.loading;
+  const ready = !social.loading;
   const counts = useMemo<Record<CityKey, number>>(() => ({
     knoxville: countThisWeek(eventsByCity.knoxville),
     tampa: countThisWeek(eventsByCity.tampa),
     st_petersburg: countThisWeek(eventsByCity.st_petersburg),
   }), [eventsByCity]);
+  const brands = useBrands(refreshKey);
+  // Partners, the globe sun and the presenter all follow the brand rows.
+  const theme = useMemo(() => themeFromBrands(SOCIAL_THEME, brands), [brands]);
   const worldPartners = useMemo(() => partnersWithEvents(theme, allEvents), [theme, allEvents]);
   const pinnedPartners = useMemo(() => worldPartners.filter(p => p.home), [worldPartners]);
-  const brands = useBrands(refreshKey);
   const brandOf = useCallback((ev: SocialEvent) => brands.find(b => b.slug === ev.brand) ?? null, [brands]);
   const sunBrand = brands.find(b => b.slug === SUN_BRAND_SLUG) ?? null;
 
@@ -381,6 +389,13 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
       setFeed({ title: `${SOCIAL_CITY_LABEL[open.city]}${tabLabel}`, events: [...placeEvents].sort(feedOrder), startId: placeSel });
     }
   };
+  // The feed keeps its order but shows live rows (edits, verification);
+  // deleted / denied events drop out.
+  const feedEvents = useMemo(() => {
+    if (!feed) return [];
+    const byId = new Map(allEvents.map(e => [e.id, e]));
+    return feed.events.map(e => byId.get(e.id)).filter((e): e is SocialEvent => !!e);
+  }, [feed, allEvents]);
   const closeFeed = (currentId: string | null) => {
     setFeed(null);
     const ev = currentId ? allEvents.find(e => e.id === currentId) : null;
@@ -447,6 +462,28 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, allEvents]);
+
+  // ── Moderation / owner actions (detail sheet, admin review) ──
+  const isAdmin = me.role === 'admin';
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [deniedAck, setDeniedAck] = useState(false);
+  const actions = useMemo<SocialActions>(() => ({
+    meId,
+    signedIn,
+    isAdmin,
+    requireSignIn: () => { say('Sign in to report an event'); onOpenSignIn(); },
+    run: async (label: string, fn: () => Promise<ActionResult>, after?: () => void) => {
+      const r = await fn();
+      if (r.ok) { hapticSuccess(); say(label); setRefreshKey(k => k + 1); after?.(); return true; }
+      hapticWarning();
+      say(r.code === 'duplicate' ? 'You already reported this event' : POST_ERROR_COPY[r.code], 'warn');
+      return false;
+    },
+  }), [meId, signedIn, isAdmin, say, onOpenSignIn]);
+  const reviewQueue = useMemo(
+    () => (isAdmin ? allEvents.filter(e => e.verification === 'community').sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')) : []),
+    [isAdmin, allEvents],
+  );
 
   // ── Pull to refresh ──
   const pull = usePullToRefresh(async () => {
@@ -516,6 +553,7 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
   const home = !open && !picking;
 
   return (
+    <SocialActionsContext.Provider value={actions}>
     <div
       data-social-theme={theme.id}
       onPointerDownCapture={onPointerDownCapture}
@@ -570,6 +608,7 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
             top={topInset}
             onPost={onPost}
             onOpen={slug => enterPlace(`brand:${slug}`)}
+            review={isAdmin ? { count: reviewQueue.length, onOpen: () => { hapticMedium(); setReviewOpen(true); } } : null}
             pull={pull.handlers}
           />
           <PlaceCarousel
@@ -594,7 +633,7 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
       {feed && (
         <SocialFeed
           title={feed.title}
-          events={feed.events}
+          events={feedEvents}
           startId={feed.startId}
           brandOf={brandOf}
           colorOf={ev => eventColor(theme, ev)}
@@ -655,6 +694,17 @@ export function SocialPage({ active, profileId, onOpenSignIn }: SocialPageProps)
           onClose={() => { setPostOpen(false); setPicking(false); }}
         />
       )}
+      {reviewOpen && isAdmin && (
+        <AdminReview community={reviewQueue} topInset={topInset} onClose={() => setReviewOpen(false)} onChanged={() => setRefreshKey(k => k + 1)} />
+      )}
+
+      {social.deniedMine.length > 0 && !deniedAck && (
+        <DeniedNotice
+          events={social.deniedMine}
+          onOk={() => { setDeniedAck(true); void markDenialSeen(social.deniedMine.map(e => e.id)).then(() => setRefreshKey(k => k + 1)); }}
+        />
+      )}
     </div>
+    </SocialActionsContext.Provider>
   );
 }

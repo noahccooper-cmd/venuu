@@ -32,8 +32,13 @@ export interface SocialEvent {
   date_tba?: boolean;
   /** Optional event photo (event-photos bucket). */
   photo_url?: string | null;
-  /** 'community' until an admin verifies it (events.verification). */
-  verification?: 'community' | 'verified';
+  /** 'community' until an admin verifies it; 'denied' = removed (events.verification). */
+  verification?: 'community' | 'verified' | 'denied';
+  /** The poster (profiles.id) — owner checks, blocks. */
+  host_profile_id?: string | null;
+  is_active?: boolean;
+  /** When the poster acknowledged a deny notice. */
+  denial_seen_at?: string | null;
   /** Row creation time — drives "New" markers and story rings. */
   created_at?: string;
   /** events.going_count (bump_event_going_count trigger). */

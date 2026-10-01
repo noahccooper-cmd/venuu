@@ -124,6 +124,7 @@ export async function submitPost(d: PostDraft, ctx: { profileId: string | null; 
       expires_at: end(s).toISOString(), series_id: series, description: d.description.trim() || null,
       date_tba: d.dateTba, photo_url: d.photoPreview, verification: ctx.isAdmin ? 'verified' : 'community',
       created_at: new Date().toISOString(), going_count: 0,
+      host_profile_id: 'demo-me',   // DEMO_ME (socialModeration): owner actions work on demo posts
     }));
     addDemoEvents(rows);
     return { ok: true, id: rows[0].id, verified: ctx.isAdmin };

@@ -17,6 +17,8 @@
 
 import type { CityKey } from './constants';
 import type { SocialCategory, SocialEvent } from './socialTypes';
+import { SUN_BRAND_SLUG, type Brand } from './brands';
+import { SOCIAL_CITY_GEO } from './socialGeo';
 
 export interface SocialPartner {
   key: string;
@@ -268,4 +270,42 @@ export function socialThemeVars(theme: SocialTheme, city: CityKey | null): Recor
   };
   if (city) vars['--social-accent'] = theme.cityAccents[city];
   return vars;
+}
+
+/**
+ * The live theme: partners, the globe sun and the presenter all come from
+ * the active brand rows. The sun appears only while the sun_cruiser row is
+ * active (and has its two accent colors); otherwise the globe is neutral.
+ * Venuu's own category partners (Run Clubs, Pop-Ups, Nightlife) stay.
+ */
+export function themeFromBrands(base: SocialTheme, brands: Brand[]): SocialTheme {
+  const sunRow = brands.find(b => b.slug === SUN_BRAND_SLUG && b.accent_hexes.length >= 2) ?? null;
+  const brandPartners: SocialPartner[] = brands.map(b => ({
+    key: b.slug,
+    label: b.name,
+    color: b.primary_hex ?? POPUP_IVORY,
+    secondary: b.secondary_hex ?? undefined,
+    logo: b.logo_url,
+    about: b.about ?? '',
+    schedule: null,
+    links: {
+      website: b.website_url ?? undefined,
+      instagram: b.instagram_url,
+      finder: b.finder_url ? { url: b.finder_url, label: `Find ${b.name} near you` } : undefined,
+    },
+    disclaimer: b.age_gate ? '21+ · Please drink responsibly' : undefined,
+    // Single-city partners get a medallion on the globe; multi-city ones
+    // (the sun's partner) are reached through the sun and their ring.
+    home: b.cities.length === 1 ? SOCIAL_CITY_GEO[b.cities[0]].center : undefined,
+    hasPage: true,
+    match: { brand: b.slug },
+  }));
+  const categoryPartners = base.partners.filter(p => !p.match.brand && p.match.category);
+  return {
+    ...base,
+    partners: [...brandPartners, ...categoryPartners],
+    presentedBy: sunRow ? { name: sunRow.name, logo: sunRow.logo_url, partnerKey: sunRow.slug } : null,
+    globe: sunRow ? SUN_GLOBE : NEUTRAL_GLOBE,
+    sun: sunRow ? { core: sunRow.accent_hexes[0], mid: sunRow.accent_hexes[1], corona: `${sunRow.accent_hexes[1]}47` } : null,
+  };
 }
