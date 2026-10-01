@@ -93,7 +93,7 @@ export function useAuth() {
 
   const createProfile = useCallback(async (
     username: string,
-    classYear: number,
+    classYear: number | null,
     city: CityKey,
   ) => {
     if (!user) return { error: new Error('Not authenticated') };

@@ -3,39 +3,18 @@ import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { Geolocation } from '@capacitor/geolocation';
 import { Bell, MapPin, Loader2 } from 'lucide-react';
-import { CITIES, type CityKey } from '../../lib/constants';
 
 const FONT = 'Satoshi, sans-serif';
 
-const SCHOOL_NAMES: Record<string, string> = {
-  UTK: 'University of Tennessee',
-  'Ole Miss': 'University of Mississippi',
-  Alabama: 'University of Alabama',
-  UGA: 'University of Georgia',
-  UF: 'University of Florida',
-  LSU: 'Louisiana State University',
-  Auburn: 'Auburn University',
-  'South Carolina': 'University of South Carolina',
-  'Texas A&M': 'Texas A&M University',
-  'Mississippi State': 'Mississippi State University',
-  Kentucky: 'University of Kentucky',
-  Arkansas: 'University of Arkansas',
-  Mizzou: 'University of Missouri',
-  Vanderbilt: 'Vanderbilt University',
-  Oklahoma: 'University of Oklahoma',
-  Texas: 'University of Texas',
-};
-
-type OnboardingStep = 'welcome' | 'city' | 'signin' | 'notifications' | 'location';
+type OnboardingStep = 'welcome' | 'signin' | 'notifications' | 'location';
 
 interface OnboardingScreenProps {
-  onComplete: (city: CityKey) => void;
+  onComplete: () => void;
   signInWithApple: () => Promise<{ error: Error | null | unknown }>;
 }
 
 export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScreenProps) {
   const [step, setStep] = useState<OnboardingStep>('welcome');
-  const [selectedCity, setSelectedCity] = useState<CityKey>('knoxville');
   const [transitioning, setTransitioning] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState('');
@@ -50,8 +29,8 @@ export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScre
   }, []);
 
   const completeOnboarding = useCallback(() => {
-    onComplete(selectedCity);
-  }, [onComplete, selectedCity]);
+    onComplete();
+  }, [onComplete]);
 
   const handleAppleSignIn = useCallback(async () => {
     setSigningIn(true);
@@ -95,8 +74,6 @@ export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScre
     setPermLoading(false);
     completeOnboarding();
   }, [completeOnboarding]);
-
-  const cityEntries = Object.keys(CITIES) as CityKey[];
 
   // Shared styles
   const containerStyle: React.CSSProperties = {
@@ -167,7 +144,7 @@ export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScre
           <div style={{ padding: '16px 24px', paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))' }}>
             <button
               type="button"
-              onClick={() => goToStep('city')}
+              onClick={() => goToStep('signin')}
               className="active:scale-[0.98] transition-transform"
               style={ctaButtonStyle}
             >
@@ -179,111 +156,7 @@ export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScre
     );
   }
 
-  /* ── STEP 2: CITY SELECTION ── */
-
-  // Sort cities: Knoxville first, Oxford second, rest alphabetical
-  const sortedCities = [...cityEntries].sort((a, b) => {
-    if (a === 'knoxville') return -1;
-    if (b === 'knoxville') return 1;
-    if (a === 'oxford') return -1;
-    if (b === 'oxford') return 1;
-    return CITIES[a].name.localeCompare(CITIES[b].name);
-  });
-
-  if (step === 'city') {
-    console.debug('[city] Selection screen shown');
-
-    const handleCityGo = (key: CityKey) => {
-      console.debug('[city] GO tapped:', key);
-      setSelectedCity(key);
-      goToStep('signin');
-    };
-
-    return (
-      <div style={containerStyle}>
-        <div style={contentStyle}>
-          <div style={{ padding: '20px 24px 12px', flexShrink: 0 }}>
-            <h2 style={{ color: '#fff', fontSize: '24px', fontWeight: 700, margin: 0 }}>
-              Pick your school
-            </h2>
-            <p style={{ color: '#8A8A95', fontSize: '14px', marginTop: '6px' }}>
-              Tap GO to jump into your city's nightlife
-            </p>
-          </div>
-
-          <div style={{ flex: '1 1 0%', minHeight: 0, position: 'relative' }}>
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
-              padding: '0 20px',
-            }}>
-            <div style={{ borderRadius: '12px', border: '1px solid #1a1a1e', background: '#0a0a0d', paddingBottom: 100 }}>
-              {sortedCities.map((key) => {
-                const city = CITIES[key];
-                return (
-                  <div
-                    key={key}
-                    onClick={() => handleCityGo(key)}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      height: '68px',
-                      padding: '0 12px 0 16px',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      borderBottom: '1px solid #1a1a1e',
-                      borderLeft: '3px solid transparent',
-                    }}
-                  >
-                    <div>
-                      <span style={{ color: '#fff', fontSize: '15px', fontWeight: 600, lineHeight: 1, fontFamily: FONT, display: 'block' }}>
-                        {SCHOOL_NAMES[city.school] ?? city.school}
-                      </span>
-                      <span style={{ color: '#8A8A95', fontSize: '13px', fontWeight: 400, marginTop: '4px', lineHeight: 1, display: 'block', fontFamily: FONT }}>
-                        {city.name}, {city.state}
-                      </span>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleCityGo(key); }}
-                      className="active:scale-[0.95] transition-transform"
-                      style={{
-                        height: 36, padding: '0 16px', borderRadius: 10,
-                        background: '#FF8200', border: 'none', color: 'white',
-                        fontFamily: FONT, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                        flexShrink: 0, WebkitTapHighlightColor: 'transparent',
-                      }}
-                    >
-                      GO {'\u2192'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-            </div>
-            {/* Bottom fade — signals more content below */}
-            <div style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: 64,
-              background: 'linear-gradient(to bottom, transparent, #050507)',
-              pointerEvents: 'none',
-            }} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ── STEP 3: SIGN IN ── */
+  /* ── STEP 2: SIGN IN ── */
   if (step === 'signin') {
     return (
       <div style={containerStyle}>
@@ -351,9 +224,8 @@ export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScre
     );
   }
 
-  /* ── STEP 4: NOTIFICATION PERMISSION ── */
+  /* ── STEP 3: NOTIFICATION PERMISSION ── */
   if (step === 'notifications') {
-    const cityName = CITIES[selectedCity].name;
     return (
       <div style={containerStyle}>
         <div style={{ ...contentStyle, alignItems: 'center', justifyContent: 'center', padding: '0 32px' }}>
@@ -373,7 +245,7 @@ export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScre
             Never miss a deal
           </h2>
           <p style={{ color: '#8A8A95', fontSize: '15px', textAlign: 'center', lineHeight: 1.5, maxWidth: '300px', margin: '0 0 40px' }}>
-            Get notified when bars drop specials and events go live in {cityName}
+            Get notified when bars drop specials and events go live near you
           </p>
 
           <button
@@ -398,7 +270,7 @@ export function OnboardingScreen({ onComplete, signInWithApple }: OnboardingScre
     );
   }
 
-  /* ── STEP 5: LOCATION PERMISSION ── */
+  /* ── STEP 4: LOCATION PERMISSION ── */
   return (
     <div style={containerStyle}>
       <div style={{ ...contentStyle, alignItems: 'center', justifyContent: 'center', padding: '0 32px' }}>

@@ -42,6 +42,8 @@ ios/App/build/
 # Capacitor
 ios/App/public/
 android/app/build/
+# Stray Android residue (no @capacitor/android dep, no Gradle project)
+android/
 tree.txt
 supabase/.temp/
-supabase/.temp/
+.env.backup

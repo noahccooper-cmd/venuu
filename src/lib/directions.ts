@@ -1,5 +1,49 @@
 /** Mapbox Walking Directions API utility. */
 
+import { Capacitor } from '@capacitor/core';
+import { recordSignal } from './signals';
+
+/**
+ * Open the user's native maps app pointed at a destination, walking
+ * directions when the platform supports it. iOS resolves the
+ * `maps://` scheme directly; web falls back to Google Maps.
+ *
+ * When venueId is supplied, fires a fire-and-forget `direction_request`
+ * signal so the prediction engine sees this intent. Signal write never
+ * blocks the deep-link — failures are swallowed.
+ */
+export function openDirectionsTo(
+  lat: number,
+  lng: number,
+  venueName: string,
+  venueId?: string,
+): void {
+  if (venueId) {
+    recordSignal({
+      venueId,
+      signalType: 'direction_request',
+      beforeNavigation: true,
+      metadata: { source: 'openDirectionsTo', surface: 'venue_card' },
+    });
+    console.log(`[signal] direction_request venue=${venueId.slice(0, 8)}`);
+  }
+  if (Capacitor.isNativePlatform()) {
+    // iOS Maps deep link. `dirflg=w` requests the walking route.
+    const url = `maps://?daddr=${lat},${lng}&dirflg=w`;
+    try {
+      window.location.href = url;
+    } catch { /* swallow */ }
+    return;
+  }
+  const encoded = encodeURIComponent(venueName);
+  const url =
+    `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}` +
+    `&destination_place_id=${encoded}&travelmode=walking`;
+  try {
+    window.open(url, '_blank');
+  } catch { /* swallow */ }
+}
+
 export interface WalkingRoute {
   geometry: GeoJSON.LineString;
   duration: number; // seconds
@@ -14,6 +58,7 @@ export async function getWalkingRoute(
   from: [number, number], // [lng, lat]
   to: [number, number],   // [lng, lat]
   token: string,
+  venueId?: string,
 ): Promise<WalkingRoute | null> {
   try {
     const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${from[0]},${from[1]};${to[0]},${to[1]}?geometries=geojson&overview=full&access_token=${token}`;
@@ -23,6 +68,18 @@ export async function getWalkingRoute(
     const data = await res.json();
     const route = data.routes?.[0];
     if (!route) return null;
+
+    // PREDICTION ENGINE: log direction request as a signal
+    if (venueId) {
+      recordSignal({
+        venueId,
+        signalType: 'direction_request',
+        metadata: {
+          duration_seconds: route.duration,
+          distance_meters: route.distance,
+        },
+      });
+    }
 
     return {
       geometry: route.geometry as GeoJSON.LineString,

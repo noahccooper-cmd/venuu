@@ -1,9 +1,14 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { formatCount, getCapacityPercent, timeAgo } from '../../lib/utils';
+import { Crown } from 'lucide-react';
+import { formatCount, getCapacityPercent } from '../../lib/utils';
 import { getEventTimeLabel } from '../../lib/eventUtils';
-import { useVenueRecaps } from '../../hooks/useVenueRecaps';
 import { PunchCard } from '../Loyalty/PunchCard';
 import { formatCoverPriceShort } from '../../lib/coverPricing';
+import { recordSignal } from '../../lib/signals';
+import { openDirectionsTo } from '../../lib/directions';
+import { getVenueStatus } from '../../lib/venueHours';
+import { useBarOwnership } from '../../hooks/useBarOwnership';
+import { CommunityAvatar } from '../Community/CommunityAvatar';
 import type { Venue, Headcount, VenueEvent } from '../../lib/types';
 import type { CoverPriceInfo } from '../../hooks/useCoverPricing';
 
@@ -38,14 +43,6 @@ function getUberUrl(venue: Venue): string {
   return `https://m.uber.com/ul/?${params.toString()}`;
 }
 
-/* ── Directions helper ── */
-
-function getDirectionsUrl(venue: Venue): string {
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  if (isIOS) return `https://maps.apple.com/?daddr=${venue.lat},${venue.lng}&dirflg=w`;
-  return `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}&travelmode=walking`;
-}
-
 /* ── Tonight Banner (peek-visible, below venue name) ── */
 
 function TonightBanner({ venue }: { venue: Venue }) {
@@ -61,6 +58,32 @@ function TonightBanner({ venue }: { venue: Venue }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ── Owner badge (name-line, right side) — only mounted for Knoxville
+ *  bars (useBarOwnership has no city param, and its fetch is scoped
+ *  to Knoxville internally), same reasoning as PunchCard below: don't
+ *  fire the query on cards that can't use its data. Reuses
+ *  CommunityAvatar so the initials-circle-by-avatar_color look stays
+ *  identical to the Community tab's own bar wall. */
+function VenueOwnerBadge({ venueId }: { venueId: string }) {
+  const { bars, loading } = useBarOwnership();
+  if (loading) return null;
+  const bar = bars.find(b => b.venueId === venueId);
+  if (!bar) return null;
+  const { owner } = bar;
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+      <Crown size={13} style={{ color: '#FFD24A', opacity: owner ? 1 : 0.55, flexShrink: 0 }} />
+      {owner && (
+        <CommunityAvatar name={owner.displayName || owner.username} color={owner.avatarColor} size={18} />
+      )}
+      <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 13, fontWeight: 700, color: '#FFD24A', whiteSpace: 'nowrap' }}>
+        {owner ? owner.username : 'unclaimed'}
+      </span>
+    </span>
   );
 }
 
@@ -83,170 +106,6 @@ function SpecialsRow({ venue }: { venue: Venue }) {
   );
 }
 
-/* ── Recap Card ── */
-
-function RecapCard({ recap }: { recap: any; index: number }) {
-  return (
-    <div className="recap-card">
-      <div className="recap-header">
-        <span className="recap-user">@{recap.username}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span className="recap-time">{timeAgo(recap.created_at)}</span>
-        </div>
-      </div>
-      <div className="recap-stars">
-        {[1, 2, 3, 4, 5].map(s => (
-          <span key={s} className={`star ${s <= recap.stars ? 'filled' : 'empty'}`}>
-            {s <= recap.stars ? '\u2605' : '\u2606'}
-          </span>
-        ))}
-      </div>
-      <p className="recap-body">{recap.body}</p>
-    </div>
-  );
-}
-
-/* ── Leave a Recap ── */
-
-function LeaveRecap({ username, submitRecap, disabled }: { venue: Venue; username: string; submitRecap: (u: string, b: string, s: number) => Promise<void>; disabled?: boolean }) {
-  const [stars, setStars] = useState(0);
-  const [text, setText] = useState('');
-
-  const submit = useCallback(async () => {
-    if (stars === 0 || !text.trim()) return;
-    if (navigator.vibrate) navigator.vibrate(10);
-    await submitRecap(username, text.trim(), stars);
-    setStars(0);
-    setText('');
-  }, [stars, text, username, submitRecap]);
-
-  if (disabled) {
-    return (
-      <div className="leave-recap">
-        <div style={{
-          textAlign: 'center',
-          padding: '12px',
-          color: 'rgba(255,255,255,0.35)',
-          fontSize: '13px',
-          fontFamily: 'Satoshi, sans-serif',
-          fontStyle: 'italic',
-        }}>
-          {'\u2705'} You've already left a recap here tonight
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="leave-recap">
-      <div className="recap-input-label">{'\u2B50'} Leave your recap</div>
-      <div className="star-selector">
-        {[1, 2, 3, 4, 5].map(s => (
-          <button
-            key={s}
-            className={`star-btn ${s <= stars ? 'active' : ''}`}
-            onClick={() => setStars(s)}
-          >
-            {'\u2605'}
-          </button>
-        ))}
-      </div>
-      <input
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="How was tonight?"
-        maxLength={200}
-        className="recap-input recap-input-full"
-        onKeyDown={e => e.key === 'Enter' && submit()}
-      />
-      <button onClick={submit} className="recap-submit-full" disabled={stars === 0 || !text.trim()}>
-        POST RECAP
-      </button>
-    </div>
-  );
-}
-
-/* ── Recap Section (receives hook data from parent to avoid duplicate subscriptions) ── */
-
-interface RecapSectionProps {
-  venue: Venue;
-  username: string;
-  recapData: ReturnType<typeof useVenueRecaps>;
-}
-
-function RecapSection({ venue, username, recapData }: RecapSectionProps) {
-  const { recaps, submitRecap, avgRating, totalRecaps, tonightCount, hasUserRecapped } = recapData;
-  const [expanded, setExpanded] = useState(false);
-
-  const visibleRecaps = expanded ? recaps : recaps.slice(0, 3);
-  const hasMore = recaps.length > 3 && !expanded;
-
-  return (
-    <div className="recap-section">
-      {/* venuu rating header */}
-      <div className="recap-header-row">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="recap-title">RECAPS</span>
-          {avgRating !== null && (
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '3px',
-              fontSize: '13px',
-              fontWeight: 700,
-              color: '#FF8200',
-              fontFamily: 'Satoshi, sans-serif',
-            }}>
-              {'\u2605'} {avgRating}
-              <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px', fontWeight: 500 }}>
-                ({totalRecaps})
-              </span>
-            </span>
-          )}
-        </div>
-        {tonightCount > 0 && (
-          <span style={{
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.4)',
-            fontFamily: 'Satoshi, sans-serif',
-          }}>
-            {tonightCount} recap{tonightCount === 1 ? '' : 's'} tonight
-          </span>
-        )}
-      </div>
-      <div className="recap-list">
-        {recaps.length === 0 ? (
-          <p className="recap-empty">No recaps yet — be the first!</p>
-        ) : (
-          <>
-            {visibleRecaps.map((r, i) => <RecapCard key={r.id} recap={r} index={i} />)}
-            {hasMore && (
-              <button
-                onClick={() => setExpanded(true)}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '8px',
-                  color: '#FF8200',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  fontFamily: 'Satoshi, sans-serif',
-                  cursor: 'pointer',
-                }}
-              >
-                Show {recaps.length - 3} more recap{recaps.length - 3 === 1 ? '' : 's'}
-              </button>
-            )}
-          </>
-        )}
-      </div>
-      <LeaveRecap venue={venue} username={username} submitRecap={submitRecap} disabled={hasUserRecapped} />
-    </div>
-  );
-}
-
 /* ── Main VenueSheet (Pull-Up Bottom Sheet) ── */
 
 const EVENT_TYPE_LABELS: Record<VenueEvent['event_type'], string> = {
@@ -262,7 +121,6 @@ export function VenueSheet({
   venue,
   headcount,
   venueEvent,
-  username,
   userId,
   onSignIn,
   onClose,
@@ -275,9 +133,6 @@ export function VenueSheet({
   const [sheetState, setSheetState] = useState<SheetState>('peeked');
 
   const sheetRef = useRef<HTMLDivElement>(null);
-  const recapRef = useRef<HTMLDivElement>(null);
-  const recapData = useVenueRecaps(venue.id, username);
-  const { avgRating: venueAvgRating, totalRecaps: venueTotalRecaps, tonightCount: venueTonightCount } = recapData;
   const startYRef = useRef(0);
   const currentYRef = useRef(0);
   const isDragging = useRef(false);
@@ -292,17 +147,21 @@ export function VenueSheet({
     if (sheetRef.current) sheetRef.current.scrollTop = 0;
   }, [venue.id]);
 
+  useEffect(() => {
+    if (venue?.id) {
+      recordSignal({
+        venueId: venue.id,
+        signalType: 'card_view',
+        metadata: { venue_name: venue.name },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venue?.id]);
+
   const dismiss = useCallback(() => {
     setSheetState('hidden');
     setTimeout(onClose, 300);
   }, [onClose]);
-
-  const handleOpenRecap = useCallback(() => {
-    setSheetState('expanded');
-    setTimeout(() => {
-      recapRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 400);
-  }, []);
 
   const handleUber = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -448,11 +307,6 @@ export function VenueSheet({
                 {formatCount(count)} inside
               </p>
             )}
-            {venueAvgRating !== null && (
-              <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 13, fontWeight: 600, color: '#C9A96E', margin: '6px 0 0' }}>
-                {'\u2605'} {venueAvgRating} <span style={{ color: '#8A8A95', fontSize: 11, fontWeight: 400 }}>({venueTotalRecaps} rating{venueTotalRecaps !== 1 ? 's' : ''})</span>
-              </p>
-            )}
           </div>
         )}
 
@@ -542,41 +396,25 @@ export function VenueSheet({
         {/* Name + Rating (hidden for fraternities — shown in frat header above) */}
         {venue.category !== 'fraternity' && <div className="sheet-info">
           <div className="sheet-name-row">
-            <h2 className="sheet-name" style={venue.featured ? { borderLeft: '3px solid #A855F7', paddingLeft: 10 } : undefined}>{venue.name}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* venuu community rating (primary) */}
-              {venueAvgRating !== null && (
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: '#FF8200',
-                  fontFamily: 'Satoshi, sans-serif',
-                }}>
-                  {'\u2605'} {venueAvgRating}
-                  <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontWeight: 500 }}>
-                    ({venueTotalRecaps})
-                  </span>
-                  {venueTonightCount > 0 && (
-                    <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', fontWeight: 500 }}>
-                      {' \u00B7 '}{venueTonightCount} recap{venueTonightCount === 1 ? '' : 's'} tonight
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
+            <h2
+              className="sheet-name"
+              style={{
+                minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                ...(venue.featured ? { borderLeft: '3px solid #A855F7', paddingLeft: 10 } : {}),
+              }}
+            >
+              {venue.name}
+            </h2>
+            {venue.city === 'knoxville' && <VenueOwnerBadge venueId={venue.id} />}
           </div>
           {venue.address && (
-            <a
-              href={getDirectionsUrl(venue)}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => openDirectionsTo(venue.lat, venue.lng, venue.name, venue.id)}
               className="sheet-address"
             >
               {'\uD83D\uDCCD'} {venue.address}
-            </a>
+            </button>
           )}
         </div>}
 
@@ -592,34 +430,81 @@ export function VenueSheet({
           </>
         )}
 
-        {/* Live Count */}
-        {isLive ? (
-          <div className="sheet-live-section">
-            <div className="sheet-live-row">
-              <span className="sheet-live-pill"><span className="ld" /> LIVE</span>
-              <span className="sheet-live-count">{formatCount(count)}</span>
-              <span className="sheet-live-label">inside</span>
-              {peak > 0 && (
-                <span className="sheet-live-peak">Peak: {formatCount(peak)}</span>
+        {/* Open/Closed status + Live Count — gated by hours_json (venueHours engine) */}
+        {(() => {
+          const status = getVenueStatus((venue as { hours_json?: unknown }).hours_json as never);
+
+          // Small inline status pill (no CSS additions required).
+          const pill = (color: string, bg: string, label: string, detail?: string) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 12, fontWeight: 700, fontFamily: 'Satoshi, sans-serif',
+                color, background: bg, borderRadius: 8, padding: '4px 10px',
+              }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} /> {label}
+              </span>
+              {detail && (
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: 'Satoshi, sans-serif' }}>
+                  {detail}
+                </span>
               )}
             </div>
-            {pct !== null && (
-              <div className="sheet-bar-row">
-                <div className="sheet-bar">
-                  <div
-                    className="sheet-bar-fill"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <span className="sheet-bar-pct">{pct}%</span>
+          );
+
+          // Closed right now — a closed bar should not display a headcount.
+          if (status.status === 'closed') {
+            return (
+              <div className="sheet-live-section empty">
+                {pill('#FF5A5A', 'rgba(255,90,90,0.12)', 'Closed', status.detail)}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="sheet-live-section empty">
-            <span className="sheet-no-data">No live count yet</span>
-          </div>
-        )}
+            );
+          }
+
+          // Event-driven venue (e.g. Jannus) — no fixed open/close.
+          if (status.status === 'varies') {
+            return (
+              <div className="sheet-live-section empty">
+                {pill('#FFB13D', 'rgba(255,177,61,0.12)', 'Hours vary', "check tonight's event")}
+              </div>
+            );
+          }
+
+          // Open (or hours unknown) — show the live headcount as before.
+          const openPill = status.status === 'open'
+            ? pill('#00FF88', 'rgba(0,255,136,0.10)', 'Open', status.detail)
+            : null;
+
+          return isLive ? (
+            <div className="sheet-live-section">
+              {openPill}
+              <div className="sheet-live-row">
+                <span className="sheet-live-pill"><span className="ld" /> LIVE</span>
+                <span className="sheet-live-count">{formatCount(count)}</span>
+                <span className="sheet-live-label">inside</span>
+                {peak > 0 && (
+                  <span className="sheet-live-peak">Peak: {formatCount(peak)}</span>
+                )}
+              </div>
+              {pct !== null && (
+                <div className="sheet-bar-row">
+                  <div className="sheet-bar">
+                    <div
+                      className="sheet-bar-fill"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="sheet-bar-pct">{pct}%</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="sheet-live-section empty">
+              {openPill}
+              <span className="sheet-no-data">No live count yet</span>
+            </div>
+          );
+        })()}
 
         {/* Get There — primary action */}
         {onGetThere && (
@@ -671,10 +556,6 @@ export function VenueSheet({
               <span className="sa-label">Call</span>
             </div>
           ))}
-          <button onClick={handleOpenRecap} className="sheet-action-btn">
-            <span className="sa-icon">{'\u2B50'}</span>
-            <span className="sa-label">Recap</span>
-          </button>
           {onAskVenny && (
             <button onClick={onAskVenny} className="sheet-action-btn">
               <span className="sa-icon">{'\u2728'}</span>
@@ -717,20 +598,15 @@ export function VenueSheet({
           )}
         </div>
 
-        {/* Loyalty Punch Card — bars only (frats don't have loyalty) */}
-        {venue.category !== 'fraternity' && (
+        {/* Loyalty Punch Card — only mounted where loyalty is actually
+            enabled, so useLoyalty's queries + realtime subscription don't
+            fire on every bar's card, just the ones with loyalty_active. */}
+        {venue.category !== 'fraternity' && venue.loyalty_active && (
           <div style={{ padding: '0 16px' }}>
             <PunchCard venueId={venue.id} venueName={venue.name} venueLat={venue.lat} venueLng={venue.lng} loyaltyActive={venue.loyalty_active ?? false} nfcRequired={venue.nfc_required ?? false} userId={userId} onSignIn={onSignIn} />
           </div>
         )}
 
-        {/* Divider */}
-        <div className="sheet-divider" />
-
-        {/* The Recap */}
-        <div ref={recapRef}>
-          <RecapSection venue={venue} username={username} recapData={recapData} />
-        </div>
       </div>
     </div>
     </>

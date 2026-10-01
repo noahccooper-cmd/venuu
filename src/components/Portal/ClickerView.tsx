@@ -4,7 +4,6 @@ import { supabase } from '../../lib/supabase';
 import { formatCount, formatTime, timeAgo, getTonightDate } from '../../lib/utils';
 import type { Venue, Headcount } from '../../lib/types';
 import type { EndNightSummary } from '../../hooks/usePortal';
-import { EventCreator } from './EventCreator';
 import { CoverPortalSection } from './CoverPortalSection';
 import { hapticLight } from '../../lib/haptics';
 
@@ -114,7 +113,6 @@ export function ClickerView({
 
   // ── Portal analytics state ──
   const [tonightCheckins, setTonightCheckins] = useState<number | null>(null);
-  const [tonightAvgRating, setTonightAvgRating] = useState<number | null>(null);
   const [weekVisitors, setWeekVisitors] = useState<number | null>(null);
   const [weekAvgPeak, setWeekAvgPeak] = useState<number | null>(null);
 
@@ -149,19 +147,6 @@ export function ClickerView({
         .eq('venue_id', venue.id)
         .eq('night_of', nightOf);
       setTonightCheckins(checkinCount ?? 0);
-
-      // Tonight's avg rating
-      const { data: recapRows } = await supabase
-        .from('venue_recaps')
-        .select('stars')
-        .eq('venue_id', venue.id)
-        .eq('day_of', nightOf);
-      if (recapRows && recapRows.length > 0) {
-        const avg = recapRows.reduce((sum, r) => sum + r.stars, 0) / recapRows.length;
-        setTonightAvgRating(Math.round(avg * 10) / 10);
-      } else {
-        setTonightAvgRating(null);
-      }
 
       // This week: total loyalty check-ins
       const { count: weekCount } = await supabase
@@ -759,22 +744,6 @@ export function ClickerView({
               Check-ins
             </p>
           </div>
-          {/* Avg Rating */}
-          <div style={{
-            flex: 1,
-            background: '#111114',
-            border: '1px solid #2a2a2e',
-            borderRadius: '12px',
-            padding: '12px 8px',
-            textAlign: 'center',
-          }}>
-            <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '24px', fontWeight: 800, color: '#FF8200', lineHeight: 1 }}>
-              {tonightAvgRating !== null ? `${tonightAvgRating}` : '--'}
-            </p>
-            <p style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '11px', color: '#8A8A95', marginTop: '4px' }}>
-              Avg Rating
-            </p>
-          </div>
         </div>
 
         {/* ── THIS WEEK ── */}
@@ -1153,8 +1122,10 @@ export function ClickerView({
           )}
         </div>
 
-        {/* Event Creator */}
-        <EventCreator venue={venue} />
+        {/* Event creation is hidden: after 00077, events can't be inserted
+            from the portal's PIN session, so the button would fail silently.
+            Tonight events are created by Venuu for now. EventCreator.tsx is
+            kept for when portal posting moves to a PIN-checked edge function. */}
       </div>
     </div>
   );

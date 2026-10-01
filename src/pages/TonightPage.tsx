@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { MapView } from '../components/Map/MapView';
+import { filterEventsByCurated } from '../lib/eventFilters';
 import { VenueSheet } from '../components/Map/VenueCard';
 import { EventCard } from '../components/Map/EventCard';
 import { TheDrop } from '../components/Map/TheDrop';
@@ -10,6 +11,9 @@ import { getWalkingRoute, sliceRouteAhead, haversineMeters, distanceToRoute } fr
 import { mapboxToken } from '../lib/supabase';
 import { CITIES } from '../lib/constants';
 import { CoverPurchaseSheet } from '../components/Map/CoverPurchaseSheet';
+import { useCityAggregates } from '../hooks/useCityAggregates';
+import type { ColdOpenPhase } from '../hooks/useColdOpen';
+import type { Map as MapboxMap } from 'mapbox-gl';
 import type { Venue, Headcount, VenueEvent } from '../lib/types';
 import type { CityKey } from '../lib/constants';
 import type { CoverPriceInfo } from '../hooks/useCoverPricing';
@@ -50,6 +54,37 @@ interface TonightPageProps {
   myPurchases?: Map<string, { qr_code: string }>;
   onBuyCover?: (configId: string, venueId: string) => Promise<PurchaseResult>;
   onAskVenny?: (venue: Venue, headcount: Headcount | null) => void;
+  /** Cold-open intro is currently playing — forwarded to MapView. */
+  introActive?: boolean;
+  /** Active intro phase, drives bubble-bloom staggering. */
+  introPhase?: ColdOpenPhase;
+  /** Captures the underlying mapboxgl.Map instance for the intro overlay. */
+  onMapReady?: (map: MapboxMap) => void;
+  /** Globe-view share button click handler (driven by useShareGlobe). */
+  onShareGlobe?: () => void;
+  /** True while a share is mid-flight. */
+  sharingGlobe?: boolean;
+  /** Venue IDs Venny has highlighted via highlight_on_map. Forwarded to MapView. */
+  highlightedVenueIds?: string[];
+  /** Current map mode — forwarded to MapView to gate event layers. */
+  mapMode?: 'vibe' | 'events';
+  /** Events-mode pin tap → parent expands the lineup sheet + glows the
+   *  matching card. In vibe mode the standalone EventCard opens instead. */
+  onEventPinClick?: (event: VenueEvent) => void;
+  /** Event id whose map pin should glow gold — forwarded to MapView. */
+  glowEventId?: string | null;
+  /** Events-mode venue tap → parent opens the full hub card for that venue. */
+  onVenueHubOpen?: (venueId: string) => void;
+  /** Map background tap (not on a beacon) → parent collapses the lineup
+   *  sheet back to its pill state. */
+  onMapBackgroundTap?: () => void;
+  /** Venues lit by the active scrubber chip — drives the beacon sweep. */
+  litEventVenueIds?: Set<string>;
+  /** Selected scrubber window's date range (epoch ms); null = whole window. */
+  selectedRangeStart?: number | null;
+  selectedRangeEnd?: number | null;
+  /** Active scrubber window context for beacon labels ("THIS WEEK"). */
+  eventWindowLabel?: string;
 }
 
 export function TonightPage({
@@ -70,11 +105,76 @@ export function TonightPage({
   myPurchases,
   onBuyCover,
   onAskVenny,
+  introActive,
+  introPhase,
+  onMapReady,
+  onShareGlobe,
+  sharingGlobe,
+  highlightedVenueIds,
+  mapMode,
+  onEventPinClick,
+  glowEventId,
+  onVenueHubOpen,
+  onMapBackgroundTap,
+  litEventVenueIds,
+  selectedRangeStart,
+  selectedRangeEnd,
+  eventWindowLabel,
 }: TonightPageProps) {
+  // City rollups for the globe-view dot layer + headline counter.
+  const { aggregates: cityAggregates, totalPeopleOut } = useCityAggregates();
+
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [coverVenue, setCoverVenue] = useState<{ id: string; name: string } | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<VenueEvent | null>(null);
-  const [venueFilter, setVenueFilter] = useState<'all' | 'bars' | 'greek'>('all');
+  // `venueFilter` is kept locked to 'all' now that the filter row is
+  // gone — left in place so MapView's filter logic keeps a stable
+  // contract; future Venny tools can drive this if we re-introduce
+  // server-side narrowing.
+  const [venueFilter] = useState<'all' | 'bars' | 'greek'>('all');
+
+  // Hide TheDrop + the venue-filter pill row at globe zoom — we're in
+  // the universe view, the metro UI doesn't belong there. Mirrors the
+  // isAtGlobe state inside MapView (kept local rather than lifted, to
+  // avoid plumbing through another callback). The map instance attaches
+  // to `mapInstanceRef.current` asynchronously inside MapView's load
+  // handler, so we poll with rAF until it's available, then bind.
+  const [isAtGlobe, setIsAtGlobe] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    let rafId = 0;
+    type ZoomMap = { getZoom: () => number; on: (e: string, fn: () => void) => void; off: (e: string, fn: () => void) => void };
+    let attached: ZoomMap | null = null;
+    let handler: (() => void) | null = null;
+
+    const tryAttach = () => {
+      if (cancelled) return;
+      const map = mapInstanceRef.current as ZoomMap | null;
+      if (!map) {
+        rafId = requestAnimationFrame(tryAttach);
+        return;
+      }
+      attached = map;
+      handler = () => setIsAtGlobe(map.getZoom() < 5);
+      handler();
+      map.on('zoom', handler);
+    };
+    tryAttach();
+
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (attached && handler) attached.off('zoom', handler);
+    };
+  }, []);
+
+  // Broadcast globe state so body-level pills mounted in other trees
+  // (VennyBar in App, MarketTicker + MoversChip in MapView) can hide in
+  // unison at globe zoom. TonightPage's isAtGlobe is the single source.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('venuu:globe-state', { detail: { isAtGlobe } }));
+  }, [isAtGlobe]);
+
   const [activeRoute, setActiveRoute] = useState<ActiveRoute | null>(null);
   const [getThereLoading, setGetThereLoading] = useState(false);
   type FollowMode = 'free' | 'center' | 'bearing';
@@ -87,6 +187,10 @@ export function TonightPage({
     : null;
 
   const handleVenueClick = useCallback((venue: Venue) => {
+    if (mapMode === 'events') {
+      onVenueHubOpen?.(venue.id);
+      return;
+    }
     venue.category === 'fraternity' ? hapticMedium() : hapticLight();
     setSelectedVenue(venue);
     setSelectedEvent(null);
@@ -103,11 +207,18 @@ export function TonightPage({
         essential: true,
       });
     }
-  }, []);
+  }, [mapMode, onVenueHubOpen]);
 
   const handleEventClick = useCallback((event: VenueEvent) => {
     hapticMedium();
-    setSelectedEvent(event);
+    // In events mode the lineup sheet is the detail surface — let the
+    // parent expand it + glow the card rather than popping a standalone
+    // EventCard on top of the sheet.
+    if (mapMode === 'events') {
+      onEventPinClick?.(event);
+    } else {
+      setSelectedEvent(event);
+    }
     setSelectedVenue(null);
     if (mapInstanceRef.current) {
       const map = mapInstanceRef.current;
@@ -128,7 +239,7 @@ export function TonightPage({
         essential: true,
       });
     }
-  }, [venues]);
+  }, [venues, mapMode, onEventPinClick]);
 
   const handleClose = useCallback(() => {
     setSelectedVenue(null);
@@ -141,7 +252,9 @@ export function TonightPage({
   const handleMapTap = useCallback(() => {
     if (selectedVenue) setSelectedVenue(null);
     if (selectedEvent) setSelectedEvent(null);
-  }, [selectedVenue, selectedEvent]);
+    // Background tap also collapses the events-mode lineup sheet to pill.
+    onMapBackgroundTap?.();
+  }, [selectedVenue, selectedEvent, onMapBackgroundTap]);
 
   const handleFlyTo = useCallback((lng: number, lat: number) => {
     if (mapInstanceRef.current) {
@@ -195,7 +308,7 @@ export function TonightPage({
       // 2. Fetch walking route
       const to: [number, number] = [venue.lng, venue.lat];
       console.debug('[nav] Fetching route from', from, 'to', to);
-      const result = await getWalkingRoute(from, to, mapboxToken);
+      const result = await getWalkingRoute(from, to, mapboxToken, venue.id);
       if (!result) {
         console.warn('[nav] Mapbox Directions returned no route');
         setGetThereLoading(false);
@@ -321,44 +434,32 @@ export function TonightPage({
     };
   }, [activeRoute?.arrived, activeRoute?.destinationLng, activeRoute?.destinationLat, userLocation]);
 
+  // In events mode, slice the event set to the active time window so the
+  // map shows a curated subset rather than every event at once.
+  const filteredEvents = useMemo(() => {
+    if (mapMode !== 'events') return events;
+    // In events mode, only curated events surface on the map
+    return filterEventsByCurated(events);
+  }, [events, mapMode]);
+
   return (
-    <div className="absolute inset-0" style={{ top: 'calc(80px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
+    <div className="absolute inset-0" style={{ top: 'calc(44px + env(safe-area-inset-top, 0px))', bottom: '60px' }}>
       {!activeRoute && (
-        <TheDrop venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
+        <div
+          style={{
+            opacity: isAtGlobe ? 0 : 1,
+            pointerEvents: isAtGlobe ? 'none' : 'auto',
+            transition: 'opacity 320ms ease-out',
+          }}
+        >
+          <TheDrop venues={venues} events={events} onFlyTo={handleFlyTo} onEventTap={handleEventClick} />
+        </div>
       )}
 
-      {/* Venue type filter pills */}
-      <div style={{
-        position: 'absolute', top: '64px', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 399, display: 'flex', gap: 6, pointerEvents: 'auto',
-        background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)', borderRadius: 20, padding: '6px 8px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-      }}>
-        {([['all', 'All', '#FF8200'], ['bars', 'Bars', '#FF8200'], ['greek', 'Greek Life', '#C9A96E']] as const).map(([key, label, accent]) => {
-          const isSelected = venueFilter === key;
-          const isGold = key === 'greek';
-          return (
-            <button
-              key={key}
-              onClick={() => { hapticLight(); setVenueFilter(key as 'all' | 'bars' | 'greek'); }}
-              style={{
-                padding: '5px 13px', borderRadius: 14,
-                background: isSelected ? accent : 'transparent',
-                border: isSelected ? 'none' : `1px solid rgba(255,255,255,0.25)`,
-                color: isSelected ? (isGold ? '#1a1a2e' : 'white') : 'rgba(255,255,255,0.55)',
-                fontFamily: 'Satoshi, sans-serif', fontSize: 12, fontWeight: 700,
-                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
-                transform: isSelected ? 'scale(1.05)' : 'scale(1)',
-                transition: 'transform 0.2s ease, background 0.2s ease, color 0.2s ease',
-                boxShadow: isSelected ? `0 0 14px ${accent}60` : 'none',
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Venue-type filter row removed — replaced by VennyBar (rendered
+       *  one level up in App.tsx). The `venueFilter` state below stays
+       *  on 'all' for now but remains in place in case a future Venny
+       *  tool needs to narrow the visible markers programmatically. */}
 
       <MapView
         city={city}
@@ -367,7 +468,7 @@ export function TonightPage({
         counts={counts}
         liveVenueIds={liveVenueIds}
         pulsedVenueId={pulsedVenueId}
-        events={events}
+        events={filteredEvents}
         coverPrices={coverPrices}
         userLocation={userLocation}
         route={activeRoute?.geometry ?? null}
@@ -378,13 +479,29 @@ export function TonightPage({
         followMode={followMode}
         onVenueClick={handleVenueClick}
         onEventClick={handleEventClick}
+        glowEventId={glowEventId}
         onMapTap={handleMapTap}
         onCityChange={onCityChange}
+        onCityTapFromGlobe={onCityChange}
+        cityAggregates={cityAggregates}
+        totalPeopleOut={totalPeopleOut}
+        introActive={introActive}
+        introPhase={introPhase}
+        onMapReady={onMapReady}
+        onShareGlobe={onShareGlobe}
+        sharingGlobe={sharingGlobe}
         onCancelRoute={handleCancelRoute}
         onPriceTap={(id, name) => { console.debug('[covers] Price tap:', name); setSelectedVenue(null); setSelectedEvent(null); setCoverVenue({ id, name }); }}
         onToggleFollow={handleToggleFollow}
         onUserDragMap={() => setFollowMode('free')}
         mapInstanceRef={mapInstanceRef}
+        highlightedVenueIds={highlightedVenueIds}
+        selectedVenueId={selectedVenue?.id ?? null}
+        mapMode={mapMode}
+        litEventVenueIds={litEventVenueIds}
+        selectedRangeStart={selectedRangeStart}
+        selectedRangeEnd={selectedRangeEnd}
+        eventWindowLabel={eventWindowLabel}
       />
 
       {currentVenue && (

@@ -1,0 +1,140 @@
+/* Social tab — every rule is scoped to the Social root so nothing
+   reaches Tonight or any other tab. */
+
+[data-social-theme] .social-press {
+  transition: transform 120ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+[data-social-theme] .social-press:active {
+  transform: scale(0.98);
+}
+
+[data-social-theme] .social-num {
+  font-variant-numeric: tabular-nums;
+}
+
+[data-social-theme] .social-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Reduced motion: state changes are instant everywhere in Social. */
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] *,
+  [data-social-theme] *::before,
+  [data-social-theme] *::after {
+    transition-duration: 0ms !important;
+    transition-delay: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
+/* Cards: the whole card is one tap target (an absolutely positioned
+   button) with Directions layered above it; press scales the card. */
+[data-social-theme] .social-card:has(> .social-card-hit:active) {
+  transform: scale(0.98);
+}
+
+/* The sun's corona breathes very slightly — the only ambient motion
+   in Social. Off entirely under reduced motion. */
+@keyframes social-breathe {
+  from { transform: scale(1); }
+  to   { transform: scale(1.02); }
+}
+[data-social-theme] .social-breathe {
+  animation: social-breathe 6s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] .social-breathe { animation: none; }
+}
+
+/* Partner World sheets slide up; instant under reduced motion (rule above). */
+@keyframes social-sheet-in {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes social-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+[data-social-theme] .social-sheet-in {
+  animation: social-sheet-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+[data-social-theme] .social-fade-in {
+  animation: social-fade-in 200ms ease-out both;
+}
+[data-social-theme] .social-carousel {
+  scrollbar-width: none;
+}
+[data-social-theme] .social-carousel::-webkit-scrollbar {
+  display: none;
+}
+[data-social-theme] .social-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* "Now": a soft pulse on the live dot. Off under reduced motion. */
+@keyframes social-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.8); }
+}
+[data-social-theme] .social-live-dot {
+  animation: social-live 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] .social-live-dot { animation: none; }
+}
+
+/* Feed: expands up out of the carousel (springy), drops back down on close. */
+@keyframes social-feed-in {
+  from { transform: translateY(38%); opacity: 0.35; border-radius: 16px; }
+  to   { transform: translateY(0); opacity: 1; border-radius: 0; }
+}
+@keyframes social-feed-out {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(30%); opacity: 0; }
+}
+[data-social-theme] .social-feed-in { animation: social-feed-in 340ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+[data-social-theme] .social-feed-out { animation: social-feed-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
+
+/* Going: eight dots burst out from the button. No emojis. */
+@keyframes social-burst {
+  from { transform: rotate(var(--a)) translateY(-8px) scale(1); opacity: 0.95; }
+  to   { transform: rotate(var(--a)) translateY(-40px) scale(0.3); opacity: 0; }
+}
+[data-social-theme] .social-burst-dot {
+  position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 3px;
+  animation: social-burst 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] .social-burst-dot { display: none; }
+}
+
+/* Just posted: the card slides into the carousel and glows twice. */
+@keyframes social-card-new {
+  0%   { transform: translateX(48px); opacity: 0; box-shadow: 0 0 0 0 var(--glow); }
+  40%  { transform: translateX(0); opacity: 1; box-shadow: 0 0 34px 2px var(--glow); }
+  70%  { box-shadow: 0 0 14px -4px var(--glow); }
+  100% { box-shadow: 0 0 30px 0 var(--glow); }
+}
+[data-social-theme] .social-card-new { animation: social-card-new 1100ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+
+/* Skeletons: a soft shimmer tinted by --shimmer (the card's color). */
+@keyframes social-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+[data-social-theme] .social-skeleton {
+  background: linear-gradient(100deg, #141210 30%, color-mix(in srgb, var(--shimmer, #ffffff) 12%, #141210) 50%, #141210 70%);
+  background-size: 200% 100%;
+  animation: social-shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-social-theme] .social-skeleton { animation: none; }
+}

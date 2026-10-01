@@ -3,6 +3,14 @@ const defaultCountLabel = (count: number) =>
     ? 'See who\u2019s going out tonight'
     : `${count.toLocaleString()} people out right now`;
 
+/**
+ * venuu markets \u2014 cities where venues are seeded.
+ *
+ * After the SEC architecture removal (May 2026), this is no longer used to
+ * filter venue queries. The map reads venues by lat/lng bounds. CITIES is
+ * kept for: header copy, market-aware analytics, push notification
+ * topic-subscription, and a fallback center when GPS is denied.
+ */
 export const CITIES = {
   knoxville: {
     name: 'Knoxville',
@@ -14,159 +22,56 @@ export const CITIES = {
     zoom: 14.5,
     countLabel: defaultCountLabel,
   },
-  athens: {
-    name: 'Athens',
-    state: 'GA',
-    school: 'UGA',
-    mascot: 'Bulldogs',
-    dbCity: 'athens',
-    center: { lat: 33.9597, lng: -83.3770 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  auburn: {
-    name: 'Auburn',
-    state: 'AL',
-    school: 'Auburn',
-    mascot: 'Tigers',
-    dbCity: 'auburn',
-    center: { lat: 32.6087, lng: -85.4808 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  austin: {
-    name: 'Austin',
-    state: 'TX',
-    school: 'Texas',
-    mascot: 'Longhorns',
-    dbCity: 'austin',
-    center: { lat: 30.2849, lng: -97.7341 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  baton_rouge: {
-    name: 'Baton Rouge',
-    state: 'LA',
-    school: 'LSU',
-    mascot: 'Tigers',
-    dbCity: 'baton_rouge',
-    center: { lat: 30.4133, lng: -91.1800 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  college_station: {
-    name: 'College Station',
-    state: 'TX',
-    school: 'Texas A&M',
-    mascot: 'Aggies',
-    dbCity: 'college_station',
-    center: { lat: 30.6280, lng: -96.3344 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  columbia_mo: {
-    name: 'Columbia',
-    state: 'MO',
-    school: 'Mizzou',
-    mascot: 'Tigers',
-    dbCity: 'columbia_mo',
-    center: { lat: 38.9517, lng: -92.3341 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  columbia_sc: {
-    name: 'Columbia',
-    state: 'SC',
-    school: 'South Carolina',
-    mascot: 'Gamecocks',
-    dbCity: 'columbia_sc',
-    center: { lat: 33.9940, lng: -81.0307 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  fayetteville: {
-    name: 'Fayetteville',
-    state: 'AR',
-    school: 'Arkansas',
-    mascot: 'Razorbacks',
-    dbCity: 'fayetteville',
-    center: { lat: 36.0822, lng: -94.1719 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  gainesville: {
-    name: 'Gainesville',
+  tampa: {
+    name: 'Tampa',
     state: 'FL',
-    school: 'UF',
-    mascot: 'Gators',
-    dbCity: 'gainesville',
-    center: { lat: 29.6520, lng: -82.3250 },
-    zoom: 14.5,
+    school: 'USF',
+    mascot: 'Bulls',
+    dbCity: 'tampa',
+    center: { lat: 27.9506, lng: -82.4572 },
+    zoom: 13.5,
     countLabel: defaultCountLabel,
   },
-  lexington: {
-    name: 'Lexington',
-    state: 'KY',
-    school: 'Kentucky',
-    mascot: 'Wildcats',
-    dbCity: 'lexington',
-    center: { lat: 38.0406, lng: -84.5037 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  nashville: {
-    name: 'Nashville',
-    state: 'TN',
-    school: 'Vanderbilt',
-    mascot: 'Commodores',
-    dbCity: 'nashville',
-    center: { lat: 36.1627, lng: -86.7816 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  norman: {
-    name: 'Norman',
-    state: 'OK',
-    school: 'Oklahoma',
-    mascot: 'Sooners',
-    dbCity: 'norman',
-    center: { lat: 35.2226, lng: -97.4395 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  oxford: {
-    name: 'Oxford',
-    state: 'MS',
-    school: 'Ole Miss',
-    mascot: 'Rebels',
-    dbCity: 'oxford',
-    center: { lat: 34.3665, lng: -89.5192 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  starkville: {
-    name: 'Starkville',
-    state: 'MS',
-    school: 'Mississippi State',
-    mascot: 'Bulldogs',
-    dbCity: 'starkville',
-    center: { lat: 33.4504, lng: -88.8184 },
-    zoom: 14.5,
-    countLabel: defaultCountLabel,
-  },
-  tuscaloosa: {
-    name: 'Tuscaloosa',
-    state: 'AL',
-    school: 'Alabama',
-    mascot: 'Crimson Tide',
-    dbCity: 'tuscaloosa',
-    center: { lat: 33.2098, lng: -87.5692 },
-    zoom: 14.5,
+  st_petersburg: {
+    name: 'St. Petersburg',
+    state: 'FL',
+    school: 'USF',
+    mascot: 'Bulls',
+    dbCity: 'st_petersburg',
+    center: { lat: 27.7706, lng: -82.6398, },
+    zoom: 14.0,
     countLabel: defaultCountLabel,
   },
 } as const;
 
 export type CityKey = keyof typeof CITIES;
+
+/**
+ * Default fallback city when location is denied or unavailable.
+ */
+export const DEFAULT_CITY: CityKey = 'knoxville';
+
+/**
+ * Determine which venuu market a given lat/lng is closest to.
+ * Returns null if outside any market's reasonable radius (~50 miles).
+ */
+export function nearestMarket(lat: number, lng: number): CityKey | null {
+  const MAX_DISTANCE_MILES = 50;
+  let closest: CityKey | null = null;
+  let closestDistance = Infinity;
+
+  for (const key of Object.keys(CITIES) as CityKey[]) {
+    const c = CITIES[key].center;
+    const dLat = (lat - c.lat) * 69;
+    const dLng = (lng - c.lng) * 54.6;
+    const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+    if (dist < closestDistance && dist < MAX_DISTANCE_MILES) {
+      closest = key;
+      closestDistance = dist;
+    }
+  }
+  return closest;
+}
 
 export const COLORS = {
   bgPrimary: '#050507',

@@ -1,3 +1,7 @@
+export type AvatarColor =
+  | 'orange' | 'cyan' | 'purple' | 'green'
+  | 'pink'   | 'gold' | 'sienna' | 'wine';
+
 export interface Profile {
   id: string;
   created_at: string;
@@ -11,6 +15,13 @@ export interface Profile {
   avatar_url: string | null;
   total_checkins: number;
   is_active: boolean;
+  // ── 00029 identity-v2 additions ──
+  bio: string | null;
+  tagline: string | null;
+  avatar_color: AvatarColor;
+  profile_share_token: string | null;
+  show_recaps_publicly: boolean;
+  show_visits_publicly: boolean;
 }
 
 export interface Venue {
@@ -27,7 +38,13 @@ export interface Venue {
   deals: string | null;
   hours: string | null;
   instagram: string | null;
-  vibe: string | null;
+  vibe_tagline: string | null;
+  vibe_hue_baseline?: {
+    wk_early?: number;
+    wk_peak?: number;
+    wknd_early?: number;
+    wknd_peak?: number;
+  } | null;
   has_live_cam: boolean;
   live_cam_url: string | null;
   cam_coming_soon: boolean;
@@ -49,6 +66,10 @@ export interface Venue {
   loyalty_active: boolean;
   nfc_tag_id: string | null;
   nfc_required: boolean;
+  // ── Hub architecture (Commit 8) ──
+  is_hub?: boolean;
+  hub_subtitle?: string | null;
+  tenant_of?: string | null;
 }
 
 export interface Checkin {
@@ -117,9 +138,12 @@ export interface VenueRecap {
   created_at: string;
   venue_id: string;
   username: string;
-  body: string;
-  stars: number;
+  body: string | null;
   day_of: string;
+  photo_url: string;
+  hue_at_capture: number;
+  developed_at: string;
+  user_id: string | null;
 }
 
 export interface ClickerLog {
@@ -156,6 +180,14 @@ export interface VenueEvent {
   tickets_sold: number;
   sale_starts_at: string | null;
   sale_ends_at: string | null;
+  /** 'tonight' (venue/curated events) or 'social' (the Social tab). */
+  surface?: 'tonight' | 'social';
+  // Events-mode curation fields (DB-backed; optional for older rows)
+  curated?: boolean;
+  marquee?: boolean;
+  going_count?: number;
+  vibe_tags?: string[] | null;
+  price_tier?: string | null;
 }
 
 export type EventTicketStatus = 'completed' | 'used' | 'refunded';
@@ -241,4 +273,44 @@ export interface SecurityOrganization {
   contact_email: string | null;
   created_at: string;
   is_active: boolean;
+}
+
+/* ── Venny Plans ── */
+
+export interface PlanStop {
+  venue_id: string;
+  venue_name: string;
+  lat: number;
+  lng: number;
+  arrival_time: string;
+  duration_min: number;
+  vibe_note?: string | null;
+  estimated_cost?: number | null;
+  /** Canonical arrival timestamp — set by tap or by the proximity
+   *  detector's ENTER event. Persisted onto night_plans.stops[i]
+   *  for saved plans. */
+  arrived_at?: string | null;
+  /** Set when the user hold-skipped this stop. */
+  skipped_at?: string | null;
+  /** Set on the final stop when the user taps "end the night". */
+  completed_at?: string | null;
+  /** true if arrival was a user tap, false/null if proximity detector
+   *  auto-credited the visit. */
+  confirmed_manually?: boolean | null;
+  /** Set when the user advances past this stop to the next. */
+  left_at?: string | null;
+  /** Legacy alias — older client wrote this. Read as a fallback when
+   *  arrived_at is absent. */
+  visited_at?: string | null;
+}
+
+export interface Plan {
+  title: string;
+  summary?: string | null;
+  vibe_tags?: string[] | null;
+  stops: PlanStop[];
+  total_estimated_cost?: number | null;
+  total_duration_min?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
 }
